@@ -11,12 +11,12 @@ import lombok.Setter;
 @Table(name = "teacher_profiles")
 public class TeacherProfile extends BaseEntity {
 
-    @Column(name = "user_id")
+    @Column(name = "user_id", nullable = false)
     private Long userId;
 
     @Column(name = "college_id")
     private Long collegeId;
 
-    @Column(name = "title", length = 100)
+    @Column(name = "title", length = 50)
     private String title;
 }

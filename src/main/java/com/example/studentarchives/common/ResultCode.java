@@ -54,8 +54,7 @@ public enum ResultCode {
     PASSWORD_ERROR(20008, "密码错误"),
 
     // ========== 数据相关（30000-39999） ==========
-    DATA_NOT_EXIST(30001, "数据不存在"),
-    DATA_DELETED(30002, "数据已删除"),
+    DATA_DELETED(30001, "数据已删除"),
     DATA_DUPLICATE(30003, "数据重复"),
     DATA_STATUS_ERROR(30004, "数据状态异常"),
     DATA_LOCKED(30005, "数据已锁定"),

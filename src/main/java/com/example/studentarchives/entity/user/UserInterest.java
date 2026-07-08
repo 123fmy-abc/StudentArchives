@@ -11,25 +11,24 @@ import lombok.Setter;
 @Table(name = "user_interests")
 public class UserInterest extends BaseEntity {
 
-    @Column(name = "user_id")
+    @Column(name = "user_id", nullable = false)
     private Long userId;
 
-    @Column(name = "tag_name", length = 50)
+    @Column(name = "tag_name", nullable = false, length = 100)
     private String tagName;
 
-    @Column(name = "proficiency_level")
-    private Integer proficiencyLevel;
+    @Column(name = "proficiency_level", nullable = false)
+    private byte proficiencyLevel;
 
-    @Column(name = "weight")
-    private Integer weight;
+    @Column(name = "weight", nullable = false)
+    private int weight;
 
-    @Column(name = "sort")
-    private Integer sort;
+    @Column(name = "sort", nullable = false)
+    private int sort;
 
-    @Column(name = "is_detail")
-    private Integer isDetail;
+    @Column(name = "is_detail", nullable = false)
+    private byte isDetail;
 
-    @Column(name = "detail_content", columnDefinition = "TEXT")
-    @Lob
+    @Column(name = "detail_content", length = 255)
     private String detailContent;
 }

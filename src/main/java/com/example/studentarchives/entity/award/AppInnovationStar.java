@@ -15,17 +15,17 @@ import java.time.LocalDate;
 @Table(name = "app_innovation_stars")
 public class AppInnovationStar extends BaseEntity {
 
-    @Column(name = "application_id")
+    @Column(name = "application_id", nullable = false)
     private Long applicationId;
 
-    @Column(name = "company_name", nullable = false)
+    @Column(name = "company_name", nullable = false, length = 255)
     private String companyName;
 
-    @Column(name = "industry_type", nullable = false)
+    @Column(name = "industry_type", length = 100)
     private String industryType;
 
-    @Column(name = "applicant_rank", nullable = false)
-    private Integer applicantRank;
+    @Column(name = "applicant_rank", length = 50)
+    private String applicantRank;
 
     @Column(name = "register_time")
     private LocalDate registerTime;

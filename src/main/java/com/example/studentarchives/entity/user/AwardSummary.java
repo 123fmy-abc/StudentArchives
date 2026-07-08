@@ -13,14 +13,14 @@ import java.time.LocalDate;
 @Table(name = "award_summaries")
 public class AwardSummary extends BaseEntity {
 
-    @Column(name = "user_id")
+    @Column(name = "user_id", nullable = false)
     private Long userId;
 
-    @Column(name = "category", length = 50)
+    @Column(name = "category", nullable = false, length = 50)
     private String category;
 
-    @Column(name = "total_count")
-    private Integer totalCount;
+    @Column(name = "total_count", nullable = false)
+    private int totalCount;
 
     @Column(name = "max_level", length = 50)
     private String maxLevel;

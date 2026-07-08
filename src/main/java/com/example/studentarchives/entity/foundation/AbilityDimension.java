@@ -1,4 +1,7 @@
 package com.example.studentarchives.entity.foundation;
+import com.example.studentarchives.enums.StatusEnum;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
 
 import com.example.studentarchives.entity.BaseEntity;
 import jakarta.persistence.Column;
@@ -13,15 +16,19 @@ import lombok.Setter;
 @Table(name = "ability_dimensions")
 public class AbilityDimension extends BaseEntity {
 
-    @Column(name = "dimension_name")
+    @Column(name = "dimension_name", nullable = false, length = 50)
     private String dimensionName;
 
-    @Column(name = "dimension_code")
+    @Column(name = "dimension_code", nullable = false, length = 50)
     private String dimensionCode;
 
+    @Column(name = "description", length = 255)
     private String description;
 
-    private Integer sort;
+    @Column(name = "sort", nullable = false)
+    private int sort;
 
-    private Integer status;
+    @Column(name = "status", nullable = false)
+    @Enumerated(EnumType.ORDINAL)
+    private StatusEnum status;
 }

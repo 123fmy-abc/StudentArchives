@@ -11,10 +11,10 @@ import lombok.Setter;
 @Table(name = "user_behavior_logs")
 public class UserBehaviorLog extends BaseEntity {
 
-    @Column(name = "user_id")
+    @Column(name = "user_id", nullable = false)
     private Long userId;
 
-    @Column(name = "behavior_type")
+    @Column(name = "behavior_type", nullable = false, length = 50)
     private String behaviorType;
 
     @Column(name = "target_page")

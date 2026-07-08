@@ -1,4 +1,7 @@
 package com.example.studentarchives.entity.archive;
+import com.example.studentarchives.enums.ApplyStatusEnum;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
 
 import com.example.studentarchives.entity.BaseEntityNoUpdate;
 import jakarta.persistence.Column;
@@ -18,7 +21,7 @@ public class ArchiveVersion extends BaseEntityNoUpdate {
     private Long archiveId;
 
     @Column(name = "version", nullable = false)
-    private Integer version;
+    private int version;
 
     @Column(name = "title", nullable = false, length = 255)
     private String title;
@@ -27,7 +30,8 @@ public class ArchiveVersion extends BaseEntityNoUpdate {
     private String dataSnapshot;
 
     @Column(name = "status", nullable = false)
-    private Integer status;
+    @Enumerated(EnumType.ORDINAL)
+    private ApplyStatusEnum status;
 
     @Lob
     @Column(name = "rejected_reason", columnDefinition = "TEXT")

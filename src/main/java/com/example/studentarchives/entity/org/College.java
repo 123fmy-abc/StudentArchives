@@ -1,7 +1,11 @@
 package com.example.studentarchives.entity.org;
+import com.example.studentarchives.enums.StatusEnum;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
 
 import com.example.studentarchives.entity.BaseEntity;
 import com.example.studentarchives.entity.foundation.School;
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.Setter;
@@ -10,20 +14,23 @@ import lombok.Setter;
 @Setter
 @Entity
 @Table(name = "colleges")
+@JsonIgnoreProperties({"hibernateLazyInitializer", "handler"})
 public class College extends BaseEntity {
 
-    @Column(name = "school_id")
+    @Column(name = "school_id", nullable = false)
     private Long schoolId;
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "school_id", insertable = false, updatable = false)
     private School school;
 
-    @Column(length = 100)
+    @Column(name = "name", nullable = false, length = 100)
     private String name;
 
-    @Column(length = 50)
+    @Column(name = "code", nullable = false, length = 50)
     private String code;
 
-    private Integer status;
+    @Column(name = "status", nullable = false)
+    @Enumerated(EnumType.ORDINAL)
+    private StatusEnum status;
 }

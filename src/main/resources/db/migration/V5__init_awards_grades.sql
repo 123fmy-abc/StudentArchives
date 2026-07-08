@@ -233,7 +233,7 @@ CREATE TABLE portrait_evaluation_scores (
     dimension_code  VARCHAR(50)     NOT NULL COMMENT '维度编码，关联 ability_dimensions.dimension_code',
     score           DECIMAL(5,2)    NOT NULL DEFAULT 0 COMMENT '当前得分',
     target_score    DECIMAL(5,2)    NOT NULL DEFAULT 0 COMMENT '目标分',
-    `change`        DECIMAL(5,2)    NOT NULL DEFAULT 0 COMMENT '较上阶段变化',
+    change_value    DECIMAL(5,2)    NOT NULL DEFAULT 0 COMMENT '较上阶段变化',
     gap             DECIMAL(5,2)    NOT NULL DEFAULT 0 COMMENT '距目标分数',
     evaluated_at    TIMESTAMP       NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '评估时间',
     created_at      TIMESTAMP       NOT NULL DEFAULT CURRENT_TIMESTAMP,

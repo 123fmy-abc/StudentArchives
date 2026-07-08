@@ -8,6 +8,8 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.validation.FieldError;
+import org.springframework.web.HttpMediaTypeNotSupportedException;
+import org.springframework.web.HttpRequestMethodNotSupportedException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.MissingServletRequestParameterException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
@@ -39,8 +41,12 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(MethodArgumentNotValidException.class)
     @ResponseStatus(HttpStatus.BAD_REQUEST)
     public ApiResult<Void> handleValidation(MethodArgumentNotValidException e) {
-        FieldError fieldError = e.getBindingResult().getFieldError();
-        String message = fieldError != null ? fieldError.getDefaultMessage() : "参数校验失败";
+        // 收集所有字段错误信息
+        String message = e.getBindingResult().getFieldErrors().stream()
+                .map(FieldError::getDefaultMessage)
+                .distinct()
+                .reduce((a, b) -> a + "；" + b)
+                .orElse("参数校验失败");
         log.warn("参数校验失败: {}", message);
         return ApiResult.error(ResultCode.PARAM_ERROR, message);
     }
@@ -79,6 +85,24 @@ public class GlobalExceptionHandler {
     public ApiResult<Void> handleTypeMismatch(MethodArgumentTypeMismatchException e) {
         log.warn("参数类型错误: {}", e.getName());
         return ApiResult.error(ResultCode.PARAM_FORMAT_ERROR, "参数 " + e.getName() + " 格式错误");
+    }
+
+    // ==================== 请求方法 / Content-Type 异常 ====================
+
+    /** 请求方法不支持（如用 GET 调 POST 接口） */
+    @ExceptionHandler(HttpRequestMethodNotSupportedException.class)
+    @ResponseStatus(HttpStatus.METHOD_NOT_ALLOWED)
+    public ApiResult<Void> handleMethodNotSupported(HttpRequestMethodNotSupportedException e) {
+        log.warn("请求方法不支持: {}", e.getMessage());
+        return ApiResult.error(ResultCode.PARAM_ERROR, "请求方法不支持，请使用 " + String.join("/", e.getSupportedMethods()) + " 方式");
+    }
+
+    /** Content-Type 不支持（如用表单提交 JSON 接口） */
+    @ExceptionHandler(HttpMediaTypeNotSupportedException.class)
+    @ResponseStatus(HttpStatus.UNSUPPORTED_MEDIA_TYPE)
+    public ApiResult<Void> handleMediaTypeNotSupported(HttpMediaTypeNotSupportedException e) {
+        log.warn("不支持的 Content-Type: {}", e.getMessage());
+        return ApiResult.error(ResultCode.PARAM_FORMAT_ERROR, "不支持的 Content-Type，请使用 application/json");
     }
 
     // ==================== 其他异常 ====================

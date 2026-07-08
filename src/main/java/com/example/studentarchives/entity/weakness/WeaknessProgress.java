@@ -13,11 +13,15 @@ import java.time.LocalDateTime;
 @Table(name = "weakness_progress")
 public class WeaknessProgress extends BaseEntity {
 
+    @Column(name = "weakness_id", nullable = false)
     private Long weaknessId;
 
-    private Integer progressValue;
+    @Column(name = "progress_value", nullable = false)
+    private int progressValue;
 
+    @Column(name = "progress_desc", length = 255)
     private String progressDesc;
 
+    @Column(name = "recorded_at", nullable = false)
     private LocalDateTime recordedAt;
 }

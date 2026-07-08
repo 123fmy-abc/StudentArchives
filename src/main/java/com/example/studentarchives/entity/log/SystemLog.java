@@ -17,27 +17,27 @@ public class SystemLog extends BaseEntity {
     @Column(name = "operator_id")
     private Long operatorId;
 
-    @Column(name = "action")
+    @Column(name = "action", nullable = false, length = 100)
     private String action;
 
-    @Column(name = "module")
+    @Column(name = "module", nullable = false, length = 100)
     private String module;
 
     @Lob
     @Column(name = "description", columnDefinition = "TEXT")
     private String description;
 
-    @Column(name = "log_level")
-    private Integer logLevel;
+    @Column(name = "log_level", nullable = false)
+    private byte logLevel;
 
-    @Column(name = "is_display")
-    private Integer isDisplay;
+    @Column(name = "is_display", nullable = false)
+    private byte isDisplay;
 
     @Column(name = "activity_name")
     private String activityName;
 
     @Column(name = "status")
-    private Integer status;
+    private Byte status;
 
     @Column(name = "status_label")
     private String statusLabel;

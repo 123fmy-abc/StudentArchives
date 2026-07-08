@@ -1,8 +1,12 @@
 package com.example.studentarchives.entity.award;
+import com.example.studentarchives.enums.StatusEnum;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
 
 import com.example.studentarchives.entity.BaseEntity;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
+import jakarta.persistence.Lob;
 import jakarta.persistence.Table;
 import lombok.Getter;
 import lombok.Setter;
@@ -13,24 +17,27 @@ import lombok.Setter;
 @Table(name = "award_type_config")
 public class AwardTypeConfig extends BaseEntity {
 
-    @Column(name = "award_type", nullable = false)
+    @Column(name = "award_type", nullable = false, length = 50)
     private String awardType;
 
-    @Column(name = "type_name", nullable = false)
+    @Column(name = "type_name", nullable = false, length = 50)
     private String typeName;
 
+    @Lob
     @Column(name = "evaluate_desc", columnDefinition = "TEXT")
     private String evaluateDesc;
 
+    @Lob
     @Column(name = "apply_desc", columnDefinition = "TEXT")
     private String applyDesc;
 
-    @Column(name = "icon")
+    @Column(name = "icon", length = 100)
     private String icon;
 
-    @Column(name = "sort")
-    private Integer sort;
+    @Column(name = "sort", nullable = false)
+    private int sort;
 
-    @Column(name = "status")
-    private Integer status;
+    @Column(name = "status", nullable = false)
+    @Enumerated(EnumType.ORDINAL)
+    private StatusEnum status;
 }

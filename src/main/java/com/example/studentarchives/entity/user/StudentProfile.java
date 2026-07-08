@@ -13,21 +13,21 @@ import java.math.BigDecimal;
 @Table(name = "student_profiles")
 public class StudentProfile extends BaseEntity {
 
-    @Column(name = "user_id")
+    @Column(name = "user_id", nullable = false)
     private Long userId;
 
-    @Column(name = "class_id")
+    @Column(name = "class_id", nullable = false)
     private Long classId;
 
     @Column(name = "political_status", length = 50)
     private String politicalStatus;
 
-    @Column(name = "volunteer_hours", precision = 10, scale = 2)
+    @Column(name = "volunteer_hours", precision = 8, scale = 2)
     private BigDecimal volunteerHours;
 
     @Column(name = "language_ability", length = 255)
     private String languageAbility;
 
-    @Column(name = "hobbies", length = 500)
+    @Column(name = "hobbies", length = 255)
     private String hobbies;
 }

@@ -11,45 +11,45 @@ import lombok.Setter;
 @Table(name = "approval_flow_steps")
 public class ApprovalFlowStep extends BaseEntity {
 
-    @Column(name = "flow_id")
+    @Column(name = "flow_id", nullable = false)
     private Long flowId;
 
-    @Column(name = "step_no")
-    private Integer stepNo;
+    @Column(name = "step_no", nullable = false)
+    private byte stepNo;
 
-    @Column(name = "step_name")
+    @Column(name = "step_name", nullable = false, length = 100)
     private String stepName;
 
-    @Column(name = "role_id")
+    @Column(name = "role_id", nullable = false)
     private Long roleId;
 
-    @Column(name = "scope_type")
-    private Integer scopeType;
+    @Column(name = "scope_type", nullable = false)
+    private byte scopeType;
 
-    @Column(name = "scope_rule")
+    @Column(name = "scope_rule", nullable = false, length = 50)
     private String scopeRule;
 
-    @Column(name = "auto_assign")
-    private Integer autoAssign;
+    @Column(name = "auto_assign", nullable = false)
+    private byte autoAssign;
 
-    @Column(name = "allow_delegate")
-    private Integer allowDelegate;
+    @Column(name = "allow_delegate", nullable = false)
+    private byte allowDelegate;
 
-    @Column(name = "allow_skip")
-    private Integer allowSkip;
+    @Column(name = "allow_skip", nullable = false)
+    private byte allowSkip;
 
-    @Column(name = "allow_designate_next")
-    private Integer allowDesignateNext;
+    @Column(name = "allow_designate_next", nullable = false)
+    private byte allowDesignateNext;
 
-    @Column(name = "timeout_hours")
-    private Integer timeoutHours;
+    @Column(name = "timeout_hours", nullable = false)
+    private int timeoutHours;
 
-    @Column(name = "reject_action")
+    @Column(name = "reject_action", nullable = false, length = 20)
     private String rejectAction;
 
     @Column(name = "reject_to_step")
-    private Integer rejectToStep;
+    private Byte rejectToStep;
 
-    @Column(name = "sort")
-    private Integer sort;
+    @Column(name = "sort", nullable = false)
+    private int sort;
 }

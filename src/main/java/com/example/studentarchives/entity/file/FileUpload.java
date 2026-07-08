@@ -11,22 +11,22 @@ import lombok.Setter;
 @Table(name = "file_uploads")
 public class FileUpload extends BaseEntity {
 
-    @Column(name = "user_id")
+    @Column(name = "user_id", nullable = false)
     private Long userId;
 
-    @Column(name = "fileable_type", length = 100)
+    @Column(name = "fileable_type", nullable = false, length = 50)
     private String fileableType;
 
-    @Column(name = "fileable_id")
+    @Column(name = "fileable_id", nullable = false)
     private Long fileableId;
 
     @Column(name = "file_category", length = 50)
     private String fileCategory;
 
-    @Column(name = "original_name", length = 255)
+    @Column(name = "original_name", nullable = false, length = 255)
     private String originalName;
 
-    @Column(name = "file_path", length = 500)
+    @Column(name = "file_path", nullable = false, length = 500)
     private String filePath;
 
     @Column(name = "file_size")
@@ -35,9 +35,9 @@ public class FileUpload extends BaseEntity {
     @Column(name = "mime_type", length = 100)
     private String mimeType;
 
-    @Column(name = "disk", length = 50)
+    @Column(name = "disk", nullable = false, length = 50)
     private String disk;
 
-    @Column(name = "sort_order")
-    private Integer sortOrder;
+    @Column(name = "sort_order", nullable = false)
+    private int sortOrder;
 }

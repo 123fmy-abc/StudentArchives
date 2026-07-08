@@ -22,13 +22,13 @@ public enum ArchiveTypeEnum {
     BOOK_REVIEW("book_review", "图书心得"),
     ;
 
-    private final String code;
-    private final String name;
+    private final String value;
+    private final String label;
 
-    public static ArchiveTypeEnum of(String code) {
-        if (code == null) return null;
+    public static ArchiveTypeEnum of(String value) {
+        if (value == null) return null;
         for (ArchiveTypeEnum e : values()) {
-            if (e.code.equals(code)) return e;
+            if (e.value.equals(value)) return e;
         }
         return null;
     }

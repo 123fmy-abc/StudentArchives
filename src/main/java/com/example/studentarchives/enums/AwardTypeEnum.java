@@ -15,13 +15,13 @@ public enum AwardTypeEnum {
     INNOVATION_STAR("innovation_star", "双创之星"),
     ;
 
-    private final String code;
-    private final String name;
+    private final String value;
+    private final String label;
 
-    public static AwardTypeEnum of(String code) {
-        if (code == null) return null;
+    public static AwardTypeEnum of(String value) {
+        if (value == null) return null;
         for (AwardTypeEnum e : values()) {
-            if (e.code.equals(code)) return e;
+            if (e.value.equals(value)) return e;
         }
         return null;
     }

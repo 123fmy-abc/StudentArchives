@@ -1,4 +1,7 @@
 package com.example.studentarchives.entity.foundation;
+import com.example.studentarchives.enums.StatusEnum;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
 
 import com.example.studentarchives.entity.BaseEntity;
 import jakarta.persistence.Column;
@@ -15,16 +18,19 @@ import java.time.LocalDate;
 @Table(name = "semesters")
 public class Semester extends BaseEntity {
 
+    @Column(name = "name", nullable = false, length = 50)
     private String name;
 
-    @Column(name = "start_date")
+    @Column(name = "start_date", nullable = false)
     private LocalDate startDate;
 
-    @Column(name = "end_date")
+    @Column(name = "end_date", nullable = false)
     private LocalDate endDate;
 
-    @Column(name = "is_current")
-    private Integer isCurrent;
+    @Column(name = "is_current", nullable = false)
+    private byte isCurrent;
 
-    private Integer status;
+    @Column(name = "status", nullable = false)
+    @Enumerated(EnumType.ORDINAL)
+    private StatusEnum status;
 }

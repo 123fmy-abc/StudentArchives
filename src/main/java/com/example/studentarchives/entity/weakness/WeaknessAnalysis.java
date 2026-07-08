@@ -11,20 +11,28 @@ import lombok.Setter;
 @Table(name = "weakness_analyses")
 public class WeaknessAnalysis extends BaseEntity {
 
+    @Column(name = "user_id", nullable = false)
     private Long userId;
 
+    @Column(name = "weakness_type", nullable = false, length = 100)
     private String weaknessType;
 
-    @Column(columnDefinition = "TEXT")
+    @Lob
+    @Column(name = "weakness_desc", columnDefinition = "TEXT")
     private String weaknessDesc;
 
-    private Integer source;
+    @Column(name = "source", nullable = false)
+    private byte source;
 
+    @Column(name = "teacher_id")
     private Long teacherId;
 
-    private Integer severityLevel;
+    @Column(name = "severity_level", nullable = false)
+    private byte severityLevel;
 
+    @Column(name = "target_score")
     private Integer targetScore;
 
-    private Integer isRead;
+    @Column(name = "is_read", nullable = false)
+    private byte isRead;
 }

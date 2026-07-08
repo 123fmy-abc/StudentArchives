@@ -15,29 +15,29 @@ import java.time.LocalDateTime;
 @Table(name = "grade_import_logs")
 public class GradeImportLog extends BaseEntity {
 
-    @Column(name = "operator_id")
+    @Column(name = "operator_id", nullable = false)
     private Long operatorId;
 
-    @Column(name = "semester_id")
+    @Column(name = "semester_id", nullable = false)
     private Long semesterId;
 
-    @Column(name = "file_id")
+    @Column(name = "file_id", nullable = false)
     private Long fileId;
 
-    @Column(name = "total_count")
-    private Integer totalCount;
+    @Column(name = "total_count", nullable = false)
+    private int totalCount;
 
-    @Column(name = "success_count")
-    private Integer successCount;
+    @Column(name = "success_count", nullable = false)
+    private int successCount;
 
-    @Column(name = "fail_count")
-    private Integer failCount;
+    @Column(name = "fail_count", nullable = false)
+    private int failCount;
 
     @Column(name = "fail_details", columnDefinition = "JSON")
     private String failDetails;
 
-    @Column(name = "import_status")
-    private Integer importStatus;
+    @Column(name = "import_status", nullable = false)
+    private byte importStatus;
 
     @Column(name = "started_at")
     private LocalDateTime startedAt;

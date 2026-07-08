@@ -1,4 +1,7 @@
 package com.example.studentarchives.entity.approval;
+import com.example.studentarchives.enums.StatusEnum;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
 
 import com.example.studentarchives.entity.BaseEntity;
 import jakarta.persistence.*;
@@ -11,30 +14,31 @@ import lombok.Setter;
 @Table(name = "approval_flows")
 public class ApprovalFlow extends BaseEntity {
 
-    @Column(name = "school_id")
+    @Column(name = "school_id", nullable = false)
     private Long schoolId;
 
-    @Column(name = "flow_name")
+    @Column(name = "flow_name", nullable = false, length = 100)
     private String flowName;
 
-    @Column(name = "applicable_type")
+    @Column(name = "applicable_type", nullable = false, length = 50)
     private String applicableType;
 
     @Column(name = "applicable_sub_type")
     private String applicableSubType;
 
-    @Column(name = "version")
-    private Integer version;
+    @Column(name = "version", nullable = false)
+    private int version;
 
     @Column(name = "copied_from")
     private Long copiedFrom;
 
-    @Column(name = "is_default")
-    private Integer isDefault;
+    @Column(name = "is_default", nullable = false)
+    private byte isDefault;
 
-    @Column(name = "status")
-    private Integer status;
+    @Column(name = "status", nullable = false)
+    @Enumerated(EnumType.ORDINAL)
+    private StatusEnum status;
 
-    @Column(name = "created_by")
+    @Column(name = "created_by", nullable = false)
     private Long createdBy;
 }

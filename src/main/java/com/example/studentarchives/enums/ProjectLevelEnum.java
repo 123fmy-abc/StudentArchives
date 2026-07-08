@@ -16,13 +16,13 @@ public enum ProjectLevelEnum {
     COLLEGE("college", "院级"),
     ;
 
-    private final String code;
-    private final String name;
+    private final String value;
+    private final String label;
 
-    public static ProjectLevelEnum of(String code) {
-        if (code == null) return null;
+    public static ProjectLevelEnum of(String value) {
+        if (value == null) return null;
         for (ProjectLevelEnum e : values()) {
-            if (e.code.equals(code)) return e;
+            if (e.value.equals(value)) return e;
         }
         return null;
     }

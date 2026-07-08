@@ -13,6 +13,6 @@ import lombok.Setter;
 @Table(name = "app_research_stars")
 public class AppResearchStar extends BaseEntity {
 
-    @Column(name = "application_id")
+    @Column(name = "application_id", nullable = false)
     private Long applicationId;
 }

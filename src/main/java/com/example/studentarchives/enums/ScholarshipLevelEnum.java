@@ -16,13 +16,13 @@ public enum ScholarshipLevelEnum {
     ENTERPRISE("enterprise", "企业奖学金"),
     ;
 
-    private final String code;
-    private final String name;
+    private final String value;
+    private final String label;
 
-    public static ScholarshipLevelEnum of(String code) {
-        if (code == null) return null;
+    public static ScholarshipLevelEnum of(String value) {
+        if (value == null) return null;
         for (ScholarshipLevelEnum e : values()) {
-            if (e.code.equals(code)) return e;
+            if (e.value.equals(value)) return e;
         }
         return null;
     }

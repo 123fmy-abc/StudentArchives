@@ -1,6 +1,10 @@
 package com.example.studentarchives.entity.user;
+import com.example.studentarchives.enums.StatusEnum;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
 
 import com.example.studentarchives.entity.BaseEntity;
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.Setter;
@@ -9,16 +13,17 @@ import lombok.Setter;
 @Setter
 @Entity
 @Table(name = "permissions")
+@JsonIgnoreProperties({"hibernateLazyInitializer", "handler"})
 public class Permission extends BaseEntity {
 
-    @Column(name = "name", length = 100)
+    @Column(name = "name", nullable = false, length = 100)
     private String name;
 
-    @Column(name = "code", length = 100)
+    @Column(name = "code", nullable = false, length = 100)
     private String code;
 
-    @Column(name = "type")
-    private Integer type;
+    @Column(name = "type", nullable = false)
+    private byte type;
 
     @Column(name = "parent_id")
     private Long parentId;
@@ -27,9 +32,10 @@ public class Permission extends BaseEntity {
     @JoinColumn(name = "parent_id", insertable = false, updatable = false)
     private Permission parent;
 
-    @Column(name = "sort")
-    private Integer sort;
+    @Column(name = "sort", nullable = false)
+    private int sort;
 
-    @Column(name = "status")
-    private Integer status;
+    @Column(name = "status", nullable = false)
+    @Enumerated(EnumType.ORDINAL)
+    private StatusEnum status;
 }

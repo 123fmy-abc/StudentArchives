@@ -1,4 +1,7 @@
 package com.example.studentarchives.entity.archive;
+import com.example.studentarchives.enums.StatusEnum;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
 
 import com.example.studentarchives.entity.BaseEntity;
 import jakarta.persistence.Column;
@@ -32,8 +35,9 @@ public class ArchiveTypeConfig extends BaseEntity {
     private String icon;
 
     @Column(name = "sort", nullable = false)
-    private Integer sort;
+    private int sort;
 
     @Column(name = "status", nullable = false)
-    private Integer status;
+    @Enumerated(EnumType.ORDINAL)
+    private StatusEnum status;
 }

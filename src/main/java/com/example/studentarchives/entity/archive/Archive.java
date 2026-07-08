@@ -1,4 +1,7 @@
 package com.example.studentarchives.entity.archive;
+import com.example.studentarchives.enums.ApplyStatusEnum;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
 
 import com.example.studentarchives.entity.BaseEntity;
 import jakarta.persistence.Column;
@@ -36,7 +39,8 @@ public class Archive extends BaseEntity {
     private LocalDate obtainTime;
 
     @Column(name = "status", nullable = false)
-    private Integer status;
+    @Enumerated(EnumType.ORDINAL)
+    private ApplyStatusEnum status;
 
     @Lob
     @Column(name = "rejected_reason", columnDefinition = "TEXT")
@@ -52,10 +56,10 @@ public class Archive extends BaseEntity {
     private Long auditorId;
 
     @Column(name = "current_version", nullable = false)
-    private Integer currentVersion;
+    private int currentVersion;
 
     @Column(name = "submit_count", nullable = false)
-    private Integer submitCount;
+    private int submitCount;
 
     @Column(name = "draft_saved_at")
     private LocalDateTime draftSavedAt;

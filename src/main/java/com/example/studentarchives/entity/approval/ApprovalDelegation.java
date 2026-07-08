@@ -13,20 +13,20 @@ import java.time.LocalDateTime;
 @Table(name = "approval_delegations")
 public class ApprovalDelegation extends BaseEntity {
 
-    @Column(name = "school_id")
+    @Column(name = "school_id", nullable = false)
     private Long schoolId;
 
-    @Column(name = "delegator_id")
+    @Column(name = "delegator_id", nullable = false)
     private Long delegatorId;
 
-    @Column(name = "delegatee_id")
+    @Column(name = "delegatee_id", nullable = false)
     private Long delegateeId;
 
     @Column(name = "role_id")
     private Long roleId;
 
     @Column(name = "scope_type")
-    private Integer scopeType;
+    private Byte scopeType;
 
     @Column(name = "scope_id")
     private Long scopeId;
@@ -34,15 +34,15 @@ public class ApprovalDelegation extends BaseEntity {
     @Column(name = "flow_id")
     private Long flowId;
 
-    @Column(name = "start_time")
+    @Column(name = "start_time", nullable = false)
     private LocalDateTime startTime;
 
-    @Column(name = "end_time")
+    @Column(name = "end_time", nullable = false)
     private LocalDateTime endTime;
 
-    @Column(name = "reason")
+    @Column(name = "reason", length = 255)
     private String reason;
 
-    @Column(name = "status")
-    private Integer status;
+    @Column(name = "status", nullable = false)
+    private byte status;
 }
