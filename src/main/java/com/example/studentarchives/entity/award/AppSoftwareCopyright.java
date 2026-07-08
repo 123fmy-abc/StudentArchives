@@ -15,17 +15,17 @@ import java.time.LocalDate;
 @Table(name = "app_software_copyrights")
 public class AppSoftwareCopyright extends BaseEntity {
 
-    @Column(name = "research_star_id")
+    @Column(name = "research_star_id", nullable = false)
     private Long researchStarId;
 
-    @Column(name = "software_name", nullable = false)
+    @Column(name = "software_name", nullable = false, length = 255)
     private String softwareName;
 
-    @Column(name = "issuing_unit", nullable = false)
+    @Column(name = "issuing_unit", length = 255)
     private String issuingUnit;
 
-    @Column(name = "rank_total", nullable = false)
-    private Integer rankTotal;
+    @Column(name = "rank_total", length = 50)
+    private String rankTotal;
 
     @Column(name = "approval_time")
     private LocalDate approvalTime;

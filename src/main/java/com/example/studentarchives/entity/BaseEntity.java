@@ -3,12 +3,14 @@ package com.example.studentarchives.entity;
 import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.Setter;
+import org.hibernate.annotations.SQLRestriction;
 
 import java.time.LocalDateTime;
 
 @Getter
 @Setter
 @MappedSuperclass
+@SQLRestriction("deleted_at IS NULL")
 public abstract class BaseEntity {
 
     @Id
@@ -32,6 +34,18 @@ public abstract class BaseEntity {
 
     @PreUpdate
     protected void onUpdate() {
-        updatedAt = LocalDateTime.now();
+        if (deletedAt == null) {
+            updatedAt = LocalDateTime.now();
+        }
+    }
+
+    /** 标记为软删除 */
+    public void markDeleted() {
+        this.deletedAt = LocalDateTime.now();
+    }
+
+    /** 是否已软删除 */
+    public boolean isDeleted() {
+        return deletedAt != null;
     }
 }

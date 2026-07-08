@@ -1,6 +1,10 @@
 package com.example.studentarchives.entity.foundation;
+import com.example.studentarchives.enums.StatusEnum;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
 
 import com.example.studentarchives.entity.BaseEntity;
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Table;
@@ -11,13 +15,16 @@ import lombok.Setter;
 @Setter
 @Entity
 @Table(name = "schools")
+@JsonIgnoreProperties({"hibernateLazyInitializer", "handler"})
 public class School extends BaseEntity {
 
-    @Column(length = 100)
+    @Column(name = "name", nullable = false, length = 100)
     private String name;
 
-    @Column(length = 50)
+    @Column(name = "code", nullable = false, length = 50)
     private String code;
 
-    private Integer status;
+    @Column(name = "status", nullable = false)
+    @Enumerated(EnumType.ORDINAL)
+    private StatusEnum status;
 }

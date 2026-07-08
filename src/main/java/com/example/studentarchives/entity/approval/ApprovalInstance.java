@@ -13,29 +13,29 @@ import java.time.LocalDateTime;
 @Table(name = "approval_instances")
 public class ApprovalInstance extends BaseEntity {
 
-    @Column(name = "approvable_type")
+    @Column(name = "approvable_type", nullable = false, length = 100)
     private String approvableType;
 
-    @Column(name = "approvable_id")
+    @Column(name = "approvable_id", nullable = false)
     private Long approvableId;
 
-    @Column(name = "flow_id")
+    @Column(name = "flow_id", nullable = false)
     private Long flowId;
 
-    @Column(name = "flow_version")
-    private Integer flowVersion;
+    @Column(name = "flow_version", nullable = false)
+    private int flowVersion;
 
-    @Column(name = "applicant_id")
+    @Column(name = "applicant_id", nullable = false)
     private Long applicantId;
 
-    @Column(name = "current_step")
-    private Integer currentStep;
+    @Column(name = "current_step", nullable = false)
+    private byte currentStep;
 
-    @Column(name = "total_steps")
-    private Integer totalSteps;
+    @Column(name = "total_steps", nullable = false)
+    private byte totalSteps;
 
-    @Column(name = "status")
-    private Integer status;
+    @Column(name = "status", nullable = false)
+    private byte status;
 
     @Column(name = "completed_at")
     private LocalDateTime completedAt;

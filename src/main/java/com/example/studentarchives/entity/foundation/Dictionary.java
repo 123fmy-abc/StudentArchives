@@ -1,6 +1,11 @@
 package com.example.studentarchives.entity.foundation;
+import com.example.studentarchives.enums.StatusEnum;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
 
 import com.example.studentarchives.entity.BaseEntity;
+import com.fasterxml.jackson.annotation.JsonIgnore;
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.Setter;
@@ -11,15 +16,16 @@ import java.util.List;
 @Setter
 @Entity
 @Table(name = "dictionaries")
+@JsonIgnoreProperties({"hibernateLazyInitializer", "handler"})
 public class Dictionary extends BaseEntity {
 
-    @Column(name = "dict_type")
+    @Column(name = "dict_type", nullable = false, length = 50)
     private String dictType;
 
-    @Column(name = "dict_code")
+    @Column(name = "dict_code", nullable = false, length = 50)
     private String dictCode;
 
-    @Column(name = "dict_name")
+    @Column(name = "dict_name", nullable = false, length = 100)
     private String dictName;
 
     @Column(name = "parent_id")
@@ -29,10 +35,14 @@ public class Dictionary extends BaseEntity {
     @JoinColumn(name = "parent_id", insertable = false, updatable = false)
     private Dictionary parent;
 
+    @JsonIgnore
     @OneToMany(mappedBy = "parent")
     private List<Dictionary> children;
 
-    private Integer sort;
+    @Column(name = "sort", nullable = false)
+    private int sort;
 
-    private Integer status;
+    @Column(name = "status", nullable = false)
+    @Enumerated(EnumType.ORDINAL)
+    private StatusEnum status;
 }

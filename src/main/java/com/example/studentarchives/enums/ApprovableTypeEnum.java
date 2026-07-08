@@ -15,13 +15,13 @@ public enum ApprovableTypeEnum {
     CAREER_PLAN("CareerPlan", "职业规划"),
     ;
 
-    private final String code;
-    private final String name;
+    private final String value;
+    private final String label;
 
-    public static ApprovableTypeEnum of(String code) {
-        if (code == null) return null;
+    public static ApprovableTypeEnum of(String value) {
+        if (value == null) return null;
         for (ApprovableTypeEnum e : values()) {
-            if (e.code.equals(code)) return e;
+            if (e.value.equals(value)) return e;
         }
         return null;
     }

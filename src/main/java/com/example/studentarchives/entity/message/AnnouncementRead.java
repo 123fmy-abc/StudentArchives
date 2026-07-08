@@ -13,12 +13,12 @@ import java.time.LocalDateTime;
 @Table(name = "announcement_reads")
 public class AnnouncementRead extends BaseEntity {
 
-    @Column(name = "announcement_id")
+    @Column(name = "announcement_id", nullable = false)
     private Long announcementId;
 
-    @Column(name = "user_id")
+    @Column(name = "user_id", nullable = false)
     private Long userId;
 
-    @Column(name = "read_at")
+    @Column(name = "read_at", nullable = false)
     private LocalDateTime readAt;
 }

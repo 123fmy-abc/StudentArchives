@@ -16,13 +16,13 @@ public enum MessageCategoryEnum {
     PRIVATE_MESSAGE("private_message", "私信"),
     ;
 
-    private final String code;
-    private final String name;
+    private final String value;
+    private final String label;
 
-    public static MessageCategoryEnum of(String code) {
-        if (code == null) return null;
+    public static MessageCategoryEnum of(String value) {
+        if (value == null) return null;
         for (MessageCategoryEnum e : values()) {
-            if (e.code.equals(code)) return e;
+            if (e.value.equals(value)) return e;
         }
         return null;
     }

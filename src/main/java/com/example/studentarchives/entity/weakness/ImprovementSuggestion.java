@@ -11,15 +11,19 @@ import lombok.Setter;
 @Table(name = "improvement_suggestions")
 public class ImprovementSuggestion extends BaseEntity {
 
+    @Column(name = "weakness_id", nullable = false)
     private Long weaknessId;
 
     @Lob
-    @Column(columnDefinition = "TEXT")
+    @Column(name = "suggestion_content", nullable = false, columnDefinition = "TEXT")
     private String suggestionContent;
 
-    private Integer source;
+    @Column(name = "source", nullable = false)
+    private byte source;
 
+    @Column(name = "teacher_id")
     private Long teacherId;
 
-    private Integer isImplemented;
+    @Column(name = "is_implemented", nullable = false)
+    private byte isImplemented;
 }

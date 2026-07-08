@@ -24,7 +24,7 @@ public enum RoleLevelEnum {
     private final String label;
 
     public static RoleLevelEnum of(Integer value) {
-        if (value == null) return SYSTEM;
+        if (value == null) return null;
         for (RoleLevelEnum e : values()) {
             if (e.value == value) return e;
         }

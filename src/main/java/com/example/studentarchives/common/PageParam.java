@@ -7,6 +7,8 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
+import java.util.Set;
+
 /**
  * 通用分页请求参数
  */
@@ -40,5 +42,18 @@ public class PageParam {
         return (sortOrder != null && (sortOrder.equalsIgnoreCase("asc") || sortOrder.equalsIgnoreCase("desc")))
                 ? sortOrder.toLowerCase()
                 : "desc";
+    }
+
+    /** 校验 sortBy 是否在允许字段白名单内（空值视为合法） */
+    public boolean isSortByValid(Set<String> allowedFields) {
+        if (sortBy == null || sortBy.isEmpty()) return true;
+        return allowedFields != null && allowedFields.contains(sortBy.trim());
+    }
+
+    /** 获取安全的 sortBy，不在白名单内时返回 null */
+    public String getSafeSortBy(Set<String> allowedFields) {
+        if (sortBy == null || sortBy.isEmpty()) return null;
+        String trimmed = sortBy.trim();
+        return (allowedFields != null && allowedFields.contains(trimmed)) ? trimmed : null;
     }
 }

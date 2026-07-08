@@ -1,4 +1,7 @@
 package com.example.studentarchives.entity.foundation;
+import com.example.studentarchives.enums.StatusEnum;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
 
 import com.example.studentarchives.entity.BaseEntity;
 import jakarta.persistence.Column;
@@ -13,12 +16,16 @@ import lombok.Setter;
 @Table(name = "form_templates")
 public class FormTemplate extends BaseEntity {
 
+    @Column(name = "name", nullable = false, length = 100)
     private String name;
 
+    @Column(name = "code", nullable = false, length = 50)
     private String code;
 
-    @Column(columnDefinition = "JSON")
+    @Column(name = "fields", nullable = false, columnDefinition = "JSON")
     private String fields;
 
-    private Integer status;
+    @Column(name = "status", nullable = false)
+    @Enumerated(EnumType.ORDINAL)
+    private StatusEnum status;
 }

@@ -11,18 +11,18 @@ import lombok.Setter;
 @Table(name = "notification_settings")
 public class NotificationSetting extends BaseEntity {
 
-    @Column(name = "user_id")
+    @Column(name = "user_id", nullable = false)
     private Long userId;
 
-    @Column(name = "category", length = 50)
+    @Column(name = "category", nullable = false, length = 50)
     private String category;
 
-    @Column(name = "email_enabled")
-    private Integer emailEnabled;
+    @Column(name = "email_enabled", nullable = false)
+    private byte emailEnabled;
 
-    @Column(name = "sms_enabled")
-    private Integer smsEnabled;
+    @Column(name = "sms_enabled", nullable = false)
+    private byte smsEnabled;
 
-    @Column(name = "push_enabled")
-    private Integer pushEnabled;
+    @Column(name = "push_enabled", nullable = false)
+    private byte pushEnabled;
 }

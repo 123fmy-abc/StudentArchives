@@ -66,7 +66,12 @@ public class PageResult<T> {
         List<R> mappedList = list.stream().map(mapper).collect(Collectors.toList());
         return PageResult.<R>builder()
                 .list(mappedList)
-                .pagination(pagination)
+                .pagination(Pagination.builder()
+                        .page(pagination.getPage())
+                        .perPage(pagination.getPerPage())
+                        .total(pagination.getTotal())
+                        .totalPages(pagination.getTotalPages())
+                        .build())
                 .build();
     }
 

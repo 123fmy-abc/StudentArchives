@@ -13,33 +13,33 @@ import java.time.LocalDate;
 @Table(name = "role_scopes")
 public class RoleScope extends BaseEntity {
 
-    @Column(name = "user_id")
+    @Column(name = "user_id", nullable = false)
     private Long userId;
 
-    @Column(name = "role_id")
+    @Column(name = "role_id", nullable = false)
     private Long roleId;
 
-    @Column(name = "scope_type")
-    private Integer scopeType;
+    @Column(name = "scope_type", nullable = false)
+    private byte scopeType;
 
-    @Column(name = "scope_id")
+    @Column(name = "scope_id", nullable = false)
     private Long scopeId;
 
-    @Column(name = "is_primary")
-    private Integer isPrimary;
+    @Column(name = "is_primary", nullable = false)
+    private byte isPrimary;
 
-    @Column(name = "appoint_by")
+    @Column(name = "appoint_by", nullable = false)
     private Long appointBy;
 
-    @Column(name = "appoint_reason", length = 500)
+    @Column(name = "appoint_reason", length = 255)
     private String appointReason;
 
-    @Column(name = "valid_from")
+    @Column(name = "valid_from", nullable = false)
     private LocalDate validFrom;
 
     @Column(name = "valid_until")
     private LocalDate validUntil;
 
-    @Column(name = "status")
-    private Integer status;
+    @Column(name = "status", nullable = false)
+    private byte status;
 }

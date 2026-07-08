@@ -16,13 +16,13 @@ public enum CompetitionLevelEnum {
     COLLEGE("college", "院级"),
     ;
 
-    private final String code;
-    private final String name;
+    private final String value;
+    private final String label;
 
-    public static CompetitionLevelEnum of(String code) {
-        if (code == null) return null;
+    public static CompetitionLevelEnum of(String value) {
+        if (value == null) return null;
         for (CompetitionLevelEnum e : values()) {
-            if (e.code.equals(code)) return e;
+            if (e.value.equals(value)) return e;
         }
         return null;
     }

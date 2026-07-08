@@ -1,4 +1,7 @@
 package com.example.studentarchives.entity.user;
+import com.example.studentarchives.enums.StatusEnum;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
 
 import com.example.studentarchives.entity.BaseEntity;
 import jakarta.persistence.*;
@@ -11,30 +14,31 @@ import lombok.Setter;
 @Table(name = "roles")
 public class Role extends BaseEntity {
 
-    @Column(name = "name", length = 100)
+    @Column(name = "name", nullable = false, length = 50)
     private String name;
 
-    @Column(name = "code", length = 50)
+    @Column(name = "code", nullable = false, length = 50)
     private String code;
 
     @Column(name = "description", length = 255)
     private String description;
 
-    @Column(name = "level")
-    private Integer level;
+    @Column(name = "level", nullable = false)
+    private byte level;
 
-    @Column(name = "is_system")
-    private Integer isSystem;
+    @Column(name = "is_system", nullable = false)
+    private byte isSystem;
 
-    @Column(name = "is_auditor")
-    private Integer isAuditor;
+    @Column(name = "is_auditor", nullable = false)
+    private byte isAuditor;
 
     @Column(name = "scope_types", columnDefinition = "JSON")
     private String scopeTypes;
 
-    @Column(name = "max_scope_count")
-    private Integer maxScopeCount;
+    @Column(name = "max_scope_count", nullable = false)
+    private int maxScopeCount;
 
-    @Column(name = "status")
-    private Integer status;
+    @Column(name = "status", nullable = false)
+    @Enumerated(EnumType.ORDINAL)
+    private StatusEnum status;
 }

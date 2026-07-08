@@ -13,29 +13,29 @@ import java.time.LocalDateTime;
 @Table(name = "approval_nodes")
 public class ApprovalNode extends BaseEntity {
 
-    @Column(name = "instance_id")
+    @Column(name = "instance_id", nullable = false)
     private Long instanceId;
 
-    @Column(name = "step_no")
-    private Integer stepNo;
+    @Column(name = "step_no", nullable = false)
+    private byte stepNo;
 
-    @Column(name = "step_name")
+    @Column(name = "step_name", nullable = false, length = 100)
     private String stepName;
 
-    @Column(name = "role_id")
+    @Column(name = "role_id", nullable = false)
     private Long roleId;
 
-    @Column(name = "scope_type")
-    private Integer scopeType;
+    @Column(name = "scope_type", nullable = false)
+    private byte scopeType;
 
-    @Column(name = "scope_id")
+    @Column(name = "scope_id", nullable = false)
     private Long scopeId;
 
     @Column(name = "assigned_auditor_id")
     private Long assignedAuditorId;
 
-    @Column(name = "assign_type")
-    private Integer assignType;
+    @Column(name = "assign_type", nullable = false)
+    private byte assignType;
 
     @Column(name = "actual_auditor_id")
     private Long actualAuditorId;
@@ -44,7 +44,7 @@ public class ApprovalNode extends BaseEntity {
     private Long delegationId;
 
     @Column(name = "action")
-    private Integer action;
+    private Byte action;
 
     @Lob
     @Column(name = "comment", columnDefinition = "TEXT")
@@ -53,7 +53,7 @@ public class ApprovalNode extends BaseEntity {
     @Column(name = "next_node_id")
     private Long nextNodeId;
 
-    @Column(name = "started_at")
+    @Column(name = "started_at", nullable = false)
     private LocalDateTime startedAt;
 
     @Column(name = "completed_at")

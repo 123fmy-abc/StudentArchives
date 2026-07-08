@@ -14,21 +14,22 @@ import lombok.Setter;
 @Table(name = "system_settings")
 public class SystemSetting extends BaseEntity {
 
-    @Column(name = "setting_key")
+    @Column(name = "setting_key", nullable = false, length = 100)
     private String settingKey;
 
     @Lob
-    @Column(name = "setting_value", columnDefinition = "TEXT")
+    @Column(name = "setting_value", nullable = false, columnDefinition = "TEXT")
     private String settingValue;
 
-    @Column(name = "setting_group")
+    @Column(name = "setting_group", nullable = false, length = 50)
     private String settingGroup;
 
-    @Column(name = "value_type")
+    @Column(name = "value_type", nullable = false, length = 20)
     private String valueType;
 
+    @Column(name = "description", length = 255)
     private String description;
 
-    @Column(name = "is_editable")
-    private Integer isEditable;
+    @Column(name = "is_editable", nullable = false)
+    private byte isEditable;
 }

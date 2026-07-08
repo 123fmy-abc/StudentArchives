@@ -1,15 +1,19 @@
 package com.example.studentarchives.common;
 
+import com.example.studentarchives.util.LogUtil;
 import com.fasterxml.jackson.annotation.JsonInclude;
+import jakarta.servlet.http.HttpServletRequest;
 import lombok.AccessLevel;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
+import org.springframework.web.context.request.RequestContextHolder;
+import org.springframework.web.context.request.ServletRequestAttributes;
 
-import java.time.LocalDateTime;
+import java.time.ZoneId;
+import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
-import java.util.UUID;
 
 /**
  * 统一 API 响应体
@@ -21,7 +25,7 @@ import java.util.UUID;
  *   "message": "success",
  *   "data": {},
  *   "trace_id": "req-20260704-143025-abc123",
- *   "timestamp": "2026-07-04T14:30:25+08:00"
+ *   "timestamp": "2026-07-04 14:30"
  * }
  * </pre>
  */
@@ -115,11 +119,22 @@ public class ApiResult<T> {
     // ==================== 工具方法 ====================
 
     private static String generateTraceId() {
-        return "req-" + LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss"))
-                + "-" + UUID.randomUUID().toString().substring(0, 8);
+        // 优先从当前请求的 attribute 读取（Controller 异常后 MDC 可能已被清除）
+        ServletRequestAttributes attrs = (ServletRequestAttributes) RequestContextHolder.getRequestAttributes();
+        if (attrs != null) {
+            HttpServletRequest request = attrs.getRequest();
+            Object traceId = request.getAttribute("trace_id");
+            if (traceId instanceof String s && !s.isEmpty()) {
+                return s;
+            }
+        }
+        return LogUtil.getOrCreateTraceId();
     }
 
+    /** 日期时间格式：yyyy-MM-dd HH:mm */
+    private static final DateTimeFormatter DTF = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm");
+
     private static String now() {
-        return LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss+08:00"));
+        return ZonedDateTime.now(ZoneId.systemDefault()).format(DTF);
     }
 }
