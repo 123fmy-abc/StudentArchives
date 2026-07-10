@@ -702,3 +702,6 @@
 2026-07-10 14:25:55.933 [captcha-cleaner] DEBUG c.e.s.s.impl.user.CaptchaServiceImpl - 验证码已清理，当前存储数: 0
 2026-07-10 14:26:01.786 [captcha-cleaner] DEBUG c.e.s.s.impl.user.CaptchaServiceImpl - 验证码已清理，当前存储数: 0
 2026-07-10 14:26:06.937 [captcha-cleaner] DEBUG c.e.s.s.impl.user.CaptchaServiceImpl - 验证码已清理，当前存储数: 0
+2026-07-10 14:26:13.011 [captcha-cleaner] DEBUG c.e.s.s.impl.user.CaptchaServiceImpl - 验证码已清理，当前存储数: 0
+2026-07-10 14:26:18.607 [captcha-cleaner] DEBUG c.e.s.s.impl.user.CaptchaServiceImpl - 验证码已清理，当前存储数: 0
+2026-07-10 14:26:19.152 [captcha-cleaner] DEBUG c.e.s.s.impl.user.CaptchaServiceImpl - 验证码已清理，当前存储数: 0
