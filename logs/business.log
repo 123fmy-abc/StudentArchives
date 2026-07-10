@@ -815,3 +815,7 @@
 2026-07-10 14:44:53.199 [restartedMain] DEBUG c.e.s.c.s.JwtAuthenticationFilter - Filter 'jwtAuthenticationFilter' configured for use
 2026-07-10 14:44:54.440 [restartedMain] INFO  c.e.s.StudentArchivesApplication - Started StudentArchivesApplication in 1.492 seconds (process running for 634.225)
 2026-07-10 14:44:55.587 [captcha-cleaner] DEBUG c.e.s.s.impl.user.CaptchaServiceImpl - 验证码已清理，当前存储数: 0
+2026-07-10 14:45:00.861 [captcha-cleaner] DEBUG c.e.s.s.impl.user.CaptchaServiceImpl - 验证码已清理，当前存储数: 0
+2026-07-10 14:45:01.669 [captcha-cleaner] DEBUG c.e.s.s.impl.user.CaptchaServiceImpl - 验证码已清理，当前存储数: 0
+2026-07-10 14:45:07.789 [captcha-cleaner] DEBUG c.e.s.s.impl.user.CaptchaServiceImpl - 验证码已清理，当前存储数: 0
+2026-07-10 14:45:16.837 [captcha-cleaner] DEBUG c.e.s.s.impl.user.CaptchaServiceImpl - 验证码已清理，当前存储数: 0
