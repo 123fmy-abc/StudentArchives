@@ -836,3 +836,4 @@
 2026-07-10 14:47:01.660 [captcha-cleaner] DEBUG c.e.s.s.impl.user.CaptchaServiceImpl - 验证码已清理，当前存储数: 0
 2026-07-10 14:47:07.777 [captcha-cleaner] DEBUG c.e.s.s.impl.user.CaptchaServiceImpl - 验证码已清理，当前存储数: 0
 2026-07-10 14:47:16.844 [captcha-cleaner] DEBUG c.e.s.s.impl.user.CaptchaServiceImpl - 验证码已清理，当前存储数: 0
+2026-07-10 14:47:24.462 [captcha-cleaner] DEBUG c.e.s.s.impl.user.CaptchaServiceImpl - 验证码已清理，当前存储数: 0
