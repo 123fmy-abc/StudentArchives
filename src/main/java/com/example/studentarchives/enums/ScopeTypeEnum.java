@@ -14,6 +14,7 @@ public enum ScopeTypeEnum {
     COLLEGE(2, "学院"),
     MAJOR(3, "专业"),
     CLASS(4, "班级"),
+    COURSE(5, "课程"),
     ;
 
     private final int value;

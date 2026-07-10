@@ -35,6 +35,9 @@ public class Archive extends BaseEntity {
     @Column(name = "semester_id")
     private Long semesterId;
 
+    @Column(name = "course_code", length = 50)
+    private String courseCode;
+
     @Column(name = "obtain_time")
     private LocalDate obtainTime;
 
