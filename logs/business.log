@@ -736,3 +736,44 @@
 2026-07-10 14:29:01.786 [captcha-cleaner] DEBUG c.e.s.s.impl.user.CaptchaServiceImpl - 验证码已清理，当前存储数: 0
 2026-07-10 14:29:06.933 [captcha-cleaner] DEBUG c.e.s.s.impl.user.CaptchaServiceImpl - 验证码已清理，当前存储数: 0
 2026-07-10 14:29:13.007 [captcha-cleaner] DEBUG c.e.s.s.impl.user.CaptchaServiceImpl - 验证码已清理，当前存储数: 0
+2026-07-10 14:34:20.905 [restartedMain] INFO  c.e.s.StudentArchivesApplication - Starting StudentArchivesApplication using Java 21.0.11 with PID 19032 (E:\StudentArchives\target\classes started by 21117 in E:\StudentArchives)
+2026-07-10 14:34:20.906 [restartedMain] DEBUG c.e.s.StudentArchivesApplication - Running with Spring Boot v3.3.0, Spring v6.1.8
+2026-07-10 14:34:20.907 [restartedMain] INFO  c.e.s.StudentArchivesApplication - The following 1 profile is active: "dev"
+2026-07-10 14:34:21.929 [restartedMain] DEBUG c.e.s.c.s.JwtAuthenticationFilter - Filter 'jwtAuthenticationFilter' configured for use
+2026-07-10 14:34:24.900 [restartedMain] INFO  c.e.s.StudentArchivesApplication - Started StudentArchivesApplication in 4.303 seconds (process running for 4.685)
+2026-07-10 14:35:24.468 [captcha-cleaner] DEBUG c.e.s.s.impl.user.CaptchaServiceImpl - 验证码已清理，当前存储数: 0
+2026-07-10 14:36:24.469 [captcha-cleaner] DEBUG c.e.s.s.impl.user.CaptchaServiceImpl - 验证码已清理，当前存储数: 0
+2026-07-10 14:37:00.171 [restartedMain] INFO  c.e.s.StudentArchivesApplication - Starting StudentArchivesApplication using Java 21.0.11 with PID 19032 (E:\StudentArchives\target\classes started by 21117 in E:\StudentArchives)
+2026-07-10 14:37:00.171 [restartedMain] DEBUG c.e.s.StudentArchivesApplication - Running with Spring Boot v3.3.0, Spring v6.1.8
+2026-07-10 14:37:00.171 [restartedMain] INFO  c.e.s.StudentArchivesApplication - The following 1 profile is active: "dev"
+2026-07-10 14:37:00.501 [restartedMain] DEBUG c.e.s.c.s.JwtAuthenticationFilter - Filter 'jwtAuthenticationFilter' configured for use
+2026-07-10 14:37:01.882 [restartedMain] INFO  c.e.s.StudentArchivesApplication - Started StudentArchivesApplication in 1.742 seconds (process running for 161.667)
+2026-07-10 14:37:06.475 [restartedMain] INFO  c.e.s.StudentArchivesApplication - Starting StudentArchivesApplication using Java 21.0.11 with PID 19032 (E:\StudentArchives\target\classes started by 21117 in E:\StudentArchives)
+2026-07-10 14:37:06.475 [restartedMain] DEBUG c.e.s.StudentArchivesApplication - Running with Spring Boot v3.3.0, Spring v6.1.8
+2026-07-10 14:37:06.475 [restartedMain] INFO  c.e.s.StudentArchivesApplication - The following 1 profile is active: "dev"
+2026-07-10 14:37:06.709 [restartedMain] DEBUG c.e.s.c.s.JwtAuthenticationFilter - Filter 'jwtAuthenticationFilter' configured for use
+2026-07-10 14:37:07.952 [restartedMain] INFO  c.e.s.StudentArchivesApplication - Started StudentArchivesApplication in 1.499 seconds (process running for 167.737)
+2026-07-10 14:37:11.887 [restartedMain] INFO  c.e.s.StudentArchivesApplication - Starting StudentArchivesApplication using Java 21.0.11 with PID 19032 (E:\StudentArchives\target\classes started by 21117 in E:\StudentArchives)
+2026-07-10 14:37:11.888 [restartedMain] DEBUG c.e.s.StudentArchivesApplication - Running with Spring Boot v3.3.0, Spring v6.1.8
+2026-07-10 14:37:11.888 [restartedMain] INFO  c.e.s.StudentArchivesApplication - The following 1 profile is active: "dev"
+2026-07-10 14:37:12.627 [restartedMain] INFO  c.e.s.StudentArchivesApplication - Started StudentArchivesApplication in 0.764 seconds (process running for 172.412)
+2026-07-10 14:37:15.155 [restartedMain] INFO  c.e.s.StudentArchivesApplication - Starting StudentArchivesApplication using Java 21.0.11 with PID 19032 (E:\StudentArchives\target\classes started by 21117 in E:\StudentArchives)
+2026-07-10 14:37:15.155 [restartedMain] DEBUG c.e.s.StudentArchivesApplication - Running with Spring Boot v3.3.0, Spring v6.1.8
+2026-07-10 14:37:15.155 [restartedMain] INFO  c.e.s.StudentArchivesApplication - The following 1 profile is active: "dev"
+2026-07-10 14:37:15.726 [restartedMain] DEBUG c.e.s.c.s.JwtAuthenticationFilter - Filter 'jwtAuthenticationFilter' configured for use
+2026-07-10 14:37:17.034 [restartedMain] INFO  c.e.s.StudentArchivesApplication - Started StudentArchivesApplication in 1.898 seconds (process running for 176.82)
+2026-07-10 14:37:24.466 [captcha-cleaner] DEBUG c.e.s.s.impl.user.CaptchaServiceImpl - 验证码已清理，当前存储数: 0
+2026-07-10 14:38:01.672 [captcha-cleaner] DEBUG c.e.s.s.impl.user.CaptchaServiceImpl - 验证码已清理，当前存储数: 0
+2026-07-10 14:38:03.266 [http-nio-8080-exec-4] WARN  c.e.s.c.s.JwtAuthenticationFilter - JWT认证失败: JWT signature does not match locally computed signature. JWT validity cannot be asserted and should not be trusted.
+2026-07-10 14:38:07.786 [captcha-cleaner] DEBUG c.e.s.s.impl.user.CaptchaServiceImpl - 验证码已清理，当前存储数: 0
+2026-07-10 14:38:16.841 [captcha-cleaner] DEBUG c.e.s.s.impl.user.CaptchaServiceImpl - 验证码已清理，当前存储数: 0
+2026-07-10 14:38:24.472 [captcha-cleaner] DEBUG c.e.s.s.impl.user.CaptchaServiceImpl - 验证码已清理，当前存储数: 0
+2026-07-10 14:39:01.669 [captcha-cleaner] DEBUG c.e.s.s.impl.user.CaptchaServiceImpl - 验证码已清理，当前存储数: 0
+2026-07-10 14:39:07.789 [captcha-cleaner] DEBUG c.e.s.s.impl.user.CaptchaServiceImpl - 验证码已清理，当前存储数: 0
+2026-07-10 14:39:16.841 [captcha-cleaner] DEBUG c.e.s.s.impl.user.CaptchaServiceImpl - 验证码已清理，当前存储数: 0
+2026-07-10 14:39:24.463 [captcha-cleaner] DEBUG c.e.s.s.impl.user.CaptchaServiceImpl - 验证码已清理，当前存储数: 0
+2026-07-10 14:39:45.678 [restartedMain] INFO  c.e.s.StudentArchivesApplication - Starting StudentArchivesApplication using Java 21.0.11 with PID 19032 (E:\StudentArchives\target\classes started by 21117 in E:\StudentArchives)
+2026-07-10 14:39:45.678 [restartedMain] DEBUG c.e.s.StudentArchivesApplication - Running with Spring Boot v3.3.0, Spring v6.1.8
+2026-07-10 14:39:45.678 [restartedMain] INFO  c.e.s.StudentArchivesApplication - The following 1 profile is active: "dev"
+2026-07-10 14:39:45.975 [restartedMain] DEBUG c.e.s.c.s.JwtAuthenticationFilter - Filter 'jwtAuthenticationFilter' configured for use
+2026-07-10 14:39:47.246 [restartedMain] INFO  c.e.s.StudentArchivesApplication - Started StudentArchivesApplication in 1.593 seconds (process running for 327.032)
