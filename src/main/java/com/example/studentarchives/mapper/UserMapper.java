@@ -17,6 +17,7 @@ public interface UserMapper {
     @Mapping(target = "userId", source = "id")
     @Mapping(target = "gender", source = "gender", qualifiedByName = "genderToInt")
     @Mapping(target = "genderLabel", source = "gender", qualifiedByName = "genderToLabel")
+    @Mapping(target = "phone", source = "phone", qualifiedByName = "maskPhone")
     @Mapping(target = "schoolName", expression = "java(user.getSchool() != null ? user.getSchool().getName() : null)")
     @Mapping(target = "roles", ignore = true)
     @Mapping(target = "roleNames", ignore = true)
@@ -35,5 +36,12 @@ public interface UserMapper {
         if (gender == null) return GenderEnum.UNKNOWN.getLabel();
         GenderEnum ge = GenderEnum.of(gender.intValue());
         return ge != null ? ge.getLabel() : GenderEnum.UNKNOWN.getLabel();
+    }
+
+    /** 手机号脱敏：138****0001 */
+    @Named("maskPhone")
+    default String maskPhone(String phone) {
+        if (phone == null || phone.length() < 7) return phone;
+        return phone.substring(0, 3) + "****" + phone.substring(phone.length() - 4);
     }
 }
