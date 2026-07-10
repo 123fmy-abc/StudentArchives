@@ -772,3 +772,46 @@
 2026-07-10 14:39:07.789 [captcha-cleaner] DEBUG c.e.s.s.impl.user.CaptchaServiceImpl - 验证码已清理，当前存储数: 0
 2026-07-10 14:39:16.841 [captcha-cleaner] DEBUG c.e.s.s.impl.user.CaptchaServiceImpl - 验证码已清理，当前存储数: 0
 2026-07-10 14:39:24.463 [captcha-cleaner] DEBUG c.e.s.s.impl.user.CaptchaServiceImpl - 验证码已清理，当前存储数: 0
+2026-07-10 14:39:45.678 [restartedMain] INFO  c.e.s.StudentArchivesApplication - Starting StudentArchivesApplication using Java 21.0.11 with PID 19032 (E:\StudentArchives\target\classes started by 21117 in E:\StudentArchives)
+2026-07-10 14:39:45.678 [restartedMain] DEBUG c.e.s.StudentArchivesApplication - Running with Spring Boot v3.3.0, Spring v6.1.8
+2026-07-10 14:39:45.678 [restartedMain] INFO  c.e.s.StudentArchivesApplication - The following 1 profile is active: "dev"
+2026-07-10 14:39:45.975 [restartedMain] DEBUG c.e.s.c.s.JwtAuthenticationFilter - Filter 'jwtAuthenticationFilter' configured for use
+2026-07-10 14:39:47.246 [restartedMain] INFO  c.e.s.StudentArchivesApplication - Started StudentArchivesApplication in 1.593 seconds (process running for 327.032)
+2026-07-10 14:41:47.048 [captcha-cleaner] DEBUG c.e.s.s.impl.user.CaptchaServiceImpl - 验证码已清理，当前存储数: 0
+2026-07-10 14:42:01.672 [captcha-cleaner] DEBUG c.e.s.s.impl.user.CaptchaServiceImpl - 验证码已清理，当前存储数: 0
+2026-07-10 14:42:07.787 [captcha-cleaner] DEBUG c.e.s.s.impl.user.CaptchaServiceImpl - 验证码已清理，当前存储数: 0
+2026-07-10 14:42:16.845 [captcha-cleaner] DEBUG c.e.s.s.impl.user.CaptchaServiceImpl - 验证码已清理，当前存储数: 0
+2026-07-10 14:42:24.469 [captcha-cleaner] DEBUG c.e.s.s.impl.user.CaptchaServiceImpl - 验证码已清理，当前存储数: 0
+2026-07-10 14:42:47.052 [captcha-cleaner] DEBUG c.e.s.s.impl.user.CaptchaServiceImpl - 验证码已清理，当前存储数: 0
+2026-07-10 14:43:01.660 [captcha-cleaner] DEBUG c.e.s.s.impl.user.CaptchaServiceImpl - 验证码已清理，当前存储数: 0
+2026-07-10 14:43:07.787 [captcha-cleaner] DEBUG c.e.s.s.impl.user.CaptchaServiceImpl - 验证码已清理，当前存储数: 0
+2026-07-10 14:43:16.831 [captcha-cleaner] DEBUG c.e.s.s.impl.user.CaptchaServiceImpl - 验证码已清理，当前存储数: 0
+2026-07-10 14:43:24.467 [captcha-cleaner] DEBUG c.e.s.s.impl.user.CaptchaServiceImpl - 验证码已清理，当前存储数: 0
+2026-07-10 14:43:47.054 [captcha-cleaner] DEBUG c.e.s.s.impl.user.CaptchaServiceImpl - 验证码已清理，当前存储数: 0
+2026-07-10 14:43:47.543 [restartedMain] INFO  c.e.s.StudentArchivesApplication - Starting StudentArchivesApplication using Java 21.0.11 with PID 19032 (E:\StudentArchives\target\classes started by 21117 in E:\StudentArchives)
+2026-07-10 14:43:47.543 [restartedMain] DEBUG c.e.s.StudentArchivesApplication - Running with Spring Boot v3.3.0, Spring v6.1.8
+2026-07-10 14:43:47.543 [restartedMain] INFO  c.e.s.StudentArchivesApplication - The following 1 profile is active: "dev"
+2026-07-10 14:43:47.799 [restartedMain] DEBUG c.e.s.c.s.JwtAuthenticationFilter - Filter 'jwtAuthenticationFilter' configured for use
+2026-07-10 14:43:49.535 [restartedMain] INFO  c.e.s.StudentArchivesApplication - Started StudentArchivesApplication in 2.024 seconds (process running for 569.32)
+2026-07-10 14:43:54.144 [restartedMain] INFO  c.e.s.StudentArchivesApplication - Starting StudentArchivesApplication using Java 21.0.11 with PID 19032 (E:\StudentArchives\target\classes started by 21117 in E:\StudentArchives)
+2026-07-10 14:43:54.144 [restartedMain] DEBUG c.e.s.StudentArchivesApplication - Running with Spring Boot v3.3.0, Spring v6.1.8
+2026-07-10 14:43:54.144 [restartedMain] INFO  c.e.s.StudentArchivesApplication - The following 1 profile is active: "dev"
+2026-07-10 14:43:54.382 [restartedMain] DEBUG c.e.s.c.s.JwtAuthenticationFilter - Filter 'jwtAuthenticationFilter' configured for use
+2026-07-10 14:43:55.792 [restartedMain] INFO  c.e.s.StudentArchivesApplication - Started StudentArchivesApplication in 1.668 seconds (process running for 575.578)
+2026-07-10 14:43:59.360 [restartedMain] INFO  c.e.s.StudentArchivesApplication - Starting StudentArchivesApplication using Java 21.0.11 with PID 19032 (E:\StudentArchives\target\classes started by 21117 in E:\StudentArchives)
+2026-07-10 14:43:59.360 [restartedMain] DEBUG c.e.s.StudentArchivesApplication - Running with Spring Boot v3.3.0, Spring v6.1.8
+2026-07-10 14:43:59.360 [restartedMain] INFO  c.e.s.StudentArchivesApplication - The following 1 profile is active: "dev"
+2026-07-10 14:43:59.615 [restartedMain] DEBUG c.e.s.c.s.JwtAuthenticationFilter - Filter 'jwtAuthenticationFilter' configured for use
+2026-07-10 14:44:01.074 [restartedMain] INFO  c.e.s.StudentArchivesApplication - Started StudentArchivesApplication in 1.742 seconds (process running for 580.859)
+2026-07-10 14:44:01.671 [captcha-cleaner] DEBUG c.e.s.s.impl.user.CaptchaServiceImpl - 验证码已清理，当前存储数: 0
+2026-07-10 14:44:07.789 [captcha-cleaner] DEBUG c.e.s.s.impl.user.CaptchaServiceImpl - 验证码已清理，当前存储数: 0
+2026-07-10 14:44:16.830 [captcha-cleaner] DEBUG c.e.s.s.impl.user.CaptchaServiceImpl - 验证码已清理，当前存储数: 0
+2026-07-10 14:44:24.473 [captcha-cleaner] DEBUG c.e.s.s.impl.user.CaptchaServiceImpl - 验证码已清理，当前存储数: 0
+2026-07-10 14:44:47.052 [captcha-cleaner] DEBUG c.e.s.s.impl.user.CaptchaServiceImpl - 验证码已清理，当前存储数: 0
+2026-07-10 14:44:49.324 [captcha-cleaner] DEBUG c.e.s.s.impl.user.CaptchaServiceImpl - 验证码已清理，当前存储数: 0
+2026-07-10 14:44:52.967 [restartedMain] INFO  c.e.s.StudentArchivesApplication - Starting StudentArchivesApplication using Java 21.0.11 with PID 19032 (E:\StudentArchives\target\classes started by 21117 in E:\StudentArchives)
+2026-07-10 14:44:52.967 [restartedMain] DEBUG c.e.s.StudentArchivesApplication - Running with Spring Boot v3.3.0, Spring v6.1.8
+2026-07-10 14:44:52.967 [restartedMain] INFO  c.e.s.StudentArchivesApplication - The following 1 profile is active: "dev"
+2026-07-10 14:44:53.199 [restartedMain] DEBUG c.e.s.c.s.JwtAuthenticationFilter - Filter 'jwtAuthenticationFilter' configured for use
+2026-07-10 14:44:54.440 [restartedMain] INFO  c.e.s.StudentArchivesApplication - Started StudentArchivesApplication in 1.492 seconds (process running for 634.225)
+2026-07-10 14:44:55.587 [captcha-cleaner] DEBUG c.e.s.s.impl.user.CaptchaServiceImpl - 验证码已清理，当前存储数: 0
