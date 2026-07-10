@@ -34,7 +34,9 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
     /** 不需要认证的路径前缀 */
     private static final String[] PUBLIC_PATHS = {
             "/auth/login",
-            "/api/auth/login"
+            "/api/auth/login",
+            "/auth/captcha",
+            "/api/auth/captcha"
     };
 
     @Override

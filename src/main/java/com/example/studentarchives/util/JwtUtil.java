@@ -29,7 +29,7 @@ public class JwtUtil {
     }
 
     /**
-     * 生成访问令牌
+     * 生成访问令牌（默认过期时间）
      *
      * @param userId   用户ID
      * @param userNo   学号/工号
@@ -37,13 +37,26 @@ public class JwtUtil {
      * @return JWT 令牌字符串
      */
     public String generateToken(Long userId, String userNo, Long schoolId) {
+        return generateToken(userId, userNo, schoolId, jwtProperties.getExpirationMs());
+    }
+
+    /**
+     * 生成访问令牌（自定义过期时间）
+     *
+     * @param userId       用户ID
+     * @param userNo       学号/工号
+     * @param schoolId     学校ID
+     * @param expirationMs 过期时间（毫秒）
+     * @return JWT 令牌字符串
+     */
+    public String generateToken(Long userId, String userNo, Long schoolId, long expirationMs) {
         long now = System.currentTimeMillis();
         return Jwts.builder()
                 .subject(String.valueOf(userId))
                 .claim("userNo", userNo)
                 .claim("schoolId", schoolId)
                 .issuedAt(new Date(now))
-                .expiration(new Date(now + jwtProperties.getExpirationMs()))
+                .expiration(new Date(now + expirationMs))
                 .signWith(getSigningKey())
                 .compact();
     }

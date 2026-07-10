@@ -11,10 +11,12 @@ import com.example.studentarchives.entity.user.UserRole;
 import com.example.studentarchives.enums.StatusEnum;
 import com.example.studentarchives.exception.BusinessException;
 import com.example.studentarchives.mapper.UserMapper;
+import com.example.studentarchives.repository.log.LoginLogRepository;
 import com.example.studentarchives.repository.role.PermissionRepository;
 import com.example.studentarchives.repository.role.RoleRepository;
 import com.example.studentarchives.repository.role.UserRoleRepository;
 import com.example.studentarchives.repository.user.UserRepository;
+import com.example.studentarchives.service.user.CaptchaService;
 import com.example.studentarchives.service.user.UserService;
 import com.example.studentarchives.util.JwtUtil;
 import jakarta.servlet.http.HttpServletRequest;
@@ -23,15 +25,23 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.util.StringUtils;
 
 import java.util.Collections;
 import java.util.List;
+import java.util.UUID;
 import java.util.stream.Collectors;
 
 @Slf4j
 @Service
 @RequiredArgsConstructor
 public class UserServiceImpl implements UserService {
+
+    /** 记住密码：令牌过期时间（7天） */
+    private static final long REMEMBER_ME_EXPIRATION_MS = 7 * 24 * 60 * 60 * 1000L;
+
+    /** 普通登录：令牌过期时间（24小时） */
+    private static final long DEFAULT_EXPIRATION_MS = 24 * 60 * 60 * 1000L;
 
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
@@ -41,10 +51,25 @@ public class UserServiceImpl implements UserService {
     private final UserRoleRepository userRoleRepository;
     private final RoleRepository roleRepository;
     private final PermissionRepository permissionRepository;
+    private final LoginLogRepository loginLogRepository;
+    private final CaptchaService captchaService;
 
     @Override
     @Transactional
     public LoginResponse login(LoginRequest loginRequest) {
+        // 0. 验证图形验证码（如提供了 captchaKey 则强制校验）
+        if (StringUtils.hasText(loginRequest.getCaptchaKey())) {
+            if (!StringUtils.hasText(loginRequest.getCaptchaCode())) {
+                throw new BusinessException(ResultCode.PARAM_ERROR, "请输入验证码");
+            }
+            boolean valid = captchaService.validateCaptcha(
+                    loginRequest.getCaptchaKey(), loginRequest.getCaptchaCode());
+            if (!valid) {
+                log.warn("登录失败：验证码错误 userNo={}", loginRequest.getUserNo());
+                throw new BusinessException(ResultCode.PARAM_ERROR, "验证码错误或已过期");
+            }
+        }
+
         // 1. 查找用户
         User user = userRepository.findByUserNo(loginRequest.getUserNo())
                 .orElseThrow(() -> {
@@ -66,19 +91,31 @@ public class UserServiceImpl implements UserService {
             throw new BusinessException(ResultCode.ACCOUNT_DISABLED);
         }
 
-        // 4. 生成令牌
-        String token = jwtUtil.generateToken(user.getId(), user.getUserNo(), user.getSchoolId());
+        // 4. 判断是否为"记住密码"模式
+        boolean rememberMe = Boolean.TRUE.equals(loginRequest.getRememberMe());
+        long expiresIn = rememberMe ? REMEMBER_ME_EXPIRATION_MS : DEFAULT_EXPIRATION_MS;
 
-        // 5. 记录登录成功日志
+        // 5. 生成令牌
+        String token = jwtUtil.generateToken(user.getId(), user.getUserNo(), user.getSchoolId(), expiresIn);
+
+        // 6. 记住密码：生成 rememberToken 并持久化
+        if (rememberMe) {
+            String rememberToken = UUID.randomUUID().toString().replace("-", "");
+            user.setRememberToken(rememberToken);
+            userRepository.save(user);
+            log.debug("记住密码：已为用户 userId={} 生成 rememberToken", user.getId());
+        }
+
+        // 7. 记录登录成功日志
         recordLoginLog(user.getId(), (byte) 1, null);
 
-        log.info("登录成功 userNo={}, userId={}", user.getUserNo(), user.getId());
+        log.info("登录成功 userNo={}, userId={}, rememberMe={}", user.getUserNo(), user.getId(), rememberMe);
 
-        // 6. 返回结果
+        // 8. 返回结果
         return LoginResponse.builder()
                 .token(token)
                 .tokenType("Bearer")
-                .expiresIn(86400000)
+                .expiresIn(expiresIn)
                 .userInfo(buildUserProfile(user))
                 .build();
     }
@@ -132,8 +169,7 @@ public class UserServiceImpl implements UserService {
             logEntry.setIpAddress(getClientIp());
             logEntry.setUserAgent(request.getHeader("User-Agent"));
             logEntry.setSchoolId(0L); // 登录时未确定 school，后续可补充
-            // 使用 EntityManager 或直接注入 LoginLogRepository 来保存
-            // 暂时跳过持久化以避免额外依赖，后面再完善
+            loginLogRepository.save(logEntry);
         } catch (Exception e) {
             log.warn("记录登录日志异常", e);
         }

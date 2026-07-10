@@ -37,8 +37,8 @@ public class SecurityConfig {
             .httpBasic(httpBasic -> httpBasic.disable())
             // URL 权限配置
             .authorizeHttpRequests(auth -> auth
-                    // 登录接口公开
-                    .requestMatchers("/auth/login").permitAll()
+                    // 公开接口
+                    .requestMatchers("/auth/login", "/auth/captcha").permitAll()
                     // 其余 API 需认证
                     .requestMatchers("/**").authenticated()
                     // 其他（静态资源、错误页面等）放行
