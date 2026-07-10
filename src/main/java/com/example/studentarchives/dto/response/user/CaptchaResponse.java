@@ -19,4 +19,7 @@ public class CaptchaResponse {
 
     /** Base64 图片（含 data:image/png;base64, 前缀） */
     private String image;
+
+    /** 明文验证码（仅开发环境返回，方便调试） */
+    private String devCode;
 }

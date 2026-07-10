@@ -57,17 +57,15 @@ public class UserServiceImpl implements UserService {
     @Override
     @Transactional
     public LoginResponse login(LoginRequest loginRequest) {
-        // 0. 验证图形验证码（如提供了 captchaKey 则强制校验）
-        if (StringUtils.hasText(loginRequest.getCaptchaKey())) {
-            if (!StringUtils.hasText(loginRequest.getCaptchaCode())) {
-                throw new BusinessException(ResultCode.PARAM_ERROR, "请输入验证码");
-            }
-            boolean valid = captchaService.validateCaptcha(
-                    loginRequest.getCaptchaKey(), loginRequest.getCaptchaCode());
-            if (!valid) {
-                log.warn("登录失败：验证码错误 userNo={}", loginRequest.getUserNo());
-                throw new BusinessException(ResultCode.PARAM_ERROR, "验证码错误或已过期");
-            }
+        // 0. 验证图形验证码（强制校验）
+        if (!StringUtils.hasText(loginRequest.getCaptchaKey()) || !StringUtils.hasText(loginRequest.getCaptchaCode())) {
+            throw new BusinessException(ResultCode.PARAM_ERROR, "请输入验证码");
+        }
+        boolean valid = captchaService.validateCaptcha(
+                loginRequest.getCaptchaKey(), loginRequest.getCaptchaCode());
+        if (!valid) {
+            log.warn("登录失败：验证码错误 userNo={}", loginRequest.getUserNo());
+            throw new BusinessException(ResultCode.PARAM_ERROR, "验证码错误或已过期");
         }
 
         // 1. 查找用户
@@ -168,8 +166,8 @@ public class UserServiceImpl implements UserService {
             logEntry.setFailReason(failReason);
             logEntry.setIpAddress(getClientIp());
             logEntry.setUserAgent(request.getHeader("User-Agent"));
-            logEntry.setSchoolId(0L); // 登录时未确定 school，后续可补充
-            loginLogRepository.save(logEntry);
+            logEntry.setSchoolId(1L); // 默认为第一个学校（测试大学）
+            loginLogRepository.saveAndFlush(logEntry);
         } catch (Exception e) {
             log.warn("记录登录日志异常", e);
         }

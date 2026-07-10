@@ -16,20 +16,51 @@ import lombok.Getter;
 public class BusinessException extends RuntimeException {
 
     private final int code;
+    private final int httpStatus;
 
     public BusinessException(ResultCode resultCode) {
         super(resultCode.getMessage());
         this.code = resultCode.getCode();
+        this.httpStatus = resolveHttpStatus(resultCode);
     }
 
     public BusinessException(ResultCode resultCode, String message) {
         super(message);
         this.code = resultCode.getCode();
+        this.httpStatus = resolveHttpStatus(resultCode);
     }
 
     public BusinessException(int code, String message) {
         super(message);
         this.code = code;
+        this.httpStatus = 400;
+    }
+
+    public BusinessException(ResultCode resultCode, String message, int httpStatus) {
+        super(message);
+        this.code = resultCode.getCode();
+        this.httpStatus = httpStatus;
+    }
+
+    /** 根据错误码推断 HTTP 状态码 */
+    private static int resolveHttpStatus(ResultCode resultCode) {
+        int code = resultCode.getCode();
+        if (code == 5 || code == 20005 || code == 20006 || code == 20007) {
+            return 403; // 禁止操作 / 无访问权限 / 账号禁用冻结
+        }
+        if (code >= 20000 && code < 30000) {
+            return 401; // 认证错误：未登录 / Token失效过期 / 密码错误
+        }
+        if (code == 2 || code == 30001) {
+            return 404; // 数据不存在 / 数据已删除
+        }
+        if (code >= 30000 && code < 40000) {
+            return 409; // 数据冲突
+        }
+        if (code >= 90000) {
+            return 500; // 系统错误
+        }
+        return 400; // 默认：参数/业务错误
     }
 
     /** 快速创建：数据不存在 */

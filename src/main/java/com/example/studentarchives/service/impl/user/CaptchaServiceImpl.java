@@ -61,7 +61,10 @@ public class CaptchaServiceImpl implements CaptchaService {
 
     @Override
     public CaptchaResponse generateCaptcha() {
-        // 1. 生成随机验证码
+        // 1. 清除所有旧验证码（新生成的会使之前的失效）
+        store.clear();
+
+        // 2. 生成随机验证码
         String code = generateCode();
 
         // 2. 生成图片
@@ -78,6 +81,7 @@ public class CaptchaServiceImpl implements CaptchaService {
         return CaptchaResponse.builder()
                 .key(key)
                 .image("data:image/png;base64," + base64Image)
+                .devCode(code) // 明文验证码，方便调试
                 .build();
     }
 
