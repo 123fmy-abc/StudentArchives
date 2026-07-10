@@ -40,3 +40,7 @@ Thumbs.db
 *.properties.local 
 application-local.yml 
 application-dev.yml 
+
+# 日志 
+logs/
+*.log
