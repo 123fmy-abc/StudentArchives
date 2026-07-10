@@ -837,3 +837,12 @@
 2026-07-10 14:47:07.777 [captcha-cleaner] DEBUG c.e.s.s.impl.user.CaptchaServiceImpl - 验证码已清理，当前存储数: 0
 2026-07-10 14:47:16.844 [captcha-cleaner] DEBUG c.e.s.s.impl.user.CaptchaServiceImpl - 验证码已清理，当前存储数: 0
 2026-07-10 14:47:24.462 [captcha-cleaner] DEBUG c.e.s.s.impl.user.CaptchaServiceImpl - 验证码已清理，当前存储数: 0
+2026-07-10 14:47:47.044 [captcha-cleaner] DEBUG c.e.s.s.impl.user.CaptchaServiceImpl - 验证码已清理，当前存储数: 0
+2026-07-10 14:47:49.326 [captcha-cleaner] DEBUG c.e.s.s.impl.user.CaptchaServiceImpl - 验证码已清理，当前存储数: 0
+2026-07-10 14:47:54.244 [captcha-cleaner] DEBUG c.e.s.s.impl.user.CaptchaServiceImpl - 验证码已清理，当前存储数: 0
+2026-07-10 14:47:55.576 [captcha-cleaner] DEBUG c.e.s.s.impl.user.CaptchaServiceImpl - 验证码已清理，当前存储数: 0
+2026-07-10 14:48:00.869 [captcha-cleaner] DEBUG c.e.s.s.impl.user.CaptchaServiceImpl - 验证码已清理，当前存储数: 0
+2026-07-10 14:48:01.671 [captcha-cleaner] DEBUG c.e.s.s.impl.user.CaptchaServiceImpl - 验证码已清理，当前存储数: 0
+2026-07-10 14:48:07.779 [captcha-cleaner] DEBUG c.e.s.s.impl.user.CaptchaServiceImpl - 验证码已清理，当前存储数: 0
+2026-07-10 14:48:16.839 [captcha-cleaner] DEBUG c.e.s.s.impl.user.CaptchaServiceImpl - 验证码已清理，当前存储数: 0
+2026-07-10 14:48:24.467 [captcha-cleaner] DEBUG c.e.s.s.impl.user.CaptchaServiceImpl - 验证码已清理，当前存储数: 0
