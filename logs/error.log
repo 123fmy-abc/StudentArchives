@@ -419,3 +419,27 @@ Using generated security password: fc1ce276-6d2f-40fd-b859-3b85892bea5f
 
 This generated password is for development use only. Your security configuration must be updated before running your application in production.
 
+2026-07-10 14:43:48.671 [restartedMain] WARN  org.hibernate.orm.deprecation - HHH90000025: MySQL8Dialect does not need to be specified explicitly using 'hibernate.dialect' (remove the property setting and it will be selected by default)
+2026-07-10 14:43:48.671 [restartedMain] WARN  org.hibernate.orm.deprecation - HHH90000026: MySQL8Dialect has been deprecated; use org.hibernate.dialect.MySQLDialect instead
+2026-07-10 14:43:49.363 [restartedMain] WARN  o.s.b.a.s.s.UserDetailsServiceAutoConfiguration - 
+
+Using generated security password: c8e61463-0d29-4014-899e-bafe0bca8650
+
+This generated password is for development use only. Your security configuration must be updated before running your application in production.
+
+2026-07-10 14:43:54.984 [restartedMain] WARN  org.hibernate.orm.deprecation - HHH90000025: MySQL8Dialect does not need to be specified explicitly using 'hibernate.dialect' (remove the property setting and it will be selected by default)
+2026-07-10 14:43:54.985 [restartedMain] WARN  org.hibernate.orm.deprecation - HHH90000026: MySQL8Dialect has been deprecated; use org.hibernate.dialect.MySQLDialect instead
+2026-07-10 14:43:55.608 [restartedMain] WARN  o.s.b.a.s.s.UserDetailsServiceAutoConfiguration - 
+
+Using generated security password: 6ca25cfd-c969-475b-8df2-55b85105f9b7
+
+This generated password is for development use only. Your security configuration must be updated before running your application in production.
+
+2026-07-10 14:44:00.326 [restartedMain] WARN  org.hibernate.orm.deprecation - HHH90000025: MySQL8Dialect does not need to be specified explicitly using 'hibernate.dialect' (remove the property setting and it will be selected by default)
+2026-07-10 14:44:00.326 [restartedMain] WARN  org.hibernate.orm.deprecation - HHH90000026: MySQL8Dialect has been deprecated; use org.hibernate.dialect.MySQLDialect instead
+2026-07-10 14:44:00.889 [restartedMain] WARN  o.s.b.a.s.s.UserDetailsServiceAutoConfiguration - 
+
+Using generated security password: 0aac8c93-44e0-4655-b497-e39df4f3c185
+
+This generated password is for development use only. Your security configuration must be updated before running your application in production.
+
