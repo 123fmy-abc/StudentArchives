@@ -1,0 +1,47 @@
+version: "3.8"
+
+services:
+  mysql:
+    image: mysql:8.0
+    container_name: stuarchives-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_DATABASE: student_archives
+      MYSQL_USER: StuArch
+      MYSQL_PASSWORD: 7sK9pR2vB5nG8zQ4
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root123}
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql-data:/var/lib/mysql
+      - ./docker/mysql/init:/docker-entrypoint-initdb.d
+    command:
+      --character-set-server=utf8mb4
+      --collation-server=utf8mb4_unicode_ci
+      --max_connections=200
+      --default-time_zone=+8:00
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  app:
+    build: .
+    container_name: stuarchives-app
+    restart: unless-stopped
+    depends_on:
+      mysql:
+        condition: service_healthy
+    environment:
+      SPRING_PROFILES_ACTIVE: prod
+      TZ: Asia/Shanghai
+      LOG_PATH: /var/log/student-archives
+    ports:
+      - "8089:8089"
+    volumes:
+      - app-logs:/var/log/student-archives
+
+volumes:
+  mysql-data:
+  app-logs:

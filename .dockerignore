@@ -1,0 +1,10 @@
+target/
+logs/
+.idea/
+.git/
+.gitignore
+.gitattributes
+HELP.md
+*.md
+*.bat
+mvnw.cmd
