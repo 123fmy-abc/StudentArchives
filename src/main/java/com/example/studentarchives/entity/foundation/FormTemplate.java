@@ -40,7 +40,7 @@ public class FormTemplate extends BaseEntity {
     private String applicableRoles;
 
     @Column(name = "is_default")
-    private Byte isDefault;
+    private Integer isDefault;
 
     @Column(name = "version", nullable = false)
     private Integer version;

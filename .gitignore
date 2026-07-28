@@ -39,8 +39,11 @@ Thumbs.db
 # Environment 
 *.properties.local 
 application-local.yml 
-application-dev.yml 
+# application-dev.yml 不 gitignore，团队共享同一开发数据库
 
-# 日志 
+# 日志
 logs/
 *.log
+
+# 上传文件（运行时动态资源）
+uploads/

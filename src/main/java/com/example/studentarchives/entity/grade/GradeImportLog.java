@@ -44,7 +44,7 @@ public class GradeImportLog {
     private String failDetails;
 
     @Column(name = "import_status", nullable = false)
-    private byte importStatus;
+    private Integer importStatus;
 
     @Column(name = "started_at")
     private LocalDateTime startedAt;

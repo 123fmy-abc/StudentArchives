@@ -32,6 +32,4 @@ public class IndicatorRuleVersion extends BaseEntity {
     @Column(name = "created_by")
     private Long createdBy;
 
-    @Column(name = "status", nullable = false)
-    private Integer status = 1;
 }

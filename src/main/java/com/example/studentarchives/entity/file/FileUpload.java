@@ -48,7 +48,7 @@ public class FileUpload extends BaseEntity {
     private String previewUrl;
 
     @Column(name = "convert_status", nullable = false)
-    private Byte convertStatus;
+    private Integer convertStatus;
 
     @Column(name = "sort_order", nullable = false)
     private Integer sortOrder = 0;
@@ -57,7 +57,7 @@ public class FileUpload extends BaseEntity {
     private Long deletedBy;
 
     @Column(name = "file_status", nullable = false)
-    private Byte fileStatus;
+    private Integer fileStatus;
 
     @Column(name = "temp_expire_at")
     private LocalDateTime tempExpireAt;

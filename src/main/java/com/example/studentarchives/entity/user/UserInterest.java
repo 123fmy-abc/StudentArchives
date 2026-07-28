@@ -31,7 +31,7 @@ public class UserInterest extends BaseEntity {
     private Integer sort;
 
     @Column(name = "is_detail")
-    private Byte isDetail;
+    private Integer isDetail;
 
     @Column(name = "detail_content", length = 255)
     private String detailContent;

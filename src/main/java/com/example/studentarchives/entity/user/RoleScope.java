@@ -36,7 +36,7 @@ public class RoleScope extends BaseEntity {
     private Long semesterId;
 
     @Column(name = "is_primary")
-    private Byte isPrimary;
+    private Integer isPrimary;
 
     @Column(name = "appoint_by")
     private Long appointBy;

@@ -30,7 +30,7 @@ public class Semester extends BaseEntity {
     private LocalDate endDate;
 
     @Column(name = "is_current")
-    private Byte isCurrent;
+    private Integer isCurrent;
 
     @Column(name = "status", nullable = false)
     private Integer status = 1;

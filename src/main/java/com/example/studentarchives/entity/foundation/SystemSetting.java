@@ -31,5 +31,5 @@ public class SystemSetting extends BaseEntity {
     private String description;
 
     @Column(name = "is_editable", nullable = false)
-    private byte isEditable;
+    private Integer isEditable;
 }

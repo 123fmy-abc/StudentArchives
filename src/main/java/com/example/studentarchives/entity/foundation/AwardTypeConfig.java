@@ -26,11 +26,6 @@ public class AwardTypeConfig extends BaseEntity {
     @Column(name = "evaluate_desc", columnDefinition = "TEXT")
     private String evaluateDesc;
 
-    @Column(name = "evaluate_requirements", columnDefinition = "JSON")
-    private String evaluateRequirements;
-
-    @Column(name = "evaluate_notes", columnDefinition = "JSON")
-    private String evaluateNotes;
 
     @Lob
     @Column(name = "apply_desc", columnDefinition = "TEXT")

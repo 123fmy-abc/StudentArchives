@@ -29,13 +29,13 @@ public class ScoreCalculation extends BaseEntityNoUpdate {
     private String dataSource;
 
     @Column(name = "trigger_type")
-    private byte triggerType = 1;
+    private Integer triggerType = 1;
 
     @Column(name = "operator_id")
     private Long operatorId;
 
     @Column(name = "status")
-    private byte status = 1;
+    private Integer status = 1;
 
     @Column(name = "lock_version", nullable = false)
     private int lockVersion;

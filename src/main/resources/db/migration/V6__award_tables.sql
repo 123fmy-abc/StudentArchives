@@ -12,7 +12,7 @@ CREATE TABLE `award_type_configs` (
     `apply_desc`       TEXT            NULL DEFAULT NULL COMMENT '申报说明',
     `icon`             VARCHAR(100)    NULL DEFAULT NULL COMMENT '图标类名',
     `sort`             INT UNSIGNED    NOT NULL DEFAULT 0 COMMENT '排序',
-    `status`           TINYINT UNSIGNED NOT NULL DEFAULT 1 COMMENT '0=禁用 1=启用',
+    `status` INT NOT NULL DEFAULT 1 COMMENT '0=禁用 1=启用',
     `created_by`       BIGINT UNSIGNED NULL DEFAULT NULL COMMENT '创建人 ID',
     `updated_by`       BIGINT UNSIGNED NULL DEFAULT NULL COMMENT '更新人 ID',
     `created_at`       TIMESTAMP       NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -21,8 +21,8 @@ CREATE TABLE `award_type_configs` (
     `is_deleted_null`  TINYINT(1)      GENERATED ALWAYS AS (IF(`deleted_at` IS NULL, 0, NULL)) STORED NULL,
     PRIMARY KEY (`id`),
     UNIQUE KEY `uk_atc_award_type` (`award_type`, `is_deleted_null`),
-    CONSTRAINT `fk_atc_created_by` FOREIGN KEY (`created_by`) REFERENCES `users` (`id`) ON DELETE SET NULL,
-    CONSTRAINT `fk_atc_updated_by` FOREIGN KEY (`updated_by`) REFERENCES `users` (`id`) ON DELETE SET NULL
+    CONSTRAINT `fk_awtc_created_by` FOREIGN KEY (`created_by`) REFERENCES `users` (`id`) ON DELETE SET NULL,
+    CONSTRAINT `fk_awtc_updated_by` FOREIGN KEY (`updated_by`) REFERENCES `users` (`id`) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='奖项类型配置表';
 
 
@@ -38,7 +38,7 @@ CREATE TABLE `award_applications` (
     `issuing_unit`     VARCHAR(255)    NULL DEFAULT NULL COMMENT '发证/主办单位',
     `valid_until`      DATE            NULL DEFAULT NULL COMMENT '证书有效期',
     `participant_role` VARCHAR(50)     NULL DEFAULT NULL COMMENT '本人角色',
-    `status`           TINYINT UNSIGNED NOT NULL DEFAULT 0 COMMENT '0=草稿 1=待审批 2=通过 3=已退回 4=已撤销',
+    `status` INT NOT NULL DEFAULT 0 COMMENT '0=草稿 1=待审批 2=通过 3=已退回 4=已撤销',
     `rejected_reason`  TEXT            NULL DEFAULT NULL COMMENT '退回原因',
     `submitted_at`     DATETIME        NULL DEFAULT NULL COMMENT '提交时间',
     `audited_at`       DATETIME        NULL DEFAULT NULL COMMENT '审核时间',
