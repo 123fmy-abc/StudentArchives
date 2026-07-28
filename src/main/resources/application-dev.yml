@@ -1,0 +1,13 @@
+spring:
+  # ===== 数据源配置 =====
+  datasource:
+    url: jdbc:mysql://8.137.191.26:3306/student_archives?useUnicode=true&characterEncoding=utf-8&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true&useSSL=false
+    username: StuArch
+    password: ZCXCDMLZDNENkYRe
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    hikari:
+      maximum-pool-size: 10
+      minimum-idle: 3
+      connection-timeout: 30000
+      idle-timeout: 600000
+      max-lifetime: 1800000
