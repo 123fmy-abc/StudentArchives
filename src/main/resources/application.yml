@@ -1,6 +1,8 @@
 spring:
   application:
     name: StudentArchives
+  profiles:
+    active: dev
 
   # ===== JPA 配置 =====
   jpa:
@@ -10,7 +12,6 @@ spring:
     open-in-view: false
     properties:
       hibernate:
-        dialect: org.hibernate.dialect.MySQL8Dialect
         format_sql: true
 
   # ===== Flyway 配置 =====
@@ -23,6 +24,17 @@ spring:
     clean-disabled: true
     table: flyway_schema_history
 
+# ===== 服务器配置 =====
+server:
+  port: 8089
+  servlet:
+    context-path: /api
+
+# ===== JWT 配置 =====
+jwt:
+  secret: ry3PI9VzWou05VvcDoxd7zKBevj3YmTCqSULTOy3DCk=
+  expiration-ms: 86400000
+
 # ===== 日志配置 =====
 logging:
   file:
@@ -32,13 +44,3 @@ logging:
     org.springframework.security: WARN
     org.hibernate.SQL: WARN
     "org.hibernate.type.descriptor.sql": WARN
-
-# ===== 服务器配置 =====
-server:
-  servlet:
-    context-path: /api
-
-# ===== JWT 配置 =====
-jwt:
-  secret: ry3PI9VzWou05VvcDoxd7zKBevj3YmTCqSULTOy3DCk=
-  expiration-ms: 86400000
