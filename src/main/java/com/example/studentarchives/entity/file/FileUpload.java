@@ -1,24 +1,30 @@
 package com.example.studentarchives.entity.file;
 
 import com.example.studentarchives.entity.BaseEntity;
-import jakarta.persistence.*;
+import jakarta.persistence.Column;
+import jakarta.persistence.Entity;
+import jakarta.persistence.Table;
 import lombok.Getter;
 import lombok.Setter;
+import org.hibernate.annotations.SQLRestriction;
+
+import java.time.LocalDateTime;
 
 @Getter
 @Setter
 @Entity
 @Table(name = "file_uploads")
+@SQLRestriction("deleted_at IS NULL")
 public class FileUpload extends BaseEntity {
 
     @Column(name = "user_id", nullable = false)
     private Long userId;
 
-    @Column(name = "fileable_type", nullable = false, length = 50)
-    private String fileableType;
+    @Column(name = "biz_type", length = 50)
+    private String bizType;
 
-    @Column(name = "fileable_id", nullable = false)
-    private Long fileableId;
+    @Column(name = "biz_id")
+    private Long bizId;
 
     @Column(name = "file_category", length = 50)
     private String fileCategory;
@@ -38,6 +44,24 @@ public class FileUpload extends BaseEntity {
     @Column(name = "disk", nullable = false, length = 50)
     private String disk;
 
+    @Column(name = "preview_url", length = 500)
+    private String previewUrl;
+
+    @Column(name = "convert_status", nullable = false)
+    private Byte convertStatus;
+
     @Column(name = "sort_order", nullable = false)
-    private int sortOrder;
+    private Integer sortOrder = 0;
+
+    @Column(name = "deleted_by")
+    private Long deletedBy;
+
+    @Column(name = "file_status", nullable = false)
+    private Byte fileStatus;
+
+    @Column(name = "temp_expire_at")
+    private LocalDateTime tempExpireAt;
+
+    @Column(name = "download_expire_at")
+    private LocalDateTime downloadExpireAt;
 }

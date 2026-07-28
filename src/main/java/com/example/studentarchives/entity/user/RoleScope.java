@@ -1,9 +1,12 @@
 package com.example.studentarchives.entity.user;
 
 import com.example.studentarchives.entity.BaseEntity;
-import jakarta.persistence.*;
+import jakarta.persistence.Column;
+import jakarta.persistence.Entity;
+import jakarta.persistence.Table;
 import lombok.Getter;
 import lombok.Setter;
+import org.hibernate.annotations.SQLRestriction;
 
 import java.time.LocalDate;
 
@@ -11,7 +14,11 @@ import java.time.LocalDate;
 @Setter
 @Entity
 @Table(name = "role_scopes")
+@SQLRestriction("deleted_at IS NULL")
 public class RoleScope extends BaseEntity {
+
+    @Column(name = "school_id")
+    private Long schoolId;
 
     @Column(name = "user_id", nullable = false)
     private Long userId;
@@ -20,26 +27,29 @@ public class RoleScope extends BaseEntity {
     private Long roleId;
 
     @Column(name = "scope_type", nullable = false)
-    private byte scopeType;
+    private Integer scopeType;
 
     @Column(name = "scope_id", nullable = false)
     private Long scopeId;
 
-    @Column(name = "is_primary", nullable = false)
-    private byte isPrimary;
+    @Column(name = "semester_id")
+    private Long semesterId;
 
-    @Column(name = "appoint_by", nullable = false)
+    @Column(name = "is_primary")
+    private Byte isPrimary;
+
+    @Column(name = "appoint_by")
     private Long appointBy;
 
     @Column(name = "appoint_reason", length = 255)
     private String appointReason;
 
-    @Column(name = "valid_from", nullable = false)
+    @Column(name = "valid_from")
     private LocalDate validFrom;
 
     @Column(name = "valid_until")
     private LocalDate validUntil;
 
     @Column(name = "status", nullable = false)
-    private byte status;
+    private Integer status = 1;
 }

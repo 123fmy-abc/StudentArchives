@@ -1,15 +1,10 @@
 package com.example.studentarchives.entity.archive;
-import com.example.studentarchives.enums.ApplyStatusEnum;
-import jakarta.persistence.EnumType;
-import jakarta.persistence.Enumerated;
 
 import com.example.studentarchives.entity.BaseEntity;
-import jakarta.persistence.Column;
-import jakarta.persistence.Entity;
-import jakarta.persistence.Lob;
-import jakarta.persistence.Table;
+import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.Setter;
+import org.hibernate.annotations.SQLRestriction;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -18,6 +13,7 @@ import java.time.LocalDateTime;
 @Setter
 @Entity
 @Table(name = "archives")
+@SQLRestriction("deleted_at IS NULL")
 public class Archive extends BaseEntity {
 
     @Column(name = "school_id", nullable = false)
@@ -38,19 +34,28 @@ public class Archive extends BaseEntity {
     @Column(name = "course_code", length = 50)
     private String courseCode;
 
-    @Column(name = "obtain_time")
-    private LocalDate obtainTime;
+    @Column(name = "obtained_at")
+    private LocalDate obtainedAt;
+
+    @Column(name = "duplicate_check_status", nullable = false)
+    private Integer duplicateCheckStatus;
+
+    @Column(name = "duplicate_info", columnDefinition = "JSON")
+    private String duplicateInfo;
 
     @Column(name = "status", nullable = false)
-    @Enumerated(EnumType.ORDINAL)
-    private ApplyStatusEnum status;
+    private Integer status = 0;
 
     @Lob
     @Column(name = "rejected_reason", columnDefinition = "TEXT")
     private String rejectedReason;
 
-    @Column(name = "submit_time")
-    private LocalDateTime submitTime;
+    @Lob
+    @Column(name = "correction_reason", columnDefinition = "TEXT")
+    private String correctionReason;
+
+    @Column(name = "submitted_at")
+    private LocalDateTime submittedAt;
 
     @Column(name = "audited_at")
     private LocalDateTime auditedAt;
@@ -58,11 +63,20 @@ public class Archive extends BaseEntity {
     @Column(name = "auditor_id")
     private Long auditorId;
 
+    @Column(name = "returned_at")
+    private LocalDateTime returnedAt;
+
+    @Column(name = "passed_at")
+    private LocalDateTime passedAt;
+
+    @Column(name = "revoked_at")
+    private LocalDateTime revokedAt;
+
     @Column(name = "current_version", nullable = false)
-    private int currentVersion;
+    private Integer currentVersion;
 
     @Column(name = "submit_count", nullable = false)
-    private int submitCount;
+    private Integer submitCount;
 
     @Column(name = "draft_saved_at")
     private LocalDateTime draftSavedAt;

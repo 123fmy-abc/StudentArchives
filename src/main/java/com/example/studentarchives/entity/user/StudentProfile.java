@@ -1,9 +1,12 @@
 package com.example.studentarchives.entity.user;
 
 import com.example.studentarchives.entity.BaseEntity;
-import jakarta.persistence.*;
+import jakarta.persistence.Column;
+import jakarta.persistence.Entity;
+import jakarta.persistence.Table;
 import lombok.Getter;
 import lombok.Setter;
+import org.hibernate.annotations.SQLRestriction;
 
 import java.math.BigDecimal;
 
@@ -11,12 +14,13 @@ import java.math.BigDecimal;
 @Setter
 @Entity
 @Table(name = "student_profiles")
+@SQLRestriction("deleted_at IS NULL")
 public class StudentProfile extends BaseEntity {
 
-    @Column(name = "user_id", nullable = false)
+    @Column(name = "user_id", nullable = false, unique = true)
     private Long userId;
 
-    @Column(name = "class_id", nullable = false)
+    @Column(name = "class_id")
     private Long classId;
 
     @Column(name = "political_status", length = 50)
@@ -24,10 +28,4 @@ public class StudentProfile extends BaseEntity {
 
     @Column(name = "volunteer_hours", precision = 8, scale = 2)
     private BigDecimal volunteerHours;
-
-    @Column(name = "language_ability", length = 255)
-    private String languageAbility;
-
-    @Column(name = "hobbies", length = 255)
-    private String hobbies;
 }

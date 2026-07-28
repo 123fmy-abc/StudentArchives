@@ -6,11 +6,13 @@ import jakarta.persistence.Entity;
 import jakarta.persistence.Table;
 import lombok.Getter;
 import lombok.Setter;
+import org.hibernate.annotations.SQLRestriction;
 
 @Getter
 @Setter
 @Entity
 @Table(name = "archive_scholarships")
+@SQLRestriction("deleted_at IS NULL")
 public class ArchiveScholarship extends BaseEntity {
 
     @Column(name = "archive_id", nullable = false)
@@ -19,9 +21,9 @@ public class ArchiveScholarship extends BaseEntity {
     @Column(name = "scholarship_name", nullable = false, length = 255)
     private String scholarshipName;
 
-    @Column(name = "scholarship_category", length = 50)
+    @Column(name = "scholarship_category", nullable = false, length = 50)
     private String scholarshipCategory;
 
-    @Column(name = "award_level", length = 50)
+    @Column(name = "award_level", nullable = false, length = 50)
     private String awardLevel;
 }

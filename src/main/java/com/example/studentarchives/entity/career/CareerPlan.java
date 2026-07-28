@@ -1,12 +1,10 @@
 package com.example.studentarchives.entity.career;
-import com.example.studentarchives.enums.ApplyStatusEnum;
-import jakarta.persistence.EnumType;
-import jakarta.persistence.Enumerated;
 
 import com.example.studentarchives.entity.BaseEntity;
 import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.Setter;
+import org.hibernate.annotations.SQLRestriction;
 
 import java.time.LocalDateTime;
 
@@ -14,6 +12,7 @@ import java.time.LocalDateTime;
 @Setter
 @Entity
 @Table(name = "career_plans")
+@SQLRestriction("deleted_at IS NULL")
 public class CareerPlan extends BaseEntity {
 
     @Column(name = "school_id", nullable = false)
@@ -23,10 +22,10 @@ public class CareerPlan extends BaseEntity {
     private Long userId;
 
     @Column(name = "current_version", nullable = false)
-    private int currentVersion;
+    private Integer currentVersion;
 
     @Column(name = "submit_count", nullable = false)
-    private int submitCount;
+    private Integer submitCount;
 
     @Column(name = "semester_id")
     private Long semesterId;
@@ -42,9 +41,23 @@ public class CareerPlan extends BaseEntity {
     @Column(name = "requirement", columnDefinition = "TEXT")
     private String requirement;
 
+    @Column(name = "copy_from_id")
+    private Long copyFromId;
+
+    @Column(name = "source", nullable = false)
+    private Integer source = 1;
+
+    @Column(name = "ai_suggestion_id")
+    private Long aiSuggestionId;
+
+    @Column(name = "require_confirm", nullable = false)
+    private Integer requireConfirm = 1;
+
+    @Column(name = "progress_rate", nullable = false)
+    private Integer progressRate;
+
     @Column(name = "status", nullable = false)
-    @Enumerated(EnumType.ORDINAL)
-    private ApplyStatusEnum status;
+    private Integer status = 0;
 
     @Column(name = "submitted_at")
     private LocalDateTime submittedAt;
@@ -58,6 +71,15 @@ public class CareerPlan extends BaseEntity {
     @Lob
     @Column(name = "rejected_reason", columnDefinition = "TEXT")
     private String rejectedReason;
+
+    @Column(name = "returned_at")
+    private LocalDateTime returnedAt;
+
+    @Column(name = "passed_at")
+    private LocalDateTime passedAt;
+
+    @Column(name = "revoked_at")
+    private LocalDateTime revokedAt;
 
     @Column(name = "file_id")
     private Long fileId;

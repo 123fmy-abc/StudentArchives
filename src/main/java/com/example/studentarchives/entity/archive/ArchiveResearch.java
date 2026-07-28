@@ -6,11 +6,15 @@ import jakarta.persistence.Entity;
 import jakarta.persistence.Table;
 import lombok.Getter;
 import lombok.Setter;
+import org.hibernate.annotations.SQLRestriction;
+
+import java.time.LocalDate;
 
 @Getter
 @Setter
 @Entity
 @Table(name = "archive_researches")
+@SQLRestriction("deleted_at IS NULL")
 public class ArchiveResearch extends BaseEntity {
 
     @Column(name = "archive_id", nullable = false)
@@ -19,15 +23,18 @@ public class ArchiveResearch extends BaseEntity {
     @Column(name = "project_name", nullable = false, length = 255)
     private String projectName;
 
-    @Column(name = "project_level", length = 50)
+    @Column(name = "project_level", nullable = false, length = 50)
     private String projectLevel;
 
-    @Column(name = "project_type", length = 100)
+    @Column(name = "project_type", nullable = false, length = 100)
     private String projectType;
 
-    @Column(name = "team_role", length = 50)
-    private String teamRole;
+    @Column(name = "participant_role", length = 50)
+    private String participantRole;
 
-    @Column(name = "project_time", length = 20)
-    private String projectTime;
+    @Column(name = "start_date")
+    private LocalDate startDate;
+
+    @Column(name = "end_date")
+    private LocalDate endDate;
 }

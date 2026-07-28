@@ -1,12 +1,10 @@
 package com.example.studentarchives.entity.archive;
 
 import com.example.studentarchives.entity.BaseEntity;
-import jakarta.persistence.Column;
-import jakarta.persistence.Entity;
-import jakarta.persistence.Lob;
-import jakarta.persistence.Table;
+import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.Setter;
+import org.hibernate.annotations.SQLRestriction;
 
 import java.time.LocalDate;
 
@@ -14,6 +12,7 @@ import java.time.LocalDate;
 @Setter
 @Entity
 @Table(name = "archive_training_projects")
+@SQLRestriction("deleted_at IS NULL")
 public class ArchiveTrainingProject extends BaseEntity {
 
     @Column(name = "archive_id", nullable = false)

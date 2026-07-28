@@ -1,7 +1,10 @@
 package com.example.studentarchives.entity.approval;
 
 import com.example.studentarchives.entity.BaseEntity;
-import jakarta.persistence.*;
+import jakarta.persistence.Column;
+import jakarta.persistence.Entity;
+import jakarta.persistence.Lob;
+import jakarta.persistence.Table;
 import lombok.Getter;
 import lombok.Setter;
 
@@ -17,25 +20,25 @@ public class ApprovalNode extends BaseEntity {
     private Long instanceId;
 
     @Column(name = "step_no", nullable = false)
-    private byte stepNo;
+    private Integer stepNo;
 
-    @Column(name = "step_name", nullable = false, length = 100)
+    @Column(name = "step_name", length = 100, nullable = false)
     private String stepName;
 
     @Column(name = "role_id", nullable = false)
     private Long roleId;
 
-    @Column(name = "scope_type", nullable = false)
-    private byte scopeType;
+    @Column(name = "scope_type")
+    private Integer scopeType;
 
-    @Column(name = "scope_id", nullable = false)
+    @Column(name = "scope_id")
     private Long scopeId;
 
     @Column(name = "assigned_auditor_id")
     private Long assignedAuditorId;
 
-    @Column(name = "assign_type", nullable = false)
-    private byte assignType;
+    @Column(name = "assign_type", nullable = false, columnDefinition = "TINYINT DEFAULT 1")
+    private Integer assignType = 1;
 
     @Column(name = "actual_auditor_id")
     private Long actualAuditorId;
@@ -44,7 +47,7 @@ public class ApprovalNode extends BaseEntity {
     private Long delegationId;
 
     @Column(name = "action")
-    private Byte action;
+    private Integer action;
 
     @Lob
     @Column(name = "comment", columnDefinition = "TEXT")

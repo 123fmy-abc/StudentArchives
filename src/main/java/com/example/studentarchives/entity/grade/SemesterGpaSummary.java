@@ -1,9 +1,7 @@
 package com.example.studentarchives.entity.grade;
 
 import com.example.studentarchives.entity.BaseEntity;
-import jakarta.persistence.Column;
-import jakarta.persistence.Entity;
-import jakarta.persistence.Table;
+import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.Setter;
 
@@ -18,8 +16,14 @@ public class SemesterGpaSummary extends BaseEntity {
     @Column(name = "user_id", nullable = false)
     private Long userId;
 
-    @Column(name = "semester_id", nullable = false)
+    @Column(name = "semester_id")
     private Long semesterId;
+
+    @Column(name = "class_id")
+    private Long classId;
+
+    @Column(name = "major_id")
+    private Long majorId;
 
     @Column(name = "course_count", nullable = false)
     private int courseCount;
@@ -27,10 +31,10 @@ public class SemesterGpaSummary extends BaseEntity {
     @Column(name = "total_credit", nullable = false, precision = 6, scale = 2)
     private BigDecimal totalCredit;
 
-    @Column(name = "weighted_gpa", nullable = false, precision = 3, scale = 2)
+    @Column(name = "weighted_gpa", precision = 3, scale = 2)
     private BigDecimal weightedGpa;
 
-    @Column(name = "average_score", nullable = false, precision = 5, scale = 2)
+    @Column(name = "average_score", precision = 5, scale = 2)
     private BigDecimal averageScore;
 
     @Column(name = "rank_in_class")

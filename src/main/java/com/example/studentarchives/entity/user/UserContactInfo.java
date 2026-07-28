@@ -1,0 +1,44 @@
+package com.example.studentarchives.entity.user;
+
+import com.example.studentarchives.entity.BaseEntity;
+import jakarta.persistence.Column;
+import jakarta.persistence.Entity;
+import jakarta.persistence.Table;
+import lombok.Getter;
+import lombok.Setter;
+import org.hibernate.annotations.SQLRestriction;
+
+@Getter
+@Setter
+@Entity
+@Table(name = "user_contact_infos")
+@SQLRestriction("deleted_at IS NULL")
+public class UserContactInfo extends BaseEntity {
+
+    @Column(name = "user_id", nullable = false, unique = true)
+    private Long userId;
+
+    @Column(name = "phone", length = 50)
+    private String phone;
+
+    @Column(name = "email", length = 100)
+    private String email;
+
+    @Column(name = "avatar", length = 500)
+    private String avatar;
+
+    @Column(name = "address", length = 255)
+    private String address;
+
+    @Column(name = "emergency_name", length = 100)
+    private String emergencyName;
+
+    @Column(name = "emergency_relation", length = 50)
+    private String emergencyRelation;
+
+    @Column(name = "emergency_phone", length = 50)
+    private String emergencyPhone;
+
+    @Column(name = "updated_by")
+    private Long updatedBy;
+}

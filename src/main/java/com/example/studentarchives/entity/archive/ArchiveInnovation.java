@@ -6,6 +6,7 @@ import jakarta.persistence.Entity;
 import jakarta.persistence.Table;
 import lombok.Getter;
 import lombok.Setter;
+import org.hibernate.annotations.SQLRestriction;
 
 import java.time.LocalDate;
 
@@ -13,6 +14,7 @@ import java.time.LocalDate;
 @Setter
 @Entity
 @Table(name = "archive_innovations")
+@SQLRestriction("deleted_at IS NULL")
 public class ArchiveInnovation extends BaseEntity {
 
     @Column(name = "archive_id", nullable = false)
@@ -21,15 +23,15 @@ public class ArchiveInnovation extends BaseEntity {
     @Column(name = "company_name", nullable = false, length = 255)
     private String companyName;
 
-    @Column(name = "industry_type", length = 100)
+    @Column(name = "industry_type", nullable = false, length = 100)
     private String industryType;
 
-    @Column(name = "project_type", length = 100)
+    @Column(name = "project_type", nullable = false, length = 100)
     private String projectType;
 
-    @Column(name = "team_role", length = 50)
-    private String teamRole;
+    @Column(name = "participant_role", length = 50)
+    private String participantRole;
 
-    @Column(name = "register_time")
-    private LocalDate registerTime;
+    @Column(name = "registered_at")
+    private LocalDate registeredAt;
 }

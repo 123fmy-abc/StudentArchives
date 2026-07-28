@@ -1,9 +1,12 @@
 package com.example.studentarchives.entity.user;
 
 import com.example.studentarchives.entity.BaseEntity;
-import jakarta.persistence.*;
+import jakarta.persistence.Column;
+import jakarta.persistence.Entity;
+import jakarta.persistence.Table;
 import lombok.Getter;
 import lombok.Setter;
+import org.hibernate.annotations.SQLRestriction;
 
 import java.time.LocalDateTime;
 
@@ -11,6 +14,7 @@ import java.time.LocalDateTime;
 @Setter
 @Entity
 @Table(name = "user_favorites")
+@SQLRestriction("deleted_at IS NULL")
 public class UserFavorite extends BaseEntity {
 
     @Column(name = "user_id", nullable = false)
@@ -22,18 +26,18 @@ public class UserFavorite extends BaseEntity {
     @Column(name = "target_id", nullable = false, length = 100)
     private String targetId;
 
-    @Column(name = "target_name", nullable = false, length = 100)
+    @Column(name = "target_name", length = 100)
     private String targetName;
 
     @Column(name = "icon", length = 100)
     private String icon;
 
     @Column(name = "sort", nullable = false)
-    private int sort;
+    private Integer sort;
 
     @Column(name = "last_used_at")
     private LocalDateTime lastUsedAt;
 
-    @Column(name = "use_count")
-    private Integer useCount;
+    @Column(name = "use_count", nullable = false)
+    private Integer useCount = 0;
 }

@@ -1,9 +1,7 @@
 package com.example.studentarchives.entity.grade;
 
-import com.example.studentarchives.entity.BaseEntity;
-import jakarta.persistence.Column;
-import jakarta.persistence.Entity;
-import jakarta.persistence.Table;
+import com.example.studentarchives.entity.BaseEntityNoUpdate;
+import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.Setter;
 
@@ -13,7 +11,7 @@ import java.math.BigDecimal;
 @Setter
 @Entity
 @Table(name = "gpa_records")
-public class GpaRecord extends BaseEntity {
+public class GpaRecord extends BaseEntityNoUpdate {
 
     @Column(name = "school_id", nullable = false)
     private Long schoolId;
@@ -21,7 +19,7 @@ public class GpaRecord extends BaseEntity {
     @Column(name = "user_id", nullable = false)
     private Long userId;
 
-    @Column(name = "semester_id", nullable = false)
+    @Column(name = "semester_id")
     private Long semesterId;
 
     @Column(name = "course_code", length = 50)
@@ -30,8 +28,11 @@ public class GpaRecord extends BaseEntity {
     @Column(name = "course_name", nullable = false, length = 255)
     private String courseName;
 
-    @Column(name = "attempt_no", nullable = false)
-    private byte attemptNo;
+    @Column(name = "course_type", length = 50)
+    private String courseType;
+
+    @Column(name = "attempt_no")
+    private Byte attemptNo = 1;
 
     @Column(name = "score", precision = 5, scale = 2)
     private BigDecimal score;

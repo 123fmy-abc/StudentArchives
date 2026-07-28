@@ -1,9 +1,14 @@
 package com.example.studentarchives.entity.log;
 
 import com.example.studentarchives.entity.BaseEntity;
-import jakarta.persistence.*;
+import jakarta.persistence.Column;
+import jakarta.persistence.Entity;
+import jakarta.persistence.Lob;
+import jakarta.persistence.Table;
 import lombok.Getter;
 import lombok.Setter;
+
+import java.time.LocalDateTime;
 
 @Getter
 @Setter
@@ -17,40 +22,61 @@ public class SystemLog extends BaseEntity {
     @Column(name = "operator_id")
     private Long operatorId;
 
-    @Column(name = "action", nullable = false, length = 100)
+    @Column(name = "role_id")
+    private Long roleId;
+
+    @Column(name = "role_name", length = 100)
+    private String roleName;
+
+    @Column(name = "action", length = 100, nullable = false)
     private String action;
 
-    @Column(name = "module", nullable = false, length = 100)
+    @Column(name = "module", length = 100, nullable = false)
     private String module;
 
     @Lob
     @Column(name = "description", columnDefinition = "TEXT")
     private String description;
 
+    @Column(name = "before_data", columnDefinition = "JSON")
+    private String beforeData;
+
+    @Column(name = "after_data", columnDefinition = "JSON")
+    private String afterData;
+
     @Column(name = "log_level", nullable = false)
-    private byte logLevel;
+    private Integer logLevel;
 
-    @Column(name = "is_display", nullable = false)
-    private byte isDisplay;
+    @Column(name = "is_deletable", nullable = false, columnDefinition = "TINYINT")
+    private Integer isDeletable;
 
-    @Column(name = "activity_name")
+    @Column(name = "is_display", nullable = false, columnDefinition = "TINYINT")
+    private Integer isDisplay;
+
+    @Column(name = "activity_name", length = 255)
     private String activityName;
 
     @Column(name = "status")
-    private Byte status;
+    private Integer status;
 
-    @Column(name = "status_label")
+    @Column(name = "status_label", length = 50)
     private String statusLabel;
 
-    @Column(name = "related_type")
+    @Column(name = "related_type", length = 100)
     private String relatedType;
 
     @Column(name = "related_id")
     private Long relatedId;
+
+    @Column(name = "scope_type")
+    private Integer scopeType;
 
     @Column(name = "ip_address", length = 45)
     private String ipAddress;
 
     @Column(name = "user_agent", length = 500)
     private String userAgent;
+
+    @Column(name = "retention_until")
+    private LocalDateTime retentionUntil;
 }

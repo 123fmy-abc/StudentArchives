@@ -1,9 +1,14 @@
 package com.example.studentarchives.entity.ai;
 
 import com.example.studentarchives.entity.BaseEntity;
-import jakarta.persistence.*;
+import jakarta.persistence.Column;
+import jakarta.persistence.Entity;
+import jakarta.persistence.Lob;
+import jakarta.persistence.Table;
 import lombok.Getter;
 import lombok.Setter;
+
+import java.time.LocalDateTime;
 
 @Getter
 @Setter
@@ -14,11 +19,11 @@ public class AiMessage extends BaseEntity {
     @Column(name = "conversation_id", nullable = false)
     private Long conversationId;
 
-    @Column(name = "role", nullable = false, length = 20)
+    @Column(name = "role", length = 20, nullable = false)
     private String role;
 
     @Lob
-    @Column(name = "content", nullable = false, columnDefinition = "TEXT")
+    @Column(name = "content", columnDefinition = "TEXT", nullable = false)
     private String content;
 
     @Column(name = "model_name", length = 100)
@@ -29,4 +34,7 @@ public class AiMessage extends BaseEntity {
 
     @Column(name = "generation_time_ms")
     private Integer generationTimeMs;
+
+    @Column(name = "retention_until")
+    private LocalDateTime retentionUntil;
 }

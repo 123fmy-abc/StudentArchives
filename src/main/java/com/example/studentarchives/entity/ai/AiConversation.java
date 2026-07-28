@@ -1,10 +1,9 @@
 package com.example.studentarchives.entity.ai;
-import com.example.studentarchives.enums.StatusEnum;
-import jakarta.persistence.EnumType;
-import jakarta.persistence.Enumerated;
 
 import com.example.studentarchives.entity.BaseEntity;
-import jakarta.persistence.*;
+import jakarta.persistence.Column;
+import jakarta.persistence.Entity;
+import jakarta.persistence.Table;
 import lombok.Getter;
 import lombok.Setter;
 
@@ -26,7 +25,6 @@ public class AiConversation extends BaseEntity {
     @Column(name = "context", columnDefinition = "JSON")
     private String context;
 
-    @Column(name = "status", nullable = false)
-    @Enumerated(EnumType.ORDINAL)
-    private StatusEnum status;
+    @Column(name = "status", nullable = false, columnDefinition = "TINYINT DEFAULT 1")
+    private Integer status = 1;
 }

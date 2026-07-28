@@ -1,7 +1,10 @@
 package com.example.studentarchives.entity.approval;
 
 import com.example.studentarchives.entity.BaseEntity;
-import jakarta.persistence.*;
+import jakarta.persistence.Column;
+import jakarta.persistence.Entity;
+import jakarta.persistence.Lob;
+import jakarta.persistence.Table;
 import lombok.Getter;
 import lombok.Setter;
 
@@ -22,7 +25,7 @@ public class PendingApproval extends BaseEntity {
     @Column(name = "instance_id", nullable = false)
     private Long instanceId;
 
-    @Column(name = "approvable_type", nullable = false, length = 100)
+    @Column(name = "approvable_type", length = 100, nullable = false)
     private String approvableType;
 
     @Column(name = "approvable_id", nullable = false)
@@ -31,24 +34,24 @@ public class PendingApproval extends BaseEntity {
     @Column(name = "applicant_id", nullable = false)
     private Long applicantId;
 
-    @Column(name = "applicant_name", nullable = false, length = 100)
+    @Column(name = "applicant_name", length = 100, nullable = false)
     private String applicantName;
 
-    @Column(name = "applicant_no", nullable = false, length = 50)
+    @Column(name = "applicant_no", length = 50, nullable = false)
     private String applicantNo;
 
-    @Column(name = "title", nullable = false, length = 255)
+    @Column(name = "title", length = 255, nullable = false)
     private String title;
 
     @Lob
     @Column(name = "content", columnDefinition = "TEXT")
     private String content;
 
-    @Column(name = "category_label", nullable = false, length = 50)
+    @Column(name = "category_label", length = 50, nullable = false)
     private String categoryLabel;
 
-    @Column(name = "submit_time", nullable = false)
-    private LocalDateTime submitTime;
+    @Column(name = "submitted_at", nullable = false)
+    private LocalDateTime submittedAt;
 
     @Column(name = "auditor_id", nullable = false)
     private Long auditorId;
@@ -57,11 +60,11 @@ public class PendingApproval extends BaseEntity {
     private Long roleId;
 
     @Column(name = "step_no", nullable = false)
-    private byte stepNo;
+    private Integer stepNo;
 
-    @Column(name = "step_name", nullable = false, length = 100)
+    @Column(name = "step_name", length = 100, nullable = false)
     private String stepName;
 
-    @Column(name = "status", nullable = false)
-    private byte status;
+    @Column(name = "status", nullable = false, columnDefinition = "TINYINT DEFAULT 1")
+    private Integer status = 1;
 }

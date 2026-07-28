@@ -1,6 +1,6 @@
 package com.example.studentarchives.entity.user;
 
-import com.example.studentarchives.entity.BaseEntity;
+import com.example.studentarchives.entity.BaseEntityNoUpdate;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Table;
@@ -13,7 +13,7 @@ import java.time.LocalDateTime;
 @Setter
 @Entity
 @Table(name = "user_import_logs")
-public class UserImportLog extends BaseEntity {
+public class UserImportLog extends BaseEntityNoUpdate {
 
     @Column(name = "school_id", nullable = false)
     private Long schoolId;
@@ -25,19 +25,19 @@ public class UserImportLog extends BaseEntity {
     private Long fileId;
 
     @Column(name = "total_count", nullable = false)
-    private int totalCount;
+    private Integer totalCount;
 
     @Column(name = "success_count", nullable = false)
-    private int successCount;
+    private Integer successCount;
 
     @Column(name = "fail_count", nullable = false)
-    private int failCount;
+    private Integer failCount;
 
     @Column(name = "fail_details", columnDefinition = "JSON")
     private String failDetails;
 
     @Column(name = "import_status", nullable = false)
-    private byte importStatus;
+    private Integer importStatus;
 
     @Column(name = "started_at")
     private LocalDateTime startedAt;

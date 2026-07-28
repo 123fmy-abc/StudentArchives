@@ -4,11 +4,13 @@ import com.example.studentarchives.entity.BaseEntity;
 import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.Setter;
+import org.hibernate.annotations.SQLRestriction;
 
 @Getter
 @Setter
 @Entity
 @Table(name = "weakness_analyses")
+@SQLRestriction("deleted_at IS NULL")
 public class WeaknessAnalysis extends BaseEntity {
 
     @Column(name = "user_id", nullable = false)
@@ -22,17 +24,23 @@ public class WeaknessAnalysis extends BaseEntity {
     private String weaknessDesc;
 
     @Column(name = "source", nullable = false)
-    private byte source;
+    private Integer source = 1;
 
     @Column(name = "teacher_id")
     private Long teacherId;
 
     @Column(name = "severity_level", nullable = false)
-    private byte severityLevel;
+    private Integer severityLevel;
 
     @Column(name = "target_score")
     private Integer targetScore;
 
     @Column(name = "is_read", nullable = false)
-    private byte isRead;
+    private Integer isRead;
+
+    @Column(name = "related_type", length = 100)
+    private String relatedType;
+
+    @Column(name = "related_id")
+    private Long relatedId;
 }

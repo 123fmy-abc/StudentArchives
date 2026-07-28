@@ -1,7 +1,9 @@
 package com.example.studentarchives.entity.approval;
 
 import com.example.studentarchives.entity.BaseEntity;
-import jakarta.persistence.*;
+import jakarta.persistence.Column;
+import jakarta.persistence.Entity;
+import jakarta.persistence.Table;
 import lombok.Getter;
 import lombok.Setter;
 
@@ -16,23 +18,20 @@ public class ApprovalDelegation extends BaseEntity {
     @Column(name = "school_id", nullable = false)
     private Long schoolId;
 
-    @Column(name = "delegator_id", nullable = false)
+    @Column(name = "delegator_id")
     private Long delegatorId;
 
-    @Column(name = "delegatee_id", nullable = false)
+    @Column(name = "delegatee_id")
     private Long delegateeId;
 
     @Column(name = "role_id")
     private Long roleId;
 
     @Column(name = "scope_type")
-    private Byte scopeType;
+    private Integer scopeType;
 
     @Column(name = "scope_id")
     private Long scopeId;
-
-    @Column(name = "flow_id")
-    private Long flowId;
 
     @Column(name = "start_time", nullable = false)
     private LocalDateTime startTime;
@@ -43,6 +42,12 @@ public class ApprovalDelegation extends BaseEntity {
     @Column(name = "reason", length = 255)
     private String reason;
 
-    @Column(name = "status", nullable = false)
-    private byte status;
+    @Column(name = "status", nullable = false, columnDefinition = "TINYINT DEFAULT 0")
+    private Integer status = 0;
+
+    @Column(name = "cancelled_at")
+    private LocalDateTime cancelledAt;
+
+    @Column(name = "cancel_reason", length = 255)
+    private String cancelReason;
 }
