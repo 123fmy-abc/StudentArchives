@@ -32,7 +32,7 @@ public class GpaRecord extends BaseEntityNoUpdate {
     private String courseType;
 
     @Column(name = "attempt_no")
-    private Byte attemptNo = 1;
+    private Integer attemptNo = 1;
 
     @Column(name = "score", precision = 5, scale = 2)
     private BigDecimal score;

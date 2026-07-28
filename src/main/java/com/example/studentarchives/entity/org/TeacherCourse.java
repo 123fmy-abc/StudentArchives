@@ -34,7 +34,7 @@ public class TeacherCourse extends BaseEntity {
     private String courseName;
 
     @Column(name = "is_primary")
-    private Byte isPrimary;
+    private Integer isPrimary;
 
     @Column(name = "status", nullable = false)
     private Integer status = 1;

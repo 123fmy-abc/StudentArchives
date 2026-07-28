@@ -31,10 +31,10 @@ public class Role extends BaseEntity {
     private Integer roleType;
 
     @Column(name = "is_system", nullable = false)
-    private Byte isSystem;
+    private Integer isSystem;
 
     @Column(name = "is_auditor", nullable = false)
-    private Byte isAuditor;
+    private Integer isAuditor;
 
     @Column(name = "scope_types", columnDefinition = "JSON")
     private String scopeTypes;

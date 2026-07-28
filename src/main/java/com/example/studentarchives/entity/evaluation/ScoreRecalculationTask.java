@@ -26,7 +26,7 @@ public class ScoreRecalculationTask extends BaseEntityNoUpdate {
     private Long semesterId;
 
     @Column(name = "status")
-    private byte status = 0;
+    private Integer status = 0;
 
     @Column(name = "triggered_by", nullable = false)
     private Long triggeredBy;

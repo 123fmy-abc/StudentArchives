@@ -24,16 +24,16 @@ public class GradeImportConfig extends BaseEntity {
     private String templateColumns;
 
     @Column(name = "has_header_row", nullable = false)
-    private byte hasHeaderRow;
+    private Integer hasHeaderRow;
 
     @Column(name = "batch_size", nullable = false)
     private int batchSize;
 
     @Column(name = "allow_overwrite", nullable = false)
-    private byte allowOverwrite;
+    private Integer allowOverwrite;
 
     @Column(name = "status")
-    private byte status = 1;
+    private Integer status = 1;
 
     @Column(name = "created_by")
     private Long createdBy;
