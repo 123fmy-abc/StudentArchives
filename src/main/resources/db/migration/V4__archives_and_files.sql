@@ -55,6 +55,7 @@ CREATE TABLE `archives` (
     `created_at`             TIMESTAMP       NOT NULL DEFAULT CURRENT_TIMESTAMP,
     `updated_at`             TIMESTAMP       NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     `deleted_at`             TIMESTAMP       NULL DEFAULT NULL COMMENT '软删除时间',
+    `is_deleted_null`        TINYINT(1)      GENERATED ALWAYS AS (IF(`deleted_at` IS NULL, 0, NULL)) STORED NULL,
     PRIMARY KEY (`id`),
     INDEX `idx_archives_user_type` (`user_id`, `archive_type`),
     INDEX `idx_archives_status` (`status`),
@@ -66,8 +67,8 @@ CREATE TABLE `archives` (
     INDEX `idx_archives_user_status_time` (`user_id`, `status`, `submitted_at`),
     INDEX `idx_archives_school_status_time` (`school_id`, `status`, `submitted_at`),
     CONSTRAINT `ck_archives_rejected` CHECK (`status` != 3 OR `rejected_reason` IS NOT NULL),
-    CONSTRAINT `fk_archives_school_id` FOREIGN KEY (`school_id`) REFERENCES `schools` (`id`) ON DELETE CASCADE,
-    CONSTRAINT `fk_archives_user_id` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE,
+    CONSTRAINT `fk_archives_school_id` FOREIGN KEY (`school_id`) REFERENCES `schools` (`id`) ON DELETE RESTRICT,
+    CONSTRAINT `fk_archives_user_id` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE RESTRICT,
     CONSTRAINT `fk_archives_semester_id` FOREIGN KEY (`semester_id`) REFERENCES `semesters` (`id`) ON DELETE SET NULL,
     CONSTRAINT `fk_archives_auditor_id` FOREIGN KEY (`auditor_id`) REFERENCES `users` (`id`) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='档案基表';
@@ -130,6 +131,7 @@ CREATE TABLE `audit_comment_templates` (
     `created_at`       TIMESTAMP       NOT NULL DEFAULT CURRENT_TIMESTAMP,
     `updated_at`       TIMESTAMP       NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     `deleted_at`       TIMESTAMP       NULL DEFAULT NULL COMMENT '软删除时间',
+    `is_deleted_null`  TINYINT(1)      GENERATED ALWAYS AS (IF(`deleted_at` IS NULL, 0, NULL)) STORED NULL,
     PRIMARY KEY (`id`),
     INDEX `idx_act_school_id` (`school_id`),
     INDEX `idx_act_category` (`category`),
@@ -139,8 +141,8 @@ CREATE TABLE `audit_comment_templates` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='审核意见模板表';
 
 
--- 6. file_uploads — 文件上传管理表
-CREATE TABLE `file_uploads` (
+-- 6. attachment_relations — 通用附件关联表（多态）
+CREATE TABLE `attachment_relations` (
     `id`                BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
     `user_id`           BIGINT UNSIGNED NOT NULL COMMENT '上传人ID',
     `biz_type`          VARCHAR(50)     NULL DEFAULT NULL COMMENT '关联业务类型编码',
@@ -161,15 +163,16 @@ CREATE TABLE `file_uploads` (
     `created_at`        TIMESTAMP       NOT NULL DEFAULT CURRENT_TIMESTAMP,
     `updated_at`        TIMESTAMP       NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     `deleted_at`        TIMESTAMP       NULL DEFAULT NULL COMMENT '软删除时间',
+    `is_deleted_null`   TINYINT(1)      GENERATED ALWAYS AS (IF(`deleted_at` IS NULL, 0, NULL)) STORED NULL,
     PRIMARY KEY (`id`),
-    INDEX `idx_fu_biz_type_category` (`biz_type`, `biz_id`, `file_category`),
-    INDEX `idx_fu_biz_type` (`biz_type`, `biz_id`),
-    INDEX `idx_fu_status_expire` (`file_status`, `temp_expire_at`),
-    INDEX `idx_fu_user_id` (`user_id`),
-    INDEX `idx_fu_deleted_by` (`deleted_by`),
-    CONSTRAINT `fk_fu_user_id` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`),
-    CONSTRAINT `fk_fu_deleted_by` FOREIGN KEY (`deleted_by`) REFERENCES `users` (`id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='文件上传管理表';
+    INDEX `idx_ar_biz_type_category` (`biz_type`, `biz_id`, `file_category`),
+    INDEX `idx_ar_biz_type` (`biz_type`, `biz_id`),
+    INDEX `idx_ar_status_expire` (`file_status`, `temp_expire_at`),
+    INDEX `idx_ar_user_id` (`user_id`),
+    INDEX `idx_ar_deleted_by` (`deleted_by`),
+    CONSTRAINT `fk_ar_user_id` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE RESTRICT,
+    CONSTRAINT `fk_ar_deleted_by` FOREIGN KEY (`deleted_by`) REFERENCES `users` (`id`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='通用附件关联表（多态）';
 
 
 -- 7. attachment_limits — 附件上传限制配置表

@@ -6,7 +6,6 @@ import jakarta.persistence.Entity;
 import jakarta.persistence.Table;
 import lombok.Getter;
 import lombok.Setter;
-import org.hibernate.annotations.SQLRestriction;
 
 import java.math.BigDecimal;
 
@@ -14,7 +13,6 @@ import java.math.BigDecimal;
 @Setter
 @Entity
 @Table(name = "duplicate_detection_rules")
-@SQLRestriction("deleted_at IS NULL")
 public class DuplicateDetectionRule extends BaseEntity {
 
     @Column(name = "school_id", nullable = false)

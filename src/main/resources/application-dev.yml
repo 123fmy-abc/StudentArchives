@@ -1,9 +1,26 @@
+# ===== 开发环境配置 =====
+#
+# 使用方式：
+#   1. 拷贝项目根目录 .env.example 为 .env
+#   2. 填入自己的 Redis database 索引和 QQ 邮箱
+#   3. 启动即可（Spring Boot 自动加载 .env）
+#
+# 团队共享说明：
+#   - MySQL：所有队员连接同一远程数据库，共享数据
+#   - Redis：共享同一 Redis 服务器，每人通过不同 database 索引隔离缓存
+#   - QQ 邮箱：每人配置自己的邮箱和 SMTP 授权码
+#
+# 支持启动方式：
+#   - IDEA：自动读取 .env 文件；或在 Run Configuration 中设置环境变量
+#   - CMD：mvnw spring-boot:run（自动读取 .env）
+#   - 直接 java -jar：java -jar app.jar --spring.profiles.active=dev
+
 spring:
-  # ===== 数据源配置 =====
+  # ===== 数据源（远程共享 MySQL，全体队员使用同一数据库）=====
   datasource:
-    url: jdbc:mysql://8.137.191.26:3306/student_archives?useUnicode=true&characterEncoding=utf-8&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true&useSSL=false
-    username: StuArch
-    password: ZCXCDMLZDNENkYRe
+    url: jdbc:mysql://${DB_HOST:8.137.191.26}:${DB_PORT:3306}/${DB_NAME:student_archives}?useUnicode=true&characterEncoding=utf-8&serverTimezone=Asia/Shanghai&useSSL=true&allowPublicKeyRetrieval=false
+    username: ${DB_USERNAME:StuArch}
+    password: ${DB_PASSWORD}
     driver-class-name: com.mysql.cj.jdbc.Driver
     hikari:
       maximum-pool-size: 10
@@ -11,3 +28,26 @@ spring:
       connection-timeout: 30000
       idle-timeout: 600000
       max-lifetime: 1800000
+
+  # ===== Redis（远程共享，通过 database 索引隔离不同开发者）=====
+  data:
+    redis:
+      host: ${REDIS_HOST:8.137.191.26}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD}
+
+  # ===== QQ 邮件（每人独立配置）=====
+  mail:
+    host: ${MAIL_HOST:smtp.qq.com}
+    port: ${MAIL_PORT:587}
+    username: ${MAIL_USERNAME}
+    password: ${MAIL_PASSWORD}
+    properties:
+      mail.smtp.auth: true
+      mail.smtp.starttls.enable: true
+      mail.smtp.timeout: 5000
+      mail.smtp.connectiontimeout: 5000
+
+# ===== JWT 密钥（开发环境也不提供默认值，必须在 .env 中设置 JWT_SECRET）=====
+jwt:
+  secret: ${JWT_SECRET:}

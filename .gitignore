@@ -36,9 +36,10 @@ build/
 .DS_Store 
 Thumbs.db 
  
-# Environment 
-*.properties.local 
-application-local.yml 
+# Environment
+*.properties.local
+application-local.yml
+.env
 # application-dev.yml 不 gitignore，团队共享同一开发数据库
 
 # 日志

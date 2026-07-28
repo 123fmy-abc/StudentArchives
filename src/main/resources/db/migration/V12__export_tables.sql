@@ -82,7 +82,7 @@ CREATE TABLE `export_jobs` (
     `status` INT NOT NULL DEFAULT 0 COMMENT '0=待处理 1=处理中 2=完成 3=失败',
     `total_count`       INT UNSIGNED    NOT NULL DEFAULT 0 COMMENT '待导出总记录数',
     `success_count`     INT UNSIGNED    NOT NULL DEFAULT 0 COMMENT '成功生成数',
-    `file_id`           BIGINT UNSIGNED NULL DEFAULT NULL COMMENT '关联 file_uploads.id',
+    `file_id`           BIGINT UNSIGNED NULL DEFAULT NULL COMMENT '关联 attachment_relations.id',
     `error_msg`         TEXT            NULL DEFAULT NULL COMMENT '失败原因',
     `started_at`        DATETIME        NULL DEFAULT NULL COMMENT '开始处理时间',
     `completed_at`      DATETIME        NULL DEFAULT NULL COMMENT '完成时间',
@@ -90,6 +90,7 @@ CREATE TABLE `export_jobs` (
     `created_at`        TIMESTAMP       NOT NULL DEFAULT CURRENT_TIMESTAMP,
     `updated_at`        TIMESTAMP       NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     `deleted_at`        TIMESTAMP       NULL DEFAULT NULL COMMENT '软删除时间',
+    `is_deleted_null`  TINYINT(1)      GENERATED ALWAYS AS (IF(`deleted_at` IS NULL, 0, NULL)) STORED NULL,
     PRIMARY KEY (`id`),
     INDEX `idx_ej_school_status` (`school_id`, `status`),
     INDEX `idx_ej_created_at` (`created_at`),
@@ -98,7 +99,7 @@ CREATE TABLE `export_jobs` (
     CONSTRAINT `fk_ej_school_id` FOREIGN KEY (`school_id`) REFERENCES `schools` (`id`),
     CONSTRAINT `fk_ej_template_id` FOREIGN KEY (`template_id`) REFERENCES `export_templates` (`id`),
     CONSTRAINT `fk_ej_operator_id` FOREIGN KEY (`operator_id`) REFERENCES `users` (`id`),
-    CONSTRAINT `fk_ej_file_id` FOREIGN KEY (`file_id`) REFERENCES `file_uploads` (`id`)
+    CONSTRAINT `fk_ej_file_id` FOREIGN KEY (`file_id`) REFERENCES `attachment_relations` (`id`) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='导出任务队列表';
 
 
@@ -116,11 +117,12 @@ CREATE TABLE `export_operation_logs` (
     `is_anonymized`     INT NOT NULL DEFAULT 0 COMMENT '0=未脱敏 1=已脱敏',
     `data_version`      INT UNSIGNED    NULL DEFAULT NULL COMMENT '导出数据版本号',
     `field_description` TEXT            NULL DEFAULT NULL COMMENT '导出字段说明（快照）',
-    `file_id`           BIGINT UNSIGNED NULL DEFAULT NULL COMMENT '关联 file_uploads.id',
+    `file_id`           BIGINT UNSIGNED NULL DEFAULT NULL COMMENT '关联 attachment_relations.id',
     `status` INT NOT NULL DEFAULT 1 COMMENT '0=失败 1=成功',
     `created_at`        TIMESTAMP       NOT NULL DEFAULT CURRENT_TIMESTAMP,
     `updated_at`        TIMESTAMP       NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     `deleted_at`        TIMESTAMP       NULL DEFAULT NULL COMMENT '软删除时间',
+    `is_deleted_null`  TINYINT(1)      GENERATED ALWAYS AS (IF(`deleted_at` IS NULL, 0, NULL)) STORED NULL,
     PRIMARY KEY (`id`),
     INDEX `idx_eol_school_id` (`school_id`),
     INDEX `idx_eol_operator_id` (`operator_id`),

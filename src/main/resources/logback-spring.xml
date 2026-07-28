@@ -3,33 +3,64 @@
     <!-- ===== 引入 Spring Boot 默认日志配置 ===== -->
     <include resource="org/springframework/boot/logging/logback/defaults.xml"/>
 
+    <property name="LOG_PATH" value="${LOG_PATH:-./logs}"/>
+
+    <!-- 含 trace_id 的通用日志格式 -->
+    <property name="BUSINESS_LOG_PATTERN"
+              value="%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] [%X{trace_id:-}] %-5level %logger{36} - %msg%n"/>
+
     <!-- ===== 控制台输出 ===== -->
     <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
         <encoder>
-            <pattern>${CONSOLE_LOG_PATTERN}</pattern>
+            <pattern>%clr(%d{yyyy-MM-dd HH:mm:ss.SSS}){faint} %clr(%5p) %clr(${PID:- }){magenta} %clr(---){faint} %clr([%15.15t]){faint} %clr(%X{trace_id:-}){yellow} %clr(%-40.40logger{39}){cyan} %clr(:){faint} %m%n%wEx</pattern>
             <charset>UTF-8</charset>
         </encoder>
     </appender>
 
     <!-- ===== 业务日志 ===== -->
     <appender name="BUSINESS_FILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
-        <file>${LOG_PATH:-./logs}/business.log</file>
-        <rollingPolicy class="ch.qos.logback.core.rolling.TimeBasedRollingPolicy">
-            <fileNamePattern>${LOG_PATH:-./logs}/business.%d{yyyy-MM-dd}.log</fileNamePattern>
+        <file>${LOG_PATH}/business.log</file>
+        <rollingPolicy class="ch.qos.logback.core.rolling.SizeAndTimeBasedRollingPolicy">
+            <fileNamePattern>${LOG_PATH}/business.%d{yyyy-MM-dd}.%i.log</fileNamePattern>
+            <maxFileSize>100MB</maxFileSize>
             <maxHistory>30</maxHistory>
+            <totalSizeCap>10GB</totalSizeCap>
+            <cleanHistoryOnStart>true</cleanHistoryOnStart>
         </rollingPolicy>
         <encoder>
-            <pattern>%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n</pattern>
+            <pattern>${BUSINESS_LOG_PATTERN}</pattern>
+            <charset>UTF-8</charset>
+        </encoder>
+    </appender>
+
+    <!-- ===== 错误日志（仅 ERROR） ===== -->
+    <appender name="ERROR_FILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
+        <file>${LOG_PATH}/error.log</file>
+        <filter class="ch.qos.logback.classic.filter.ThresholdFilter">
+            <level>ERROR</level>
+        </filter>
+        <rollingPolicy class="ch.qos.logback.core.rolling.SizeAndTimeBasedRollingPolicy">
+            <fileNamePattern>${LOG_PATH}/error.%d{yyyy-MM-dd}.%i.log</fileNamePattern>
+            <maxFileSize>100MB</maxFileSize>
+            <maxHistory>30</maxHistory>
+            <totalSizeCap>5GB</totalSizeCap>
+            <cleanHistoryOnStart>true</cleanHistoryOnStart>
+        </rollingPolicy>
+        <encoder>
+            <pattern>${BUSINESS_LOG_PATTERN}</pattern>
             <charset>UTF-8</charset>
         </encoder>
     </appender>
 
     <!-- ===== API 访问日志 ===== -->
     <appender name="API_ACCESS_FILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
-        <file>${LOG_PATH:-./logs}/api-access.log</file>
-        <rollingPolicy class="ch.qos.logback.core.rolling.TimeBasedRollingPolicy">
-            <fileNamePattern>${LOG_PATH:-./logs}/api-access.%d{yyyy-MM-dd}.log</fileNamePattern>
+        <file>${LOG_PATH}/api-access.log</file>
+        <rollingPolicy class="ch.qos.logback.core.rolling.SizeAndTimeBasedRollingPolicy">
+            <fileNamePattern>${LOG_PATH}/api-access.%d{yyyy-MM-dd}.%i.log</fileNamePattern>
+            <maxFileSize>100MB</maxFileSize>
             <maxHistory>30</maxHistory>
+            <totalSizeCap>10GB</totalSizeCap>
+            <cleanHistoryOnStart>true</cleanHistoryOnStart>
         </rollingPolicy>
         <encoder>
             <pattern>%msg%n</pattern>
@@ -39,10 +70,13 @@
 
     <!-- ===== 操作审计日志 ===== -->
     <appender name="AUDIT_FILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
-        <file>${LOG_PATH:-./logs}/audit.log</file>
-        <rollingPolicy class="ch.qos.logback.core.rolling.TimeBasedRollingPolicy">
-            <fileNamePattern>${LOG_PATH:-./logs}/audit.%d{yyyy-MM-dd}.log</fileNamePattern>
-            <maxHistory>30</maxHistory>
+        <file>${LOG_PATH}/audit.log</file>
+        <rollingPolicy class="ch.qos.logback.core.rolling.SizeAndTimeBasedRollingPolicy">
+            <fileNamePattern>${LOG_PATH}/audit.%d{yyyy-MM-dd}.%i.log</fileNamePattern>
+            <maxFileSize>100MB</maxFileSize>
+            <maxHistory>90</maxHistory>
+            <totalSizeCap>20GB</totalSizeCap>
+            <cleanHistoryOnStart>true</cleanHistoryOnStart>
         </rollingPolicy>
         <encoder>
             <pattern>%msg%n</pattern>
@@ -52,10 +86,13 @@
 
     <!-- ===== 第三方接口日志 ===== -->
     <appender name="THIRD_PARTY_FILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
-        <file>${LOG_PATH:-./logs}/third-party.log</file>
-        <rollingPolicy class="ch.qos.logback.core.rolling.TimeBasedRollingPolicy">
-            <fileNamePattern>${LOG_PATH:-./logs}/third-party.%d{yyyy-MM-dd}.log</fileNamePattern>
+        <file>${LOG_PATH}/third-party.log</file>
+        <rollingPolicy class="ch.qos.logback.core.rolling.SizeAndTimeBasedRollingPolicy">
+            <fileNamePattern>${LOG_PATH}/third-party.%d{yyyy-MM-dd}.%i.log</fileNamePattern>
+            <maxFileSize>100MB</maxFileSize>
             <maxHistory>30</maxHistory>
+            <totalSizeCap>5GB</totalSizeCap>
+            <cleanHistoryOnStart>true</cleanHistoryOnStart>
         </rollingPolicy>
         <encoder>
             <pattern>%msg%n</pattern>
@@ -65,10 +102,13 @@
 
     <!-- ===== 性能日志 ===== -->
     <appender name="PERFORMANCE_FILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
-        <file>${LOG_PATH:-./logs}/performance.log</file>
-        <rollingPolicy class="ch.qos.logback.core.rolling.TimeBasedRollingPolicy">
-            <fileNamePattern>${LOG_PATH:-./logs}/performance.%d{yyyy-MM-dd}.log</fileNamePattern>
+        <file>${LOG_PATH}/performance.log</file>
+        <rollingPolicy class="ch.qos.logback.core.rolling.SizeAndTimeBasedRollingPolicy">
+            <fileNamePattern>${LOG_PATH}/performance.%d{yyyy-MM-dd}.%i.log</fileNamePattern>
+            <maxFileSize>100MB</maxFileSize>
             <maxHistory>30</maxHistory>
+            <totalSizeCap>5GB</totalSizeCap>
+            <cleanHistoryOnStart>true</cleanHistoryOnStart>
         </rollingPolicy>
         <encoder>
             <pattern>%msg%n</pattern>
@@ -76,35 +116,103 @@
         </encoder>
     </appender>
 
+    <!-- ===== 异步包装：避免写日志阻塞业务线程 ===== -->
+    <appender name="ASYNC_API_ACCESS" class="ch.qos.logback.classic.AsyncAppender">
+        <appender-ref ref="API_ACCESS_FILE"/>
+        <queueSize>1024</queueSize>
+        <discardingThreshold>0</discardingThreshold>
+        <neverBlock>false</neverBlock>
+    </appender>
+
+    <appender name="ASYNC_AUDIT" class="ch.qos.logback.classic.AsyncAppender">
+        <appender-ref ref="AUDIT_FILE"/>
+        <queueSize>1024</queueSize>
+        <discardingThreshold>0</discardingThreshold>
+        <neverBlock>false</neverBlock>
+    </appender>
+
+    <appender name="ASYNC_THIRD_PARTY" class="ch.qos.logback.classic.AsyncAppender">
+        <appender-ref ref="THIRD_PARTY_FILE"/>
+        <queueSize>512</queueSize>
+        <discardingThreshold>20</discardingThreshold>
+        <neverBlock>true</neverBlock>
+    </appender>
+
+    <appender name="ASYNC_PERFORMANCE" class="ch.qos.logback.classic.AsyncAppender">
+        <appender-ref ref="PERFORMANCE_FILE"/>
+        <queueSize>512</queueSize>
+        <discardingThreshold>20</discardingThreshold>
+        <neverBlock>true</neverBlock>
+    </appender>
+
     <!-- ===== Logger 配置 ===== -->
 
-    <!-- 业务日志：输出到控制台 + 业务文件 -->
-    <logger name="com.example.studentarchives" level="INFO">
-        <appender-ref ref="BUSINESS_FILE"/>
-    </logger>
+    <springProfile name="dev">
+        <!-- 业务日志：输出到控制台 + 业务文件 -->
+        <logger name="com.example.studentarchives" level="INFO">
+            <appender-ref ref="BUSINESS_FILE"/>
+        </logger>
 
-    <!-- API 访问日志：JSON 一行一条，只输出到 api-access.log -->
-    <logger name="API_ACCESS_LOGGER" level="INFO" additivity="false">
-        <appender-ref ref="API_ACCESS_FILE"/>
-    </logger>
+        <!-- API 访问日志：JSON 一行一条，dev 同时输出控制台方便调试 -->
+        <logger name="API_ACCESS_LOGGER" level="INFO" additivity="false">
+            <appender-ref ref="CONSOLE"/>
+            <appender-ref ref="ASYNC_API_ACCESS"/>
+        </logger>
 
-    <!-- 操作审计日志：JSON 一行一条，只输出到 audit.log -->
-    <logger name="AUDIT_LOGGER" level="INFO" additivity="false">
-        <appender-ref ref="AUDIT_FILE"/>
-    </logger>
+        <!-- 操作审计日志 -->
+        <logger name="AUDIT_LOGGER" level="INFO" additivity="false">
+            <appender-ref ref="CONSOLE"/>
+            <appender-ref ref="ASYNC_AUDIT"/>
+        </logger>
 
-    <!-- 第三方接口日志：JSON 一行一条，只输出到 third-party.log -->
-    <logger name="THIRD_PARTY_LOGGER" level="INFO" additivity="false">
-        <appender-ref ref="THIRD_PARTY_FILE"/>
-    </logger>
+        <!-- 第三方接口日志 -->
+        <logger name="THIRD_PARTY_LOGGER" level="INFO" additivity="false">
+            <appender-ref ref="CONSOLE"/>
+            <appender-ref ref="ASYNC_THIRD_PARTY"/>
+        </logger>
 
-    <!-- 性能日志：JSON 一行一条，只输出到 performance.log -->
-    <logger name="PERFORMANCE_LOGGER" level="INFO" additivity="false">
-        <appender-ref ref="PERFORMANCE_FILE"/>
-    </logger>
+        <!-- 性能日志 -->
+        <logger name="PERFORMANCE_LOGGER" level="INFO" additivity="false">
+            <appender-ref ref="CONSOLE"/>
+            <appender-ref ref="ASYNC_PERFORMANCE"/>
+        </logger>
 
-    <!-- ===== 根日志配置 ===== -->
-    <root level="INFO">
-        <appender-ref ref="CONSOLE"/>
-    </root>
+        <root level="INFO">
+            <appender-ref ref="CONSOLE"/>
+            <appender-ref ref="ERROR_FILE"/>
+        </root>
+    </springProfile>
+
+    <springProfile name="!dev">
+        <!-- 业务日志 -->
+        <logger name="com.example.studentarchives" level="INFO">
+            <appender-ref ref="BUSINESS_FILE"/>
+        </logger>
+
+        <!-- API 访问日志 -->
+        <logger name="API_ACCESS_LOGGER" level="INFO" additivity="false">
+            <appender-ref ref="ASYNC_API_ACCESS"/>
+        </logger>
+
+        <!-- 操作审计日志 -->
+        <logger name="AUDIT_LOGGER" level="INFO" additivity="false">
+            <appender-ref ref="ASYNC_AUDIT"/>
+        </logger>
+
+        <!-- 第三方接口日志 -->
+        <logger name="THIRD_PARTY_LOGGER" level="INFO" additivity="false">
+            <appender-ref ref="ASYNC_THIRD_PARTY"/>
+        </logger>
+
+        <!-- 性能日志 -->
+        <logger name="PERFORMANCE_LOGGER" level="INFO" additivity="false">
+            <appender-ref ref="ASYNC_PERFORMANCE"/>
+        </logger>
+
+        <!-- 生产环境 root 级别设为 INFO，便于排查问题；
+             按需用 logging.level.* 降低第三方框架的日志级别 -->
+        <root level="INFO">
+            <appender-ref ref="ERROR_FILE"/>
+        </root>
+    </springProfile>
 </configuration>

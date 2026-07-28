@@ -3,7 +3,6 @@ package com.example.studentarchives.util;
 import lombok.experimental.UtilityClass;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.slf4j.MDC;
 
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
@@ -12,6 +11,7 @@ import java.time.format.DateTimeFormatter;
  * 日志工具类
  * <p>
  * 提供按类别获取 Logger 的统一入口，确保 logback-spring.xml 中 Logger 名称一致。
+ * Trace ID 相关操作已拆分至 {@link TraceIdUtil}，遵循单一职责原则。
  */
 @UtilityClass
 public class LogUtil {
@@ -41,33 +41,40 @@ public class LogUtil {
         return LoggerFactory.getLogger("PERFORMANCE_LOGGER");
     }
 
-    /** 生成 trace ID：req-20260708-143025-abc123 */
+    /**
+     * 生成 trace ID
+     * @deprecated 请使用 {@link TraceIdUtil#generate()}
+     */
+    @Deprecated(since = "2.0")
     public static String generateTraceId() {
-        return "req-" + LocalDateTime.now()
-                .format(DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss"))
-                + "-" + java.util.UUID.randomUUID().toString().substring(0, 8);
+        return TraceIdUtil.generate();
     }
 
-    /** 从 MDC 获取当前 trace_id，不存在则生成并写入 MDC */
+    /**
+     * 从 MDC 获取或创建 trace ID
+     * @deprecated 请使用 {@link TraceIdUtil#getOrCreate()}
+     */
+    @Deprecated(since = "2.0")
     public static String getOrCreateTraceId() {
-        String traceId = MDC.get("trace_id");
-        if (traceId == null || traceId.isEmpty()) {
-            traceId = generateTraceId();
-            MDC.put("trace_id", traceId);
-        }
-        return traceId;
+        return TraceIdUtil.getOrCreate();
     }
 
-    /** 手动设置 trace_id 到 MDC */
+    /**
+     * 设置 trace_id
+     * @deprecated 请使用 {@link TraceIdUtil#set(String)}
+     */
+    @Deprecated(since = "2.0")
     public static void setTraceId(String traceId) {
-        if (traceId != null && !traceId.isEmpty()) {
-            MDC.put("trace_id", traceId);
-        }
+        TraceIdUtil.set(traceId);
     }
 
-    /** 清除 MDC 中的 trace_id */
+    /**
+     * 清除 MDC 中的 trace_id
+     * @deprecated 请使用 {@link TraceIdUtil#clear()}
+     */
+    @Deprecated(since = "2.0")
     public static void clearTraceId() {
-        MDC.remove("trace_id");
+        TraceIdUtil.clear();
     }
 
     /** 生成时间戳：2026-07-08 14:30:25.123 */

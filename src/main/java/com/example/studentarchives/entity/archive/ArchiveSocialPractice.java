@@ -6,7 +6,6 @@ import jakarta.persistence.Entity;
 import jakarta.persistence.Table;
 import lombok.Getter;
 import lombok.Setter;
-import org.hibernate.annotations.SQLRestriction;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -15,7 +14,6 @@ import java.time.LocalDate;
 @Setter
 @Entity
 @Table(name = "archive_social_practices")
-@SQLRestriction("deleted_at IS NULL")
 public class ArchiveSocialPractice extends BaseEntity {
 
     @Column(name = "archive_id", nullable = false)

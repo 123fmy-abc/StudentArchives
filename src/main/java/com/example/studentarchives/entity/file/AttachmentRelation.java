@@ -6,16 +6,20 @@ import jakarta.persistence.Entity;
 import jakarta.persistence.Table;
 import lombok.Getter;
 import lombok.Setter;
-import org.hibernate.annotations.SQLRestriction;
 
 import java.time.LocalDateTime;
 
+/**
+ * 通用附件关联实体（多态）
+ * <p>
+ * 通过 biz_type + biz_id 关联不同业务记录，替代 archive_attachments、
+ * award_attachments、career_action_files 等分散的附件表。
+ */
 @Getter
 @Setter
 @Entity
-@Table(name = "file_uploads")
-@SQLRestriction("deleted_at IS NULL")
-public class FileUpload extends BaseEntity {
+@Table(name = "attachment_relations")
+public class AttachmentRelation extends BaseEntity {
 
     @Column(name = "user_id", nullable = false)
     private Long userId;

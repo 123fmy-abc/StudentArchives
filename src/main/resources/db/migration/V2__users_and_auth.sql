@@ -15,6 +15,7 @@ CREATE TABLE `users` (
     `remember_token`   VARCHAR(100)    NULL DEFAULT NULL COMMENT '记住我令牌',
     `status` INT NOT NULL DEFAULT 1 COMMENT '0=禁用 1=正常',
     `token_version`    INT UNSIGNED    NOT NULL DEFAULT 0 COMMENT '令牌版本号',
+    `refresh_token_version` INT UNSIGNED NOT NULL DEFAULT 0 COMMENT '刷新令牌版本号',
     `created_at`       TIMESTAMP       NOT NULL DEFAULT CURRENT_TIMESTAMP,
     `updated_at`       TIMESTAMP       NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     `deleted_at`       TIMESTAMP       NULL DEFAULT NULL COMMENT '软删除时间',
@@ -22,7 +23,7 @@ CREATE TABLE `users` (
     PRIMARY KEY (`id`),
     INDEX `idx_users_status` (`status`),
     UNIQUE KEY `uk_users_school_no` (`school_id`, `user_no`, `is_deleted_null`),
-    CONSTRAINT `fk_users_school_id` FOREIGN KEY (`school_id`) REFERENCES `schools` (`id`) ON DELETE CASCADE
+    CONSTRAINT `fk_users_school_id` FOREIGN KEY (`school_id`) REFERENCES `schools` (`id`) ON DELETE RESTRICT
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='用户表';
 
 
@@ -161,7 +162,8 @@ CREATE TABLE `teacher_profiles` (
     `title`      VARCHAR(50)     NULL DEFAULT NULL COMMENT '职称',
     `created_at` TIMESTAMP       NOT NULL DEFAULT CURRENT_TIMESTAMP,
     `updated_at` TIMESTAMP       NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    `deleted_at` TIMESTAMP       NULL DEFAULT NULL COMMENT '软删除时间',
+    `deleted_at`       TIMESTAMP       NULL DEFAULT NULL COMMENT '软删除时间',
+    `is_deleted_null`  TINYINT(1)      GENERATED ALWAYS AS (IF(`deleted_at` IS NULL, 0, NULL)) STORED NULL,
     PRIMARY KEY (`id`),
     UNIQUE KEY `uk_teacher_profiles_user_id` (`user_id`),
     INDEX `idx_teacher_profiles_college_id` (`college_id`),

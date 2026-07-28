@@ -1,5 +1,6 @@
 package com.example.studentarchives.common;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import lombok.AllArgsConstructor;
@@ -24,11 +25,14 @@ public class PageParam {
 
     @Min(value = 1, message = "每页条数最小为 1")
     @Max(value = 100, message = "每页条数最大为 100")
+    @JsonProperty("per_page")
     @Builder.Default
     private int perPage = 20;
 
+    @JsonProperty("sort_by")
     private String sortBy;
 
+    @JsonProperty("sort_order")
     @Builder.Default
     private String sortOrder = "desc";
 

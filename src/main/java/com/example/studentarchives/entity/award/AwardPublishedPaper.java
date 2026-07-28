@@ -6,7 +6,6 @@ import jakarta.persistence.Entity;
 import jakarta.persistence.Table;
 import lombok.Getter;
 import lombok.Setter;
-import org.hibernate.annotations.SQLRestriction;
 
 import java.time.LocalDate;
 
@@ -14,7 +13,6 @@ import java.time.LocalDate;
 @Setter
 @Entity
 @Table(name = "award_published_papers")
-@SQLRestriction("deleted_at IS NULL")
 public class AwardPublishedPaper extends BaseEntity {
 
     @Column(name = "research_star_id", nullable = false)

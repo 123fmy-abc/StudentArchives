@@ -12,6 +12,7 @@ CREATE TABLE `schools` (
     `created_at` TIMESTAMP       NOT NULL DEFAULT CURRENT_TIMESTAMP,
     `updated_at` TIMESTAMP       NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     `deleted_at` TIMESTAMP       NULL DEFAULT NULL COMMENT '软删除时间',
+    `is_deleted_null`  TINYINT(1)      GENERATED ALWAYS AS (IF(`deleted_at` IS NULL, 0, NULL)) STORED NULL,
     PRIMARY KEY (`id`),
     UNIQUE KEY `uk_schools_code` (`code`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='学校表';
@@ -64,6 +65,7 @@ CREATE TABLE `classes` (
     `created_at`     TIMESTAMP       NOT NULL DEFAULT CURRENT_TIMESTAMP,
     `updated_at`     TIMESTAMP       NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     `deleted_at`     TIMESTAMP       NULL DEFAULT NULL COMMENT '软删除时间',
+    `is_deleted_null`  TINYINT(1)      GENERATED ALWAYS AS (IF(`deleted_at` IS NULL, 0, NULL)) STORED NULL,
     PRIMARY KEY (`id`),
     INDEX `idx_classes_major_id` (`major_id`),
     INDEX `idx_classes_grade` (`grade`),

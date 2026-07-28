@@ -17,4 +17,13 @@ public class JwtProperties {
 
     /** 令牌过期时间（毫秒），默认 24 小时 */
     private long expirationMs = 86400000;
+
+    /** 刷新令牌过期时间（毫秒），默认 7 天 */
+    private long refreshExpirationMs = 604800000;
+
+    /** 记住我时刷新令牌过期时间（毫秒），默认 30 天 */
+    private long rememberMeExpirationMs = 2592000000L;
+
+    /** 未记住我时访问令牌过期时间（毫秒），默认 7 天 */
+    private long noRememberExpirationMs = 604800000L;
 }

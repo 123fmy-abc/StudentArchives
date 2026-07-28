@@ -4,7 +4,6 @@ import com.example.studentarchives.entity.BaseEntity;
 import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.Setter;
-import org.hibernate.annotations.SQLRestriction;
 
 import java.time.LocalDate;
 
@@ -12,7 +11,6 @@ import java.time.LocalDate;
 @Setter
 @Entity
 @Table(name = "archive_book_reviews")
-@SQLRestriction("deleted_at IS NULL")
 public class ArchiveBookReview extends BaseEntity {
 
     @Column(name = "archive_id", nullable = false)

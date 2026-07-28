@@ -4,13 +4,11 @@ import com.example.studentarchives.entity.BaseEntity;
 import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.Setter;
-import org.hibernate.annotations.SQLRestriction;
 
 @Getter
 @Setter
 @Entity
 @Table(name = "career_reflections")
-@SQLRestriction("deleted_at IS NULL")
 public class CareerReflection extends BaseEntity {
 
     @Column(name = "career_plan_id", nullable = false)

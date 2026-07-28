@@ -52,6 +52,7 @@ CREATE TABLE `award_applications` (
     `created_at`       TIMESTAMP       NOT NULL DEFAULT CURRENT_TIMESTAMP,
     `updated_at`       TIMESTAMP       NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     `deleted_at`       TIMESTAMP       NULL DEFAULT NULL COMMENT '软删除时间',
+    `is_deleted_null`  TINYINT(1)      GENERATED ALWAYS AS (IF(`deleted_at` IS NULL, 0, NULL)) STORED NULL,
     PRIMARY KEY (`id`),
     INDEX `idx_aa_user_type` (`user_id`, `award_type`),
     INDEX `idx_aa_status` (`status`),
@@ -61,8 +62,8 @@ CREATE TABLE `award_applications` (
     INDEX `idx_aa_school_status_time` (`school_id`, `status`, `submitted_at`),
     INDEX `idx_aa_user_status_time` (`user_id`, `status`, `submitted_at`),
     CONSTRAINT `ck_aa_rejected` CHECK (`status` != 3 OR `rejected_reason` IS NOT NULL),
-    CONSTRAINT `fk_aa_school_id` FOREIGN KEY (`school_id`) REFERENCES `schools` (`id`) ON DELETE CASCADE,
-    CONSTRAINT `fk_aa_user_id` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE,
+    CONSTRAINT `fk_aa_school_id` FOREIGN KEY (`school_id`) REFERENCES `schools` (`id`) ON DELETE RESTRICT,
+    CONSTRAINT `fk_aa_user_id` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE RESTRICT,
     CONSTRAINT `fk_aa_semester_id` FOREIGN KEY (`semester_id`) REFERENCES `semesters` (`id`) ON DELETE SET NULL,
     CONSTRAINT `fk_aa_auditor_id` FOREIGN KEY (`auditor_id`) REFERENCES `users` (`id`) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='奖项报名基表';
@@ -79,6 +80,7 @@ CREATE TABLE `award_competition_stars` (
     `created_at`        TIMESTAMP       NOT NULL DEFAULT CURRENT_TIMESTAMP,
     `updated_at`        TIMESTAMP       NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     `deleted_at`        TIMESTAMP       NULL DEFAULT NULL COMMENT '软删除时间',
+    `is_deleted_null`  TINYINT(1)      GENERATED ALWAYS AS (IF(`deleted_at` IS NULL, 0, NULL)) STORED NULL,
     PRIMARY KEY (`id`),
     UNIQUE KEY `uk_acs_application_id` (`application_id`),
     CONSTRAINT `fk_acs_application_id` FOREIGN KEY (`application_id`) REFERENCES `award_applications` (`id`)
@@ -93,6 +95,7 @@ CREATE TABLE `award_research_stars` (
     `created_at`       TIMESTAMP       NOT NULL DEFAULT CURRENT_TIMESTAMP,
     `updated_at`       TIMESTAMP       NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     `deleted_at`       TIMESTAMP       NULL DEFAULT NULL COMMENT '软删除时间',
+    `is_deleted_null`  TINYINT(1)      GENERATED ALWAYS AS (IF(`deleted_at` IS NULL, 0, NULL)) STORED NULL,
     PRIMARY KEY (`id`),
     UNIQUE KEY `uk_ars_application_id` (`application_id`),
     CONSTRAINT `ck_ars_primary_category` CHECK (`primary_category` IN ('project', 'software_copyright', 'published_paper')),
@@ -111,6 +114,7 @@ CREATE TABLE `award_research_projects` (
     `created_at`       TIMESTAMP       NOT NULL DEFAULT CURRENT_TIMESTAMP,
     `updated_at`       TIMESTAMP       NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     `deleted_at`       TIMESTAMP       NULL DEFAULT NULL COMMENT '软删除时间',
+    `is_deleted_null`  TINYINT(1)      GENERATED ALWAYS AS (IF(`deleted_at` IS NULL, 0, NULL)) STORED NULL,
     PRIMARY KEY (`id`),
     INDEX `idx_arp_research_star_id` (`research_star_id`),
     CONSTRAINT `fk_arp_research_star_id` FOREIGN KEY (`research_star_id`) REFERENCES `award_research_stars` (`id`) ON DELETE CASCADE
@@ -127,6 +131,7 @@ CREATE TABLE `award_software_copyrights` (
     `created_at`       TIMESTAMP       NOT NULL DEFAULT CURRENT_TIMESTAMP,
     `updated_at`       TIMESTAMP       NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     `deleted_at`       TIMESTAMP       NULL DEFAULT NULL COMMENT '软删除时间',
+    `is_deleted_null`  TINYINT(1)      GENERATED ALWAYS AS (IF(`deleted_at` IS NULL, 0, NULL)) STORED NULL,
     PRIMARY KEY (`id`),
     INDEX `idx_asc_research_star_id` (`research_star_id`),
     CONSTRAINT `fk_asc_research_star_id` FOREIGN KEY (`research_star_id`) REFERENCES `award_research_stars` (`id`) ON DELETE CASCADE
@@ -144,6 +149,7 @@ CREATE TABLE `award_published_papers` (
     `created_at`       TIMESTAMP       NOT NULL DEFAULT CURRENT_TIMESTAMP,
     `updated_at`       TIMESTAMP       NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     `deleted_at`       TIMESTAMP       NULL DEFAULT NULL COMMENT '软删除时间',
+    `is_deleted_null`  TINYINT(1)      GENERATED ALWAYS AS (IF(`deleted_at` IS NULL, 0, NULL)) STORED NULL,
     PRIMARY KEY (`id`),
     INDEX `idx_app_research_star_id` (`research_star_id`),
     CONSTRAINT `fk_app_research_star_id` FOREIGN KEY (`research_star_id`) REFERENCES `award_research_stars` (`id`) ON DELETE CASCADE
@@ -161,6 +167,7 @@ CREATE TABLE `award_innovation_stars` (
     `created_at`       TIMESTAMP       NOT NULL DEFAULT CURRENT_TIMESTAMP,
     `updated_at`       TIMESTAMP       NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     `deleted_at`       TIMESTAMP       NULL DEFAULT NULL COMMENT '软删除时间',
+    `is_deleted_null`  TINYINT(1)      GENERATED ALWAYS AS (IF(`deleted_at` IS NULL, 0, NULL)) STORED NULL,
     PRIMARY KEY (`id`),
     UNIQUE KEY `uk_ais_application_id` (`application_id`),
     CONSTRAINT `fk_ais_application_id` FOREIGN KEY (`application_id`) REFERENCES `award_applications` (`id`)

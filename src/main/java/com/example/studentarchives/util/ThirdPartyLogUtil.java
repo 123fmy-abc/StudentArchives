@@ -1,67 +1,68 @@
 package com.example.studentarchives.util;
 
-import com.example.studentarchives.util.LogUtil;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.springframework.stereotype.Component;
 
 import java.util.LinkedHashMap;
 import java.util.Map;
 
 /**
  * 第三方接口调用日志工具
+ * <p>
+ * 被 ThirdPartyAspect 调用，记录第三方接口调用的请求参数和耗时。
+ * 不依赖 ObjectMapper 注入：由调用方传入，避免静态代理的脆弱性。
  */
+@Component
 public class ThirdPartyLogUtil {
 
-    private static final ObjectMapper objectMapper = new ObjectMapper();
+    private final ObjectMapper objectMapper;
+
+    public ThirdPartyLogUtil(ObjectMapper objectMapper) {
+        this.objectMapper = objectMapper;
+    }
 
     /**
      * 记录第三方接口调用日志（成功）
      */
-    public static void log(String service, String api, long costMs, boolean success,
-                           Map<String, Object> params, Object result) {
-        Map<String, Object> entry = new LinkedHashMap<>();
-        entry.put("service", service);
-        entry.put("api", api);
-        entry.put("cost_ms", costMs);
-        entry.put("success", success);
-        entry.put("params", maskSensitive(params));
+    public void log(String service, String api, long costMs, boolean success,
+                    Map<String, Object> params, Object result) {
+        Map<String, Object> entry = buildEntry(service, api, costMs, success, params, null);
         if (result != null) {
             entry.put("result", "[已记录]");
         }
-        try {
-            LogUtil.thirdParty().info(objectMapper.writeValueAsString(entry));
-        } catch (Exception e) {
-            LogUtil.thirdParty().info("third-party-log: service={}, api={}, cost={}ms", service, api, costMs);
-        }
+        writeLog(entry);
     }
 
     /**
      * 记录第三方接口调用日志（失败）
      */
-    public static void logError(String service, String api, long costMs,
-                                Map<String, Object> params, String errorMsg) {
+    public void logError(String service, String api, long costMs,
+                         Map<String, Object> params, String errorMsg) {
+        Map<String, Object> entry = buildEntry(service, api, costMs, false, params, errorMsg);
+        writeLog(entry);
+    }
+
+    private Map<String, Object> buildEntry(String service, String api, long costMs,
+                                           boolean success, Map<String, Object> params,
+                                           String errorMsg) {
         Map<String, Object> entry = new LinkedHashMap<>();
         entry.put("service", service);
         entry.put("api", api);
         entry.put("cost_ms", costMs);
-        entry.put("success", false);
-        entry.put("error", errorMsg);
-        entry.put("params", maskSensitive(params));
+        entry.put("success", success);
+        entry.put("params", SensitiveMasker.maskParamMap(params, objectMapper));
+        if (errorMsg != null) {
+            entry.put("error", SensitiveMasker.maskString(errorMsg));
+        }
+        return entry;
+    }
+
+    private void writeLog(Map<String, Object> entry) {
         try {
             LogUtil.thirdParty().info(objectMapper.writeValueAsString(entry));
         } catch (Exception e) {
-            LogUtil.thirdParty().info("third-party-log-err: service={}, api={}, cost={}ms", service, api, costMs);
+            LogUtil.thirdParty().info("third-party-log-err: service={}, api={}, cost={}ms",
+                    entry.get("service"), entry.get("api"), entry.get("cost_ms"));
         }
-    }
-
-    /** 简单脱敏（密码、token 等敏感信息） */
-    private static Object maskSensitive(Map<String, Object> params) {
-        if (params == null) return null;
-        Map<String, Object> masked = new LinkedHashMap<>(params);
-        for (String key : new String[]{"password", "token", "secret", "authorization"}) {
-            if (masked.containsKey(key)) {
-                masked.put(key, "****");
-            }
-        }
-        return masked;
     }
 }

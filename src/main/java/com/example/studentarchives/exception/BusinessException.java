@@ -8,9 +8,12 @@ import lombok.Getter;
  * <p>
  * 抛出时由 GlobalExceptionHandler 统一捕获并返回 ApiResult
  * <pre>
- * throw new BusinessException(ResultCode.DATA_NOT_FOUND);
+ * throw new BusinessException(ResultCode.DATA_NOT_EXIST);
  * throw new BusinessException(ResultCode.PARAM_ERROR, "学号格式不正确");
  * </pre>
+ * <p>
+ * HTTP 状态码直接从 {@link ResultCode#getHttpStatus()} 获取，
+ * 确保异常层与 API 响应状态码一致。
  */
 @Getter
 public class BusinessException extends RuntimeException {
@@ -21,13 +24,13 @@ public class BusinessException extends RuntimeException {
     public BusinessException(ResultCode resultCode) {
         super(resultCode.getMessage());
         this.code = resultCode.getCode();
-        this.httpStatus = resolveHttpStatus(resultCode);
+        this.httpStatus = resultCode.getHttpStatus();
     }
 
     public BusinessException(ResultCode resultCode, String message) {
         super(message);
         this.code = resultCode.getCode();
-        this.httpStatus = resolveHttpStatus(resultCode);
+        this.httpStatus = resultCode.getHttpStatus();
     }
 
     public BusinessException(int code, String message) {
@@ -42,30 +45,9 @@ public class BusinessException extends RuntimeException {
         this.httpStatus = httpStatus;
     }
 
-    /** 根据错误码推断 HTTP 状态码 */
-    private static int resolveHttpStatus(ResultCode resultCode) {
-        int code = resultCode.getCode();
-        if (code == 5 || code == 20005 || code == 20006 || code == 20007) {
-            return 403; // 禁止操作 / 无访问权限 / 账号禁用冻结
-        }
-        if (code >= 20000 && code < 30000) {
-            return 401; // 认证错误：未登录 / Token失效过期 / 密码错误
-        }
-        if (code == 2 || code == 30001) {
-            return 404; // 数据不存在 / 数据已删除
-        }
-        if (code >= 30000 && code < 40000) {
-            return 409; // 数据冲突
-        }
-        if (code >= 90000) {
-            return 500; // 系统错误
-        }
-        return 400; // 默认：参数/业务错误
-    }
-
-    /** 快速创建：数据不存在 */
+    /** 快速创建：数据不存在（30001） */
     public static BusinessException notFound() {
-        return new BusinessException(ResultCode.DATA_NOT_FOUND);
+        return new BusinessException(ResultCode.DATA_NOT_EXIST);
     }
 
     /** 快速创建：禁止操作 */

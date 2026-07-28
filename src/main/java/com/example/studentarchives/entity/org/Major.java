@@ -6,13 +6,11 @@ import jakarta.persistence.Entity;
 import jakarta.persistence.Table;
 import lombok.Getter;
 import lombok.Setter;
-import org.hibernate.annotations.SQLRestriction;
 
 @Getter
 @Setter
 @Entity
 @Table(name = "majors")
-@SQLRestriction("deleted_at IS NULL")
 public class Major extends BaseEntity {
 
     @Column(name = "college_id")

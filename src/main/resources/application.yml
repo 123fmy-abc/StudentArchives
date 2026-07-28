@@ -3,6 +3,8 @@ spring:
     name: StudentArchives
   profiles:
     active: dev
+    # 个人配置（数据库密码、Redis索引、QQ邮箱）通过项目根目录 .env 文件加载
+    # 参考 .env.example 创建自己的 .env 文件
 
   # ===== JPA 配置 =====
   jpa:
@@ -13,6 +15,8 @@ spring:
     properties:
       hibernate:
         format_sql: true
+        jdbc:
+          time_zone: Asia/Shanghai
 
   # ===== Flyway 配置 =====
   flyway:
@@ -24,16 +28,42 @@ spring:
     clean-disabled: true
     table: flyway_schema_history
 
+  # ===== Jackson 配置 =====
+  jackson:
+    time-zone: Asia/Shanghai
+    date-format: yyyy-MM-dd'T'HH:mm:ssXXX
+
+  # ===== Redis 配置（远程共享）=====
+  # 通过 database 索引隔离不同开发者的缓存数据
+  data:
+    redis:
+      timeout: 2000ms
+      database: ${REDIS_DATABASE:0}
+      lettuce:
+        pool:
+          max-active: 8
+          max-idle: 8
+          min-idle: 0
+          max-wait: 1000ms
+
 # ===== 服务器配置 =====
 server:
-  port: 8089
+  port: 8080
   servlet:
-    context-path: /api
+    context-path: /api/v1
 
 # ===== JWT 配置 =====
 jwt:
-  secret: ry3PI9VzWou05VvcDoxd7zKBevj3YmTCqSULTOy3DCk=
+  # 必须通过环境变量 JWT_SECRET 注入 Base64 编码的 HMAC-SHA256 密钥（至少 256 位）。
+  # 禁止将真实密钥写入配置文件或提交到版本库。
+  # 生成示例（PowerShell）：
+  #   $rng = [System.Security.Cryptography.RandomNumberGenerator]::Create()
+  #   $bytes = New-Object byte[] 32
+  #   $rng.GetBytes($bytes)
+  #   [Convert]::ToBase64String($bytes)
+  secret: ${JWT_SECRET:}
   expiration-ms: 86400000
+  refresh-expiration-ms: 604800000
 
 # ===== 日志配置 =====
 logging:

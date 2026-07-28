@@ -6,7 +6,6 @@ import jakarta.persistence.Entity;
 import jakarta.persistence.Table;
 import lombok.Getter;
 import lombok.Setter;
-import org.hibernate.annotations.SQLRestriction;
 
 import java.time.LocalDateTime;
 
@@ -14,7 +13,6 @@ import java.time.LocalDateTime;
 @Setter
 @Entity
 @Table(name = "user_favorites")
-@SQLRestriction("deleted_at IS NULL")
 public class UserFavorite extends BaseEntity {
 
     @Column(name = "user_id", nullable = false)

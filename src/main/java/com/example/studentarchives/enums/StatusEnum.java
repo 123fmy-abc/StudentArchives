@@ -24,4 +24,9 @@ public enum StatusEnum {
         }
         return DISABLED;
     }
+
+    /** 便捷判断：当前值是否匹配该枚举常量 */
+    public boolean equalsValue(Integer value) {
+        return this.value == (value != null ? value : DISABLED.value);
+    }
 }

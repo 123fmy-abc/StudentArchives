@@ -59,7 +59,8 @@ public class GlobalExceptionHandler {
     public ApiResult<Void> handleConstraintViolation(ConstraintViolationException e) {
         String message = e.getConstraintViolations().stream()
                 .map(ConstraintViolation::getMessage)
-                .findFirst()
+                .distinct()
+                .reduce((a, b) -> a + "；" + b)
                 .orElse("参数校验失败");
         log.warn("参数约束违规: {}", message);
         return ApiResult.error(ResultCode.PARAM_ERROR, message);

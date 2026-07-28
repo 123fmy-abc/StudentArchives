@@ -7,13 +7,11 @@ import jakarta.persistence.Lob;
 import jakarta.persistence.Table;
 import lombok.Getter;
 import lombok.Setter;
-import org.hibernate.annotations.SQLRestriction;
 
 @Getter
 @Setter
 @Entity
 @Table(name = "archive_type_configs")
-@SQLRestriction("deleted_at IS NULL")
 public class ArchiveTypeConfig extends BaseEntity {
 
     @Column(name = "archive_type", nullable = false, length = 50)

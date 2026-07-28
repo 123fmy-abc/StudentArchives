@@ -1,11 +1,8 @@
 package com.example.studentarchives.entity.log;
 
+import com.example.studentarchives.entity.BaseEntityNoUpdate;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
-import jakarta.persistence.GeneratedValue;
-import jakarta.persistence.GenerationType;
-import jakarta.persistence.Id;
-import jakarta.persistence.PrePersist;
 import jakarta.persistence.Table;
 import lombok.Getter;
 import lombok.Setter;
@@ -16,14 +13,7 @@ import java.time.LocalDateTime;
 @Setter
 @Entity
 @Table(name = "login_logs")
-public class LoginLog {
-
-    @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
-    private Long id;
-
-    @Column(name = "created_at", nullable = false, updatable = false)
-    private LocalDateTime createdAt;
+public class LoginLog extends BaseEntityNoUpdate {
 
     @Column(name = "school_id", nullable = false)
     private Long schoolId;
@@ -48,9 +38,4 @@ public class LoginLog {
 
     @Column(name = "retention_until")
     private LocalDateTime retentionUntil;
-
-    @PrePersist
-    protected void onCreate() {
-        this.createdAt = LocalDateTime.now();
-    }
 }

@@ -1,7 +1,8 @@
 package com.example.studentarchives.common;
 
-import com.example.studentarchives.util.LogUtil;
+import com.example.studentarchives.util.TraceIdUtil;
 import com.fasterxml.jackson.annotation.JsonInclude;
+import com.fasterxml.jackson.annotation.JsonProperty;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.AccessLevel;
 import lombok.AllArgsConstructor;
@@ -25,7 +26,7 @@ import java.time.format.DateTimeFormatter;
  *   "message": "success",
  *   "data": {},
  *   "trace_id": "req-20260704-143025-abc123",
- *   "timestamp": "2026-07-04 14:30"
+ *   "timestamp": "2026-07-04T14:30:25+08:00"
  * }
  * </pre>
  */
@@ -39,7 +40,10 @@ public class ApiResult<T> {
     private int code;
     private String message;
     private T data;
+
+    @JsonProperty("trace_id")
     private String traceId;
+
     private String timestamp;
 
     // ==================== 成功 ====================
@@ -128,11 +132,11 @@ public class ApiResult<T> {
                 return s;
             }
         }
-        return LogUtil.getOrCreateTraceId();
+        return TraceIdUtil.getOrCreate();
     }
 
-    /** 日期时间格式：yyyy-MM-dd HH:mm */
-    private static final DateTimeFormatter DTF = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm");
+    /** ISO 8601 日期时间格式，带时区：2026-07-04T14:30:25+08:00 */
+    private static final DateTimeFormatter DTF = DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ssXXX");
 
     private static String now() {
         return ZonedDateTime.now(ZoneId.systemDefault()).format(DTF);

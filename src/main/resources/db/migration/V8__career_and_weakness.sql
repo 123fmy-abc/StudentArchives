@@ -19,6 +19,7 @@ CREATE TABLE `weakness_analyses` (
     `created_at`       TIMESTAMP       NOT NULL DEFAULT CURRENT_TIMESTAMP,
     `updated_at`       TIMESTAMP       NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     `deleted_at`       TIMESTAMP       NULL DEFAULT NULL COMMENT '软删除时间',
+    `is_deleted_null`  TINYINT(1)      GENERATED ALWAYS AS (IF(`deleted_at` IS NULL, 0, NULL)) STORED NULL,
     PRIMARY KEY (`id`),
     INDEX `idx_wa_user_id` (`user_id`),
     INDEX `idx_wa_source` (`source`),
@@ -40,6 +41,7 @@ CREATE TABLE `weakness_progress` (
     `created_at`     TIMESTAMP       NOT NULL DEFAULT CURRENT_TIMESTAMP,
     `updated_at`     TIMESTAMP       NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     `deleted_at`     TIMESTAMP       NULL DEFAULT NULL COMMENT '软删除时间',
+    `is_deleted_null`  TINYINT(1)      GENERATED ALWAYS AS (IF(`deleted_at` IS NULL, 0, NULL)) STORED NULL,
     PRIMARY KEY (`id`),
     INDEX `idx_wp_weakness_id` (`weakness_id`),
     INDEX `idx_wp_recorded_at` (`recorded_at`),
@@ -78,6 +80,7 @@ CREATE TABLE `career_plans` (
     `created_at`       TIMESTAMP       NOT NULL DEFAULT CURRENT_TIMESTAMP,
     `updated_at`       TIMESTAMP       NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     `deleted_at`       TIMESTAMP       NULL DEFAULT NULL COMMENT '软删除时间',
+    `is_deleted_null`  TINYINT(1)      GENERATED ALWAYS AS (IF(`deleted_at` IS NULL, 0, NULL)) STORED NULL,
     PRIMARY KEY (`id`),
     INDEX `idx_cp_user_semester` (`user_id`, `semester_id`),
     INDEX `idx_cp_status` (`status`),
@@ -88,7 +91,7 @@ CREATE TABLE `career_plans` (
     CONSTRAINT `fk_cp_user_id` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`),
     CONSTRAINT `fk_cp_semester_id` FOREIGN KEY (`semester_id`) REFERENCES `semesters` (`id`),
     CONSTRAINT `fk_cp_auditor_id` FOREIGN KEY (`auditor_id`) REFERENCES `users` (`id`),
-    CONSTRAINT `fk_cp_file_id` FOREIGN KEY (`file_id`) REFERENCES `file_uploads` (`id`)
+    CONSTRAINT `fk_cp_file_id` FOREIGN KEY (`file_id`) REFERENCES `attachment_relations` (`id`) ON DELETE SET NULL
     -- fk_cp_ai_suggestion_id 在 improvement_suggestions 表创建后通过 ALTER TABLE 添加
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='职业规划主表';
 
@@ -107,6 +110,7 @@ CREATE TABLE `career_goals` (
     `created_at`        TIMESTAMP       NOT NULL DEFAULT CURRENT_TIMESTAMP,
     `updated_at`        TIMESTAMP       NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     `deleted_at`        TIMESTAMP       NULL DEFAULT NULL COMMENT '软删除时间',
+    `is_deleted_null`  TINYINT(1)      GENERATED ALWAYS AS (IF(`deleted_at` IS NULL, 0, NULL)) STORED NULL,
     PRIMARY KEY (`id`),
     INDEX `idx_cg_career_plan_id` (`career_plan_id`),
     CONSTRAINT `fk_cg_career_plan_id` FOREIGN KEY (`career_plan_id`) REFERENCES `career_plans` (`id`)
@@ -129,6 +133,7 @@ CREATE TABLE `career_actions` (
     `created_at`        TIMESTAMP       NOT NULL DEFAULT CURRENT_TIMESTAMP,
     `updated_at`        TIMESTAMP       NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     `deleted_at`        TIMESTAMP       NULL DEFAULT NULL COMMENT '软删除时间',
+    `is_deleted_null`  TINYINT(1)      GENERATED ALWAYS AS (IF(`deleted_at` IS NULL, 0, NULL)) STORED NULL,
     PRIMARY KEY (`id`),
     INDEX `idx_ca_goal_status` (`goal_id`, `status`, `sort`),
     CONSTRAINT `fk_ca_goal_id` FOREIGN KEY (`goal_id`) REFERENCES `career_goals` (`id`)
@@ -148,12 +153,13 @@ CREATE TABLE `career_milestones` (
     `created_at`       TIMESTAMP       NOT NULL DEFAULT CURRENT_TIMESTAMP,
     `updated_at`       TIMESTAMP       NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     `deleted_at`       TIMESTAMP       NULL DEFAULT NULL COMMENT '软删除时间',
+    `is_deleted_null`  TINYINT(1)      GENERATED ALWAYS AS (IF(`deleted_at` IS NULL, 0, NULL)) STORED NULL,
     PRIMARY KEY (`id`),
     INDEX `idx_cm_action_id` (`action_id`),
     INDEX `idx_cm_action_achieved` (`action_id`, `is_achieved`),
     INDEX `idx_cm_proof_file_id` (`proof_file_id`),
     CONSTRAINT `fk_cm_action_id` FOREIGN KEY (`action_id`) REFERENCES `career_actions` (`id`),
-    CONSTRAINT `fk_cm_proof_file_id` FOREIGN KEY (`proof_file_id`) REFERENCES `file_uploads` (`id`) ON DELETE SET NULL
+    CONSTRAINT `fk_cm_proof_file_id` FOREIGN KEY (`proof_file_id`) REFERENCES `attachment_relations` (`id`) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='规划行动里程碑子表';
 
 
@@ -167,6 +173,7 @@ CREATE TABLE `career_reflections` (
     `created_at`        TIMESTAMP       NOT NULL DEFAULT CURRENT_TIMESTAMP,
     `updated_at`        TIMESTAMP       NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     `deleted_at`        TIMESTAMP       NULL DEFAULT NULL COMMENT '软删除时间',
+    `is_deleted_null`  TINYINT(1)      GENERATED ALWAYS AS (IF(`deleted_at` IS NULL, 0, NULL)) STORED NULL,
     PRIMARY KEY (`id`),
     INDEX `idx_cr_career_plan_id` (`career_plan_id`),
     CONSTRAINT `fk_cr_career_plan_id` FOREIGN KEY (`career_plan_id`) REFERENCES `career_plans` (`id`),
@@ -184,6 +191,7 @@ CREATE TABLE `career_plan_feedbacks` (
     `created_at`       TIMESTAMP       NOT NULL DEFAULT CURRENT_TIMESTAMP,
     `updated_at`       TIMESTAMP       NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     `deleted_at`       TIMESTAMP       NULL DEFAULT NULL COMMENT '软删除时间',
+    `is_deleted_null`  TINYINT(1)      GENERATED ALWAYS AS (IF(`deleted_at` IS NULL, 0, NULL)) STORED NULL,
     PRIMARY KEY (`id`),
     INDEX `idx_cpf_career_plan_id` (`career_plan_id`),
     CONSTRAINT `fk_cpf_career_plan_id` FOREIGN KEY (`career_plan_id`) REFERENCES `career_plans` (`id`),
@@ -204,6 +212,7 @@ CREATE TABLE `improvement_suggestions` (
     `created_at`        TIMESTAMP       NOT NULL DEFAULT CURRENT_TIMESTAMP,
     `updated_at`        TIMESTAMP       NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     `deleted_at`        TIMESTAMP       NULL DEFAULT NULL COMMENT '软删除时间',
+    `is_deleted_null`  TINYINT(1)      GENERATED ALWAYS AS (IF(`deleted_at` IS NULL, 0, NULL)) STORED NULL,
     PRIMARY KEY (`id`),
     INDEX `idx_is_weakness_id` (`weakness_id`),
     INDEX `idx_is_source` (`source`),

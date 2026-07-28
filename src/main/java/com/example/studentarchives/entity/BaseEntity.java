@@ -3,14 +3,14 @@ package com.example.studentarchives.entity;
 import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.Setter;
-import org.hibernate.annotations.SQLRestriction;
+import org.hibernate.annotations.SoftDelete;
 
 import java.time.LocalDateTime;
 
 @Getter
 @Setter
 @MappedSuperclass
-@SQLRestriction("deleted_at IS NULL")
+@SoftDelete(columnName = "deleted_at")
 public abstract class BaseEntity {
 
     @Id
@@ -26,6 +26,13 @@ public abstract class BaseEntity {
     @Column(name = "deleted_at")
     private LocalDateTime deletedAt;
 
+    /**
+     * 用于 MySQL 条件唯一索引兼容的生成列（WHERE deleted_at IS NULL）。
+     * 该字段由数据库自动生成，应用层只读。
+     */
+    @Column(name = "is_deleted_null", insertable = false, updatable = false)
+    private Boolean isDeletedNull;
+
     @PrePersist
     protected void onCreate() {
         createdAt = LocalDateTime.now();
@@ -37,15 +44,5 @@ public abstract class BaseEntity {
         if (deletedAt == null) {
             updatedAt = LocalDateTime.now();
         }
-    }
-
-    /** 标记为软删除 */
-    public void markDeleted() {
-        this.deletedAt = LocalDateTime.now();
-    }
-
-    /** 是否已软删除 */
-    public boolean isDeleted() {
-        return deletedAt != null;
     }
 }

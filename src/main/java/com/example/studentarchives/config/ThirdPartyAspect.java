@@ -3,6 +3,7 @@ package com.example.studentarchives.config;
 import com.example.studentarchives.annotation.ThirdPartyApi;
 import com.example.studentarchives.util.LogUtil;
 import com.example.studentarchives.util.ThirdPartyLogUtil;
+import lombok.RequiredArgsConstructor;
 import org.aspectj.lang.ProceedingJoinPoint;
 import org.aspectj.lang.annotation.Around;
 import org.aspectj.lang.annotation.Aspect;
@@ -19,7 +20,10 @@ import java.util.Map;
  */
 @Aspect
 @Component
+@RequiredArgsConstructor
 public class ThirdPartyAspect {
+
+    private final ThirdPartyLogUtil thirdPartyLogUtil;
 
     @Around("@annotation(thirdPartyApi)")
     public Object around(ProceedingJoinPoint joinPoint, ThirdPartyApi thirdPartyApi) throws Throwable {
@@ -41,26 +45,22 @@ public class ThirdPartyAspect {
             }
         }
 
-        Object result;
-        boolean success;
         try {
-            result = joinPoint.proceed();
-            success = true;
+            Object result = joinPoint.proceed();
+            long costMs = System.currentTimeMillis() - start;
+            thirdPartyLogUtil.log(service, api, costMs, true, params, result);
+
+            // 超时告警
+            if (costMs > thirdPartyApi.warnTimeoutMs()) {
+                LogUtil.business().warn("[第三方接口超时] {}:{} 耗时={}ms, 阈值={}ms", service, api, costMs, thirdPartyApi.warnTimeoutMs());
+            }
+
+            return result;
         } catch (Throwable e) {
             long costMs = System.currentTimeMillis() - start;
-            ThirdPartyLogUtil.logError(service, api, costMs, params, e.getMessage());
+            thirdPartyLogUtil.logError(service, api, costMs, params, e.getMessage());
             LogUtil.business().warn("[第三方接口异常] {}:{} - {} ({}ms)", service, api, e.getMessage(), costMs);
             throw e;
         }
-
-        long costMs = System.currentTimeMillis() - start;
-        ThirdPartyLogUtil.log(service, api, costMs, success, params, result);
-
-        // 超时告警
-        if (costMs > thirdPartyApi.warnTimeoutMs()) {
-            LogUtil.business().warn("[第三方接口超时] {}:{} 耗时={}ms, 阈值={}ms", service, api, costMs, thirdPartyApi.warnTimeoutMs());
-        }
-
-        return result;
     }
 }

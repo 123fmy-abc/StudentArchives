@@ -1,5 +1,6 @@
 package com.example.studentarchives.common;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -28,8 +29,13 @@ public class PageResult<T> {
     @AllArgsConstructor
     public static class Pagination {
         private int page;
+
+        @JsonProperty("per_page")
         private int perPage;
+
         private long total;
+
+        @JsonProperty("total_pages")
         private int totalPages;
     }
 

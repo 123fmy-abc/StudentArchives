@@ -6,16 +6,14 @@ import jakarta.persistence.Entity;
 import jakarta.persistence.Table;
 import lombok.Getter;
 import lombok.Setter;
-import org.hibernate.annotations.SQLRestriction;
 
 @Getter
 @Setter
 @Entity
 @Table(name = "attachment_limits")
-@SQLRestriction("deleted_at IS NULL")
 public class AttachmentLimit extends BaseEntity {
 
-    @Column(name = "school_id")
+    @Column(name = "school_id", nullable = false)
     private Long schoolId;
 
     @Column(name = "archive_type", nullable = false, length = 50)

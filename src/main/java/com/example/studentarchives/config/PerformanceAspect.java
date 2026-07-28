@@ -1,7 +1,9 @@
 package com.example.studentarchives.config;
 
 import com.example.studentarchives.annotation.PerfLog;
+import com.example.studentarchives.util.DateUtils;
 import com.example.studentarchives.util.LogUtil;
+import com.example.studentarchives.util.TraceIdUtil;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import org.aspectj.lang.ProceedingJoinPoint;
@@ -10,8 +12,6 @@ import org.aspectj.lang.annotation.Aspect;
 import org.aspectj.lang.reflect.MethodSignature;
 import org.springframework.stereotype.Component;
 
-import java.time.LocalDateTime;
-import java.time.format.DateTimeFormatter;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
@@ -26,32 +26,32 @@ import java.util.Map;
 @RequiredArgsConstructor
 public class PerformanceAspect {
 
-    private static final DateTimeFormatter DTF = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss.SSS");
     private final ObjectMapper objectMapper;
 
     @Around("@annotation(perfLog)")
     public Object around(ProceedingJoinPoint joinPoint, PerfLog perfLog) throws Throwable {
         long start = System.nanoTime();
 
-        Object result;
         try {
-            result = joinPoint.proceed();
+            Object result = joinPoint.proceed();
+            long costMs = (System.nanoTime() - start) / 1_000_000;
+            logPerf(joinPoint, perfLog, costMs, true);
+            outputSlowWarning(joinPoint, perfLog, costMs);
+            return result;
         } catch (Throwable e) {
             long costMs = (System.nanoTime() - start) / 1_000_000;
             logPerf(joinPoint, perfLog, costMs, false);
+            outputSlowWarning(joinPoint, perfLog, costMs);
             throw e;
         }
+    }
 
-        long costMs = (System.nanoTime() - start) / 1_000_000;
-        logPerf(joinPoint, perfLog, costMs, true);
-
-        // 超过阈值，输出业务告警
+    /** 超过阈值时输出业务告警 */
+    private void outputSlowWarning(ProceedingJoinPoint joinPoint, PerfLog perfLog, long costMs) {
         if (costMs > perfLog.warnMs()) {
             String label = perfLog.label().isEmpty() ? joinPoint.getSignature().getName() : perfLog.label();
             LogUtil.business().warn("[性能告警] {} 耗时={}ms (阈值={}ms)", label, costMs, perfLog.warnMs());
         }
-
-        return result;
     }
 
     private void logPerf(ProceedingJoinPoint joinPoint, PerfLog perfLog, long costMs, boolean success) {
@@ -61,8 +61,8 @@ public class PerformanceAspect {
                 : perfLog.label();
 
         Map<String, Object> entry = new LinkedHashMap<>();
-        entry.put("trace_id", LogUtil.getOrCreateTraceId());
-        entry.put("timestamp", LocalDateTime.now().format(DTF));
+        entry.put("trace_id", TraceIdUtil.getOrCreate());
+        entry.put("timestamp", DateUtils.nowFull());
         entry.put("label", label);
         entry.put("cost_ms", costMs);
         entry.put("threshold_ms", perfLog.warnMs());
