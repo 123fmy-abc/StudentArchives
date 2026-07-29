@@ -23,7 +23,7 @@ public abstract class BaseEntity {
     @Column(name = "updated_at", nullable = false)
     private LocalDateTime updatedAt;
 
-    @Column(name = "deleted_at")
+    @Column(name = "deleted_at", insertable = false, updatable = false)
     private LocalDateTime deletedAt;
 
     /**
