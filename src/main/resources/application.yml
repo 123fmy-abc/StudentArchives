@@ -18,6 +18,11 @@ spring:
         jdbc:
           time_zone: Asia/Shanghai
 
+  # ===== DevTools =====
+  devtools:
+    restart:
+      enabled: false
+
   # ===== Flyway 配置 =====
   flyway:
     enabled: true
