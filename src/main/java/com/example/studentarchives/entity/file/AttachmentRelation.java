@@ -18,7 +18,7 @@ import java.time.LocalDateTime;
 @Getter
 @Setter
 @Entity
-@Table(name = "attachment_relations")
+@Table(name = "file_uploads")
 public class AttachmentRelation extends BaseEntity {
 
     @Column(name = "user_id", nullable = false)
