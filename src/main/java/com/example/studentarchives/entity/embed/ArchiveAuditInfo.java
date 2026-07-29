@@ -34,10 +34,10 @@ public class ArchiveAuditInfo {
     @Column(name = "rejected_reason", columnDefinition = "TEXT")
     private String rejectedReason;
 
-    @Lob
-    @Column(name = "correction_reason", columnDefinition = "TEXT")
-    private String correctionReason;
-
+    /**
+     * 注意：correction_reason（更正原因）不在 Embeddable 中，
+     * 只有 archives 表有此列。需要该字段的实体请单独声明。
+     */
     @Column(name = "returned_at")
     private LocalDateTime returnedAt;
 
