@@ -12,7 +12,7 @@ public enum RoleLevelEnum {
 
     SYSTEM(0, "系统"),
     STUDENT(1, "学生"),
-    TEACHER(2, "科任教师"),
+    TEACHER(2, "教师"),
     COUNSELOR(3, "辅导员"),
     DEPARTMENT_HEAD(4, "系主任"),
     COLLEGE_DEAN(5, "院长"),

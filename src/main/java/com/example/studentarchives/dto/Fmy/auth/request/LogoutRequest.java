@@ -1,4 +1,4 @@
-package com.example.studentarchives.dto.auth.request;
+package com.example.studentarchives.dto.Fmy.auth.request;
 
 import lombok.AllArgsConstructor;
 import lombok.Data;

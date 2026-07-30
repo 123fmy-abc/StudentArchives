@@ -1,7 +1,8 @@
-package com.example.studentarchives.service;
+package com.example.studentarchives.service.Fmy;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.mail.MailException;
 import org.springframework.mail.SimpleMailMessage;
 import org.springframework.mail.javamail.JavaMailSender;
@@ -23,6 +24,10 @@ public class EmailService {
 
     private final JavaMailSender mailSender;
 
+    /** 发件人地址（从配置 spring.mail.properties.mail.from 读取） */
+    @Value("${spring.mail.properties.mail.from}")
+    private String mailFrom;
+
     /**
      * 异步发送简单邮件（自动重试 3 次）
      *
@@ -39,6 +44,7 @@ public class EmailService {
     public void sendSimpleMailAsync(String to, String subject, String text) {
         try {
             SimpleMailMessage message = new SimpleMailMessage();
+            message.setFrom(mailFrom);
             message.setTo(to);
             message.setSubject(subject);
             message.setText(text);

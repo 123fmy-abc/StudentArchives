@@ -1,7 +1,6 @@
 package com.example.studentarchives.common;
 
 import com.example.studentarchives.util.TraceIdUtil;
-import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.AccessLevel;
@@ -34,7 +33,6 @@ import java.time.format.DateTimeFormatter;
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor(access = AccessLevel.PRIVATE)
-@JsonInclude(JsonInclude.Include.NON_NULL)
 public class ApiResult<T> {
 
     private int code;
@@ -116,6 +114,7 @@ public class ApiResult<T> {
 
     // ==================== 快捷判断 ====================
 
+    @com.fasterxml.jackson.annotation.JsonIgnore
     public boolean isSuccess() {
         return code == ResultCode.SUCCESS.getCode();
     }

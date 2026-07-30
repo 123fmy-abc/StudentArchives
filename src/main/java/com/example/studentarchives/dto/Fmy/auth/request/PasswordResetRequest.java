@@ -1,4 +1,4 @@
-package com.example.studentarchives.dto.auth.request;
+package com.example.studentarchives.dto.Fmy.auth.request;
 
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;

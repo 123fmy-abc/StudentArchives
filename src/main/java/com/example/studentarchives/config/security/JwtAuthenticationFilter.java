@@ -95,6 +95,14 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             Long userId = Long.valueOf(claims.getSubject());
             Integer tokenVersion = claims.get("tokenVersion", Integer.class);
 
+            // 类型检查：只有携带 tokenVersion 的令牌（accessToken）才允许访问受保护接口
+            // refreshToken 仅应通过 /auth/refresh 端点使用，不应作为 API 访问凭证
+            if (tokenVersion == null) {
+                log.warn("检测到刷新令牌被错误地用作访问令牌: userId={}", userId);
+                writeError(response, ResultCode.TOKEN_INVALID, "Token类型错误，请使用访问令牌");
+                return;
+            }
+
             // 查询用户认证状态（带缓存）
             UserAuthStatus authStatus = userRepository.findAuthStatusById(userId).orElse(null);
             if (authStatus == null) {
@@ -109,7 +117,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             }
 
             // 检查 tokenVersion — 实现"退出所有设备"功能
-            if (tokenVersion != null && !tokenVersion.equals(authStatus.getTokenVersion())) {
+            if (!tokenVersion.equals(authStatus.getTokenVersion())) {
                 writeError(response, ResultCode.TOKEN_INVALID, "Token已失效，请重新登录");
                 return;
             }

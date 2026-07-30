@@ -1,5 +1,7 @@
-package com.example.studentarchives.dto.auth.response;
+package com.example.studentarchives.dto.Fmy.auth.response;
 
+import com.example.studentarchives.annotation.Sensitive;
+import com.example.studentarchives.enums.SensitiveType;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -21,7 +23,10 @@ public class UserInfoResponse {
     private Long userId;
     private String userNo;
     private String name;
+    @Sensitive(SensitiveType.EMAIL)
     private String email;
+
+    @Sensitive(SensitiveType.PHONE)
     private String phone;
     private Integer gender;
     private String genderLabel;

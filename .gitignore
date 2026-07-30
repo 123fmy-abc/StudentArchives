@@ -1,5 +1,6 @@
 HELP.md
 target/
+*.class
 .mvn/wrapper/maven-wrapper.jar
 !**/src/main/**/target/
 !**/src/test/**/target/
@@ -48,3 +49,6 @@ logs/
 
 # 上传文件（运行时动态资源）
 uploads/
+
+# Node.js
+node_modules/

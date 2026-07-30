@@ -1,21 +1,20 @@
-package com.example.studentarchives.service;
+package com.example.studentarchives.service.Fmy;
 
 import com.example.studentarchives.common.ResultCode;
 import com.example.studentarchives.config.security.JwtProperties;
-import com.example.studentarchives.dto.auth.request.LoginRequest;
+import com.example.studentarchives.dto.Fmy.auth.request.LoginRequest;
 import com.example.studentarchives.enums.GenderEnum;
 import com.example.studentarchives.enums.StatusEnum;
 import com.example.studentarchives.util.DateUtils;
-import com.example.studentarchives.dto.auth.request.LogoutRequest;
-import com.example.studentarchives.dto.auth.request.PasswordChangeRequest;
-import com.example.studentarchives.dto.auth.request.PasswordResetConfirmRequest;
-import com.example.studentarchives.dto.auth.request.PasswordResetRequest;
-import com.example.studentarchives.dto.auth.request.RefreshTokenRequest;
-import com.example.studentarchives.dto.auth.response.CaptchaResponse;
-import com.example.studentarchives.dto.auth.response.LoginResponse;
-import com.example.studentarchives.dto.auth.response.TokenRefreshResponse;
-import com.example.studentarchives.dto.auth.response.UserInfoResponse;
-import com.example.studentarchives.entity.log.LoginLog;
+import com.example.studentarchives.dto.Fmy.auth.request.LogoutRequest;
+import com.example.studentarchives.dto.Fmy.auth.request.PasswordChangeRequest;
+import com.example.studentarchives.dto.Fmy.auth.request.PasswordResetConfirmRequest;
+import com.example.studentarchives.dto.Fmy.auth.request.PasswordResetRequest;
+import com.example.studentarchives.dto.Fmy.auth.request.RefreshTokenRequest;
+import com.example.studentarchives.dto.Fmy.auth.response.CaptchaResponse;
+import com.example.studentarchives.dto.Fmy.auth.response.LoginResponse;
+import com.example.studentarchives.dto.Fmy.auth.response.TokenRefreshResponse;
+import com.example.studentarchives.dto.Fmy.auth.response.UserInfoResponse;
 import com.example.studentarchives.entity.org.School;
 import com.example.studentarchives.entity.user.Permission;
 import com.example.studentarchives.entity.user.Role;
@@ -24,7 +23,6 @@ import com.example.studentarchives.entity.user.UserContactInfo;
 import com.example.studentarchives.entity.user.UserRole;
 import com.example.studentarchives.entity.user.RolePermission;
 import com.example.studentarchives.exception.BusinessException;
-import com.example.studentarchives.repository.LoginLogRepository;
 import com.example.studentarchives.repository.PermissionRepository;
 import com.example.studentarchives.repository.RolePermissionRepository;
 import com.example.studentarchives.repository.RoleRepository;
@@ -76,7 +74,7 @@ public class AuthService {
     private final RolePermissionRepository rolePermissionRepository;
     private final PermissionRepository permissionRepository;
     private final SchoolRepository schoolRepository;
-    private final LoginLogRepository loginLogRepository;
+    private final LoginLogService loginLogService;
 
     private final JwtUtil jwtUtil;
     private final JwtProperties jwtProperties;
@@ -116,16 +114,25 @@ public class AuthService {
     public LoginResponse login(LoginRequest request, String ipAddress, String userAgent) {
         // 1. 校验验证码
         if (!captchaStore.verify(request.getCaptchaKey(), request.getCaptchaCode())) {
+            log.warn("[登录调试] 步骤1失败: 验证码错误, key={}, code={}", request.getCaptchaKey(), request.getCaptchaCode());
+            recordLoginLog(null, null, LOGIN_STATUS_FAILED, "验证码错误", ipAddress, userAgent);
             throw new BusinessException(ResultCode.PARAM_ERROR, "验证码错误或已过期");
         }
+        log.info("[登录调试] 步骤1通过: 验证码正确");
 
         // 2. 检查登录失败次数
-        if (!loginAttemptLimiter.isAllowed(request.getUserNo())) {
-            throw new BusinessException(ResultCode.TOO_MANY_REQUESTS, "登录失败次数过多，请15分钟后重试");
+        boolean allowed = loginAttemptLimiter.isAllowed(request.getUserNo());
+        log.info("[登录调试] 步骤2: 登录限流检查结果={}", allowed);
+        if (!allowed) {
+            long remainingSeconds = loginAttemptLimiter.getLockoutRemainingSeconds(request.getUserNo());
+            recordLoginLog(null, null, LOGIN_STATUS_FAILED, "登录失败次数过多", ipAddress, userAgent);
+            throw new BusinessException(ResultCode.TOO_MANY_REQUESTS,
+                    "登录失败次数过多，请 " + remainingSeconds + " 秒后重试");
         }
 
         // 3. 查询用户
         User user = userRepository.findByUserNo(request.getUserNo()).orElse(null);
+        log.info("[登录调试] 步骤3: 查询用户 userNo={}, 结果={}", request.getUserNo(), user != null ? "找到(id=" + user.getId() + ")" : "未找到");
         if (user == null) {
             recordLoginLog(null, null, LOGIN_STATUS_FAILED, "账号不存在", ipAddress, userAgent);
             loginAttemptLimiter.recordFailure(request.getUserNo());
@@ -133,6 +140,7 @@ public class AuthService {
         }
 
         // 4. 检查账号状态
+        log.info("[登录调试] 步骤4: 账号状态 status={}", user.getStatus());
         if (!StatusEnum.ENABLED.equalsValue(user.getStatus())) {
             recordLoginLog(user.getSchoolId(), user.getId(), LOGIN_STATUS_FAILED, "账号被禁用", ipAddress, userAgent);
             loginAttemptLimiter.recordFailure(request.getUserNo());
@@ -140,7 +148,9 @@ public class AuthService {
         }
 
         // 5. 校验密码
-        if (!passwordEncoder.matches(request.getPassword(), user.getPassword())) {
+        boolean matched = passwordEncoder.matches(request.getPassword(), user.getPassword());
+        log.info("[登录调试] 步骤5: 密码校验结果={}, 密码哈希前20位={}", matched, user.getPassword().substring(0, Math.min(20, user.getPassword().length())));
+        if (!matched) {
             recordLoginLog(user.getSchoolId(), user.getId(), LOGIN_STATUS_FAILED, "密码错误", ipAddress, userAgent);
             loginAttemptLimiter.recordFailure(request.getUserNo());
             throw new BusinessException(ResultCode.PASSWORD_ERROR, "账号或密码错误");
@@ -156,7 +166,7 @@ public class AuthService {
 
         // 8. 生成令牌
         boolean rememberMe = Boolean.TRUE.equals(request.getRememberMe());
-        long accessExpiresIn = rememberMe ? jwtProperties.getExpirationMs() : jwtProperties.getNoRememberExpirationMs();
+        long accessExpiresIn = rememberMe ? jwtProperties.getRememberMeAccessExpirationMs() : jwtProperties.getExpirationMs();
         Integer tokenVersion = currentUser.getTokenVersion();
         String accessToken = jwtUtil.generateToken(
                 currentUser.getId(), currentUser.getUserNo(), currentUser.getSchoolId(), tokenVersion, accessExpiresIn);
@@ -165,7 +175,7 @@ public class AuthService {
             refreshToken = jwtUtil.generateRefreshToken(
                     currentUser.getId(), currentUser.getUserNo(), currentUser.getSchoolId(),
                     currentUser.getRefreshTokenVersion(),
-                    jwtProperties.getRememberMeExpirationMs());
+                    jwtProperties.getRememberMeRefreshExpirationMs());
         }
 
         // 9. 记录登录日志
@@ -324,7 +334,7 @@ public class AuthService {
                 claims.get("userNo", String.class),
                 claims.get("schoolId", Long.class),
                 newStatus.getRefreshTokenVersion(),
-                jwtProperties.getRememberMeExpirationMs());
+                jwtProperties.getRememberMeRefreshExpirationMs());
 
         return TokenRefreshResponse.builder()
                 .accessToken(accessToken)
@@ -355,6 +365,11 @@ public class AuthService {
         // 校验旧密码
         if (!passwordEncoder.matches(request.getOldPassword(), user.getPassword())) {
             throw new BusinessException(ResultCode.PASSWORD_ERROR, "原密码错误");
+        }
+
+        // 校验新密码与原密码不能相同
+        if (passwordEncoder.matches(request.getNewPassword(), user.getPassword())) {
+            throw BusinessException.badParam("新密码不能与原密码相同");
         }
 
         // 更新密码
@@ -441,11 +456,16 @@ public class AuthService {
         User user = userRepository.findById(contactInfo.getUserId())
                 .orElseThrow(() -> new BusinessException(ResultCode.DATA_NOT_EXIST, "该邮箱未注册"));
 
-        // 4. 更新密码
+        // 4. 校验新密码与原密码不能相同
+        if (passwordEncoder.matches(request.getNewPassword(), user.getPassword())) {
+            throw BusinessException.badParam("重置密码不能与原密码相同");
+        }
+
+        // 5. 更新密码
         user.setPassword(passwordEncoder.encode(request.getNewPassword()));
         userRepository.save(user);
 
-        // 5. 使旧 Token 失效
+        // 6. 使旧 Token 失效
         userRepository.revokeAllTokens(user.getId());
 
         log.info("用户 {} 密码重置成功（邮箱：{}）", user.getId(), request.getEmail());
@@ -496,21 +516,12 @@ public class AuthService {
 
     /**
      * 记录登录日志
+     * <p>
+     * 所有登录尝试（成功/失败）均记录，失败原因通过 failReason 传递，
+     * 保留截止时间默认 180 天，逾期可由定时任务清理。
      */
     private void recordLoginLog(Long schoolId, Long userId, int status, String failReason,
                                 String ipAddress, String userAgent) {
-        try {
-            LoginLog loginLog = new LoginLog();
-            loginLog.setSchoolId(schoolId != null ? schoolId : 0L);
-            loginLog.setUserId(userId);
-            loginLog.setLoginType(LOGIN_TYPE_PASSWORD); // 1=密码登录
-            loginLog.setIpAddress(ipAddress);
-            loginLog.setUserAgent(userAgent);
-            loginLog.setLoginStatus(status); // 1=成功 0=失败
-            loginLog.setFailReason(failReason);
-            loginLogRepository.save(loginLog);
-        } catch (Exception e) {
-            log.warn("记录登录日志失败: {}", e.getMessage());
-        }
+        loginLogService.recordLoginLog(schoolId, userId, status, failReason, ipAddress, userAgent);
     }
 }

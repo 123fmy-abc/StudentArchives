@@ -3,14 +3,14 @@ package com.example.studentarchives.entity;
 import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.Setter;
-import org.hibernate.annotations.SoftDelete;
+import org.hibernate.annotations.SQLRestriction;
 
 import java.time.LocalDateTime;
 
 @Getter
 @Setter
 @MappedSuperclass
-@SoftDelete(columnName = "deleted_at")
+@SQLRestriction("deleted_at IS NULL")
 public abstract class BaseEntity {
 
     @Id

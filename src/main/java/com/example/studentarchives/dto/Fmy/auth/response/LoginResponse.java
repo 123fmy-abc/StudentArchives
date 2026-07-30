@@ -1,5 +1,7 @@
-package com.example.studentarchives.dto.auth.response;
+package com.example.studentarchives.dto.Fmy.auth.response;
 
+import com.example.studentarchives.annotation.Sensitive;
+import com.example.studentarchives.enums.SensitiveType;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -42,7 +44,10 @@ public class LoginResponse {
         private Long userId;
         private String userNo;
         private String name;
+
+        @Sensitive(SensitiveType.EMAIL)
         private String email;
+
         private Integer gender;
         private String genderLabel;
         private Long schoolId;

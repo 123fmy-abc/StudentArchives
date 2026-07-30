@@ -9,14 +9,14 @@ import java.time.Duration;
 /**
  * 登录失败次数限制器（基于 Redis，支持集群）
  * <p>
- * 同一账号在 15 分钟内连续失败 5 次后锁定，登录成功或达到 TTL 后清除。
+ * 同一账号在 2 分钟内连续失败 5 次后锁定，登录成功或达到 TTL 后清除。
  */
 @Component
 @RequiredArgsConstructor
 public class LoginAttemptLimiter {
 
     private static final int MAX_ATTEMPTS = 5;
-    private static final Duration LOCKOUT_DURATION = Duration.ofMinutes(15);
+    private static final Duration LOCKOUT_DURATION = Duration.ofMinutes(2);
     private static final String KEY_PREFIX = "login:limiter:";
 
     private final StringRedisTemplate redisTemplate;
@@ -40,6 +40,18 @@ public class LoginAttemptLimiter {
             redisTemplate.delete(key);
             return true;
         }
+    }
+
+    /**
+     * 获取账号锁定的剩余秒数。
+     *
+     * @param account 账号（学号/工号）
+     * @return 剩余锁定秒数，未锁定时返回 0
+     */
+    public long getLockoutRemainingSeconds(String account) {
+        String key = buildKey(account);
+        Long ttl = redisTemplate.getExpire(key);
+        return ttl != null && ttl > 0 ? ttl : 0;
     }
 
     /**

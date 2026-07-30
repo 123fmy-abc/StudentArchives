@@ -31,6 +31,7 @@ spring:
     username: ${MAIL_USERNAME}
     password: ${MAIL_PASSWORD}
     properties:
+      mail.from: ${MAIL_USERNAME}
       mail.smtp.auth: true
       mail.smtp.starttls.enable: true
       mail.smtp.timeout: 5000

@@ -22,6 +22,8 @@ spring:
   devtools:
     restart:
       enabled: false
+    livereload:
+      enabled: false
 
   # ===== Flyway 配置 =====
   flyway:
@@ -32,6 +34,7 @@ spring:
     validate-on-migrate: true
     clean-disabled: true
     table: flyway_schema_history
+    repair: true
 
   # ===== Jackson 配置 =====
   jackson:
@@ -77,5 +80,5 @@ logging:
   level:
     com.example.studentarchives: INFO
     org.springframework.security: WARN
-    org.hibernate.SQL: WARN
-    "org.hibernate.type.descriptor.sql": WARN
+    org.hibernate.SQL: DEBUG
+    "org.hibernate.type.descriptor.sql": TRACE

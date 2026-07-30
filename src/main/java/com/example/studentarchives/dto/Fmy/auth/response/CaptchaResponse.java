@@ -1,4 +1,4 @@
-package com.example.studentarchives.dto.auth.response;
+package com.example.studentarchives.dto.Fmy.auth.response;
 
 import lombok.AllArgsConstructor;
 import lombok.Builder;

@@ -111,6 +111,34 @@ public class SensitiveMasker {
     }
 
     /**
+     * 手机号脱敏：保留前 3 位和后 4 位，中间 4 位用 **** 代替
+     * <pre>13812345678 → 138****5678</pre>
+     */
+    public static String maskPhone(String phone) {
+        if (phone == null || phone.length() < 7) return phone;
+        return PHONE_PATTERN.matcher(phone).replaceAll("$1****$2");
+    }
+
+    /**
+     * 邮箱脱敏：根据 @ 前字符数动态保留前缀
+     * <ul>
+     *   <li>1 字符（a@qq.com）       → a***@qq.com</li>
+     *   <li>2 字符（ja@163.com）     → ja***@163.com</li>
+     *   <li>3+ 字符（zhangsan@...）  → zha***@outlook.com</li>
+     * </ul>
+     */
+    public static String maskEmail(String email) {
+        if (email == null || !email.contains("@")) return email;
+        int atIndex = email.indexOf('@');
+        if (atIndex <= 0) {
+            // 异常格式：@qq.com → ***@qq.com
+            return "***" + email;
+        }
+        int keepCount = Math.min(atIndex, 3);
+        return email.substring(0, keepCount) + "***" + email.substring(atIndex);
+    }
+
+    /**
      * 对字符串内容进行手机号、邮箱、身份证等模式脱敏，并清理换行符
      */
     public static String maskString(String value) {
