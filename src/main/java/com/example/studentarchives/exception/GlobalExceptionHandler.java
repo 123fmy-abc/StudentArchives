@@ -5,6 +5,7 @@ import com.example.studentarchives.common.ResultCode;
 import jakarta.validation.ConstraintViolation;
 import jakarta.validation.ConstraintViolationException;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.dao.DataAccessException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
@@ -17,6 +18,7 @@ import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
+import org.springframework.web.multipart.MultipartException;
 
 /**
  * 全局异常处理器
@@ -82,6 +84,14 @@ public class GlobalExceptionHandler {
         return ApiResult.error(ResultCode.PARAM_MISSING, "缺少必填参数: " + e.getParameterName());
     }
 
+    /** 文件上传格式错误（非 multipart/form-data 请求） */
+    @ExceptionHandler(MultipartException.class)
+    @ResponseStatus(HttpStatus.BAD_REQUEST)
+    public ApiResult<Void> handleMultipart(MultipartException e) {
+        log.warn("文件上传请求格式错误: {}", e.getMessage());
+        return ApiResult.error(ResultCode.PARAM_FORMAT_ERROR, "请求格式错误，请使用 multipart/form-data 格式上传文件");
+    }
+
     /** 参数类型转换错误 */
     @ExceptionHandler(MethodArgumentTypeMismatchException.class)
     @ResponseStatus(HttpStatus.BAD_REQUEST)
@@ -116,6 +126,16 @@ public class GlobalExceptionHandler {
     public ApiResult<Void> handleIllegalArgument(IllegalArgumentException e) {
         log.warn("非法参数: {}", e.getMessage());
         return ApiResult.error(ResultCode.PARAM_ILLEGAL, e.getMessage());
+    }
+
+    // ==================== 数据访问异常 ====================
+
+    /** Redis 或数据库连接异常（如 Redis 不可用） */
+    @ExceptionHandler(DataAccessException.class)
+    @ResponseStatus(HttpStatus.INTERNAL_SERVER_ERROR)
+    public ApiResult<Void> handleDataAccess(DataAccessException e) {
+        log.error("数据访问异常（Redis/数据库）:", e);
+        return ApiResult.error(ResultCode.THIRD_REDIS_FAILED, "缓存服务暂不可用，请稍后重试");
     }
 
     /** 兜底：未预期的异常 */

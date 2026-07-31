@@ -48,9 +48,6 @@ public class AttachmentRelation extends BaseEntity {
     @Column(name = "disk", nullable = false, length = 50)
     private String disk;
 
-    @Column(name = "preview_url", length = 500)
-    private String previewUrl;
-
     @Column(name = "convert_status", nullable = false)
     private Integer convertStatus;
 

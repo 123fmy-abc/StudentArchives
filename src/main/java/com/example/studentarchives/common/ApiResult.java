@@ -2,6 +2,7 @@ package com.example.studentarchives.common;
 
 import com.example.studentarchives.util.TraceIdUtil;
 import com.fasterxml.jackson.annotation.JsonProperty;
+import com.fasterxml.jackson.annotation.JsonPropertyOrder;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.AccessLevel;
 import lombok.AllArgsConstructor;
@@ -33,6 +34,7 @@ import java.time.format.DateTimeFormatter;
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor(access = AccessLevel.PRIVATE)
+@JsonPropertyOrder({"code", "message", "data", "trace_id", "timestamp"})
 public class ApiResult<T> {
 
     private int code;

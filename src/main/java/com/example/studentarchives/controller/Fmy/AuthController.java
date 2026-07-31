@@ -1,5 +1,6 @@
 package com.example.studentarchives.controller.Fmy;
 
+import com.example.studentarchives.annotation.AuditLog;
 import com.example.studentarchives.common.ApiResult;
 import com.example.studentarchives.dto.Fmy.auth.request.LoginRequest;
 import com.example.studentarchives.dto.Fmy.auth.request.LogoutRequest;
@@ -55,6 +56,7 @@ public class AuthController {
      * <p>
      * 公开接口，验证验证码 + 学号密码后返回 JWT 令牌。
      */
+    @AuditLog(module = "auth", action = "login", description = "用户登录", logParams = false, logResult = true)
     @PostMapping("/login")
     public ApiResult<LoginResponse> login(@Valid @RequestBody LoginRequest request,
                                            HttpServletRequest httpRequest) {
@@ -80,6 +82,7 @@ public class AuthController {
      * <p>
      * 需携带 Bearer Token。all=true 时使所有设备下线。
      */
+    @AuditLog(module = "auth", action = "logout", description = "用户退出")
     @PostMapping("/logout")
     public ApiResult<Void> logout(@AuthenticationPrincipal Long userId,
                                   @RequestBody(required = false) LogoutRequest request) {
@@ -95,6 +98,7 @@ public class AuthController {
      * <p>
      * 需携带 Bearer Token。需提供原密码和新密码。
      */
+    @AuditLog(module = "auth", action = "change_password", description = "修改密码", logParams = false)
     @PutMapping("/password")
     public ApiResult<Void> changePassword(@AuthenticationPrincipal Long userId,
                                           @Valid @RequestBody PasswordChangeRequest request) {
@@ -107,6 +111,7 @@ public class AuthController {
      * <p>
      * 公开接口。向注册邮箱发送 6 位数字验证码。
      */
+    @AuditLog(module = "auth", action = "reset_password", description = "发送密码重置邮件到 #request.email", logResult = true)
     @PostMapping("/password/reset")
     public ApiResult<Void> sendResetEmail(@Valid @RequestBody PasswordResetRequest request,
                                            HttpServletRequest httpRequest) {
@@ -120,6 +125,7 @@ public class AuthController {
      * <p>
      * 公开接口。验证验证码后更新密码。
      */
+    @AuditLog(module = "auth", action = "reset_password_confirm", description = "确认密码重置", logParams = false)
     @PostMapping("/password/reset/confirm")
     public ApiResult<Void> confirmReset(@Valid @RequestBody PasswordResetConfirmRequest request) {
         authService.confirmPasswordReset(request);

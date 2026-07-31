@@ -35,11 +35,20 @@ spring:
     clean-disabled: true
     table: flyway_schema_history
     repair: true
+    repair-on-migration-failure: true
 
   # ===== Jackson 配置 =====
   jackson:
     time-zone: Asia/Shanghai
     date-format: yyyy-MM-dd'T'HH:mm:ssXXX
+
+  # ===== 文件上传配置 =====
+  servlet:
+    multipart:
+      enabled: true
+      max-file-size: 12MB        # 单个文件最大大小（需 > oss.max-file-size 的 10MB）
+      max-request-size: 12MB     # 整个请求最大大小
+      resolve-lazily: false      # 是否延迟解析（false=立即解析，可提前捕获异常）
 
   # ===== Redis 配置（远程共享）=====
   # 通过 database 索引隔离不同开发者的缓存数据
@@ -59,6 +68,18 @@ server:
   port: 8080
   servlet:
     context-path: /api/v1
+
+# ===== OSS 配置（fmy 配置，团队共享） =====
+# 通过 .env 文件注入以下环境变量：
+#   OSS_ENDPOINT, OSS_ACCESS_KEY_ID, OSS_ACCESS_KEY_SECRET, OSS_BUCKET_NAME
+oss:
+  endpoint: ${OSS_ENDPOINT:}
+  access-key-id: ${OSS_ACCESS_KEY_ID:}
+  access-key-secret: ${OSS_ACCESS_KEY_SECRET:}
+  bucket-name: ${OSS_BUCKET_NAME:}
+  max-file-size: 10485760           # 文件上传最大大小（字节），默认 10MB
+  temp-expire-hours: 24             # 临时文件过期时间（小时）
+  url-expire-minutes: 30            # 临时访问 URL 过期时间（分钟）
 
 # ===== JWT 配置 =====
 jwt:

@@ -416,7 +416,7 @@ public class AuthService {
             throw e;
         }
 
-        // 3. 异步发送邮件（不阻塞主线程，失败由 EmailService 内部记录）
+        // 3. 同步发送邮件（失败时自动重试 3 次，重试耗尽后抛异常）
         String text = "您好，\n\n"
                 + "您正在申请重置学生档案系统的登录密码。\n\n"
                 + "验证码：" + code + "\n"
@@ -425,8 +425,8 @@ public class AuthService {
                 + "请求 IP：" + (clientIp != null ? clientIp : "未知") + "\n\n"
                 + "如非本人操作，请忽略此邮件，并建议立即修改您的登录密码。\n"
                 + "若重复收到此类邮件，请联系系统管理员。";
-        emailService.sendSimpleMailAsync(email, "[学生档案系统] 密码重置验证码", text);
-        log.info("密码重置邮件已异步发送至 {}（IP: {}）", email, clientIp);
+        emailService.sendSimpleMail(email, "[学生档案系统] 密码重置验证码", text);
+        log.info("密码重置邮件已发送至 {}（IP: {}）", email, clientIp);
     }
 
     // ==================== 确认密码重置 ====================

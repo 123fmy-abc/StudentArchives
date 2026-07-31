@@ -15,6 +15,7 @@ import org.aspectj.lang.reflect.MethodSignature;
 import org.springframework.expression.ExpressionParser;
 import org.springframework.expression.spel.standard.SpelExpressionParser;
 import org.springframework.expression.spel.support.SimpleEvaluationContext;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Component;
 
 import java.util.LinkedHashMap;
@@ -79,6 +80,10 @@ public class AuditLogAspect {
         Map<String, Object> entry = new LinkedHashMap<>();
         entry.put("trace_id", TraceIdUtil.getOrCreate());
         entry.put("timestamp", DateUtils.nowFull());
+        // 记录操作人（登录等公开接口可能无认证上下文）
+        Object principal = SecurityContextHolder.getContext().getAuthentication() != null
+                ? SecurityContextHolder.getContext().getAuthentication().getPrincipal() : null;
+        entry.put("user_id", principal != null && !"anonymousUser".equals(principal.toString()) ? principal : null);
         entry.put("module", auditLog.module());
         entry.put("action", auditLog.action());
         entry.put("description", description);

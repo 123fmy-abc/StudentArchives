@@ -53,9 +53,9 @@ public class SecurityConfig {
                     .requestMatchers(PUBLIC_AUTH_PATHS).permitAll()
                     // 静态资源、错误页面等无需认证（放在 /** 之前才生效）
                     .requestMatchers("/error", "/favicon.ico", "/static/**", "/webjars/**").permitAll()
-                    // 其余 API 需认证
-                    .requestMatchers("/api/**").authenticated()
-                    // 其他兜底放行
+                    // 业务接口需认证（公开路径已在之前通过 permitAll 排除）
+                    .requestMatchers("/auth/**", "/common/**").authenticated()
+                    // 其他未匹配的兜底放行（如健康检查、静态资源等）
                     .anyRequest().permitAll()
             )
             // 添加 JWT 认证过滤器

@@ -49,6 +49,11 @@ spring:
       mail.smtp.timeout: 5000
       mail.smtp.connectiontimeout: 5000
 
+# ===== OSS 配置 =====
+# 与 application.yml 一致的 oss 配置通过 .env 注入以下环境变量：
+#   OSS_ENDPOINT, OSS_ACCESS_KEY_ID, OSS_ACCESS_KEY_SECRET, OSS_BUCKET_NAME
+# 团队所有成员使用 fmy 配置的同一 OSS，只需在 .env 中填入相同密钥即可共享。
+
 # ===== JWT 密钥（开发环境也不提供默认值，必须在 .env 中设置 JWT_SECRET）=====
 jwt:
   secret: ${JWT_SECRET:}
