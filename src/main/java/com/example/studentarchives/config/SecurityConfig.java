@@ -22,15 +22,16 @@ import static com.example.studentarchives.config.security.SecurityConstants.PUBL
  * <p>
  * JWT 无状态认证，登录接口公开，其余 API 需认证。
  */
-@Configuration
-@EnableWebSecurity
+//类级别的注解
+@Configuration //告诉 Spring 这是一个配置类，里面定义的 @Bean 方法会被注册到 Spring 容器中
+@EnableWebSecurity//启用 Spring Security 的 Web 安全功能。
 @EnableMethodSecurity(prePostEnabled = true)
 @RequiredArgsConstructor
 public class SecurityConfig {
 
-    private final JwtAuthenticationFilter jwtAuthenticationFilter;
-    private final JwtAuthenticationEntryPoint authenticationEntryPoint;
-    private final JwtAccessDeniedHandler accessDeniedHandler;
+    private final JwtAuthenticationFilter jwtAuthenticationFilter;//自定义的 JWT 过滤器，用于拦截请求并验证 Token
+    private final JwtAuthenticationEntryPoint authenticationEntryPoint;//处理未认证异常（如未登录或 Token 失效）的入口点
+    private final JwtAccessDeniedHandler accessDeniedHandler;//登录但无访问权限 处理器
 
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
@@ -54,7 +55,7 @@ public class SecurityConfig {
                     // 静态资源、错误页面等无需认证（放在 /** 之前才生效）
                     .requestMatchers("/error", "/favicon.ico", "/static/**", "/webjars/**").permitAll()
                     // 业务接口需认证（公开路径已在之前通过 permitAll 排除）
-                    .requestMatchers("/auth/**", "/common/**").authenticated()
+                    .requestMatchers("/auth/**", "/common/**", "/home/**").authenticated()
                     // 其他未匹配的兜底放行（如健康检查、静态资源等）
                     .anyRequest().permitAll()
             )
