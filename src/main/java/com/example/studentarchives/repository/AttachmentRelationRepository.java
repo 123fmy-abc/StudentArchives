@@ -8,8 +8,9 @@ import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
 import java.time.LocalDateTime;
-import java.util.Collection;
 import java.util.List;
+import java.util.Collection;
+
 import java.util.Optional;
 
 /**
@@ -39,6 +40,11 @@ public interface AttachmentRelationRepository extends JpaRepository<AttachmentRe
      * 统计用户指定类别的附件数量
      */
     long countByUserIdAndFileCategory(Long userId, String fileCategory);
+
+    /**
+     * 按业务类型和业务ID查询附件（用于活动详情佐证材料）
+     */
+    List<AttachmentRelation> findByBizTypeAndBizId(String bizType, Long bizId);
 
     /**
      * 软删除附件记录（通过 native query 绕过 updatable=false 限制）

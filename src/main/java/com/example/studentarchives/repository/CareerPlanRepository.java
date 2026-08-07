@@ -4,9 +4,13 @@ import com.example.studentarchives.entity.career.CareerPlan;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
+import org.springframework.data.jpa.repository.Modifying;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 
 import java.util.List;
 import java.util.Optional;
+import java.time.LocalDateTime;
 
 /**
  * 职业规划 Repository（对应表 career_plans）
@@ -34,4 +38,9 @@ public interface CareerPlanRepository extends JpaRepository<CareerPlan, Long> {
 
     /** 取用户指定学期最近一条规划（复制场景） */
     Optional<CareerPlan> findFirstByUserIdAndSemesterIdOrderByIdDesc(Long userId, Long semesterId);
+
+    /** 软删除（通过 native query 绕过 updatable=false 限制） */
+    @Modifying
+    @Query(value = "UPDATE career_plans SET deleted_at = :deletedAt WHERE id = :id", nativeQuery = true)
+    int softDeleteById(@Param("id") Long id, @Param("deletedAt") LocalDateTime deletedAt);
 }

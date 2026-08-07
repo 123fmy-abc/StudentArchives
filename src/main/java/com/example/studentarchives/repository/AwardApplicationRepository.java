@@ -2,18 +2,25 @@ package com.example.studentarchives.repository;
 
 import com.example.studentarchives.entity.award.AwardApplication;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
+import java.time.LocalDateTime;
 import java.util.List;
 
 /**
- * 奖项申请 Repository
+ * 奖项报名 Repository
  */
 @Repository
 public interface AwardApplicationRepository extends JpaRepository<AwardApplication, Long> {
 
-    /**
-     * 查询学生全部奖项申请（用于简历导出聚合获奖经历）
-     */
+    /** 查询学生全部奖项记录（用于活动列表聚合 + Java 侧筛选） */
     List<AwardApplication> findByUserId(Long userId);
+
+    /** 软删除（通过 native query 绕过 updatable=false 限制） */
+    @Modifying
+    @Query(value = "UPDATE award_applications SET deleted_at = :deletedAt WHERE id = :id", nativeQuery = true)
+    int softDeleteById(@Param("id") Long id, @Param("deletedAt") LocalDateTime deletedAt);
 }
