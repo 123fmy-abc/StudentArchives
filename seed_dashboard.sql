@@ -223,6 +223,56 @@ INSERT INTO `award_applications`
 (7, 1, 5, 'competition_star', '大学生电子设计竞赛',             4, 'EDC-2026-00115',  '教育部高等教育司',       NULL,          '队长',   2, '2026-05-10 09:00:00', '2026-05-12 10:00:00', '2026-05-12 10:00:00', NULL, 1, 1);
 
 -- ============================================================
+-- 5.1 奖项报名扩展表（与 5 中 award_applications 一一对应）
+--     竞赛之星（competition_star）→ award_competition_stars
+--     双创之星（innovation_star） → award_innovation_stars
+--     科研之星（research_star）   → award_research_stars + 科研项目子表
+--     简历导出（award_competition_stars 等）依赖此明细，缺明细时基表字段无法补齐
+-- ============================================================
+-- 5.1.1 竞赛之星（对应报名 id 1、3、4、6、7）
+INSERT INTO `award_competition_stars`
+(`id`, `application_id`, `competition_name`, `participated_at`, `competition_level`, `award_level`) VALUES
+(1, 1, '全国大学生数学建模竞赛', '2025-09-12', '国家级', '一等奖'),
+(2, 3, '全国大学生英语竞赛',     '2025-11-16', '国家级', '二等奖'),
+(3, 4, '挑战杯大学生课外学术科技作品竞赛', '2026-04-18', '国家级', '一等奖'),
+(4, 6, '蓝桥杯程序设计大赛',     '2026-03-14', '国家级', '三等奖'),
+(5, 7, '大学生电子设计竞赛',     '2026-04-25', '国家级', '二等奖');
+
+-- 5.1.2 双创之星（对应报名 id 2）
+INSERT INTO `award_innovation_stars`
+(`id`, `application_id`, `company_name`, `industry_type`, `applicant_rank`, `registered_at`) VALUES
+(1, 2, '星辰科创有限责任公司', '软件和信息技术服务业', '联合创始人', '2025-10-08');
+
+-- 5.1.3 科研之星（对应报名 id 5，主要成果类型=project）
+INSERT INTO `award_research_stars`
+(`id`, `application_id`, `primary_category`) VALUES
+(1, 5, 'project');
+
+-- 5.1.4 科研之星子表：科研项目（关联 award_research_stars.id=1）
+INSERT INTO `award_research_projects`
+(`id`, `research_star_id`, `project_name`, `project_level`, `rank_total`, `established_at`) VALUES
+(1, 1, '基于大数据的智慧校园学习行为分析平台', '校级', '1/6', '2025-09-01');
+
+-- ============================================================
+-- 5.2 奖项类型配置（award_type_configs）— 奖项报名模块的类型配置
+--     编码与 5 中 award_applications.award_type 对应，供奖项申报/评选说明使用
+-- ============================================================
+INSERT INTO `award_type_configs`
+(`id`, `award_type`, `type_name`, `evaluate_desc`, `apply_desc`, `icon`, `sort`, `status`) VALUES
+(1, 'competition_star', '竞赛之星',
+ '竞赛之星用于表彰在学科竞赛中取得优异成绩的学生。申报需提供竞赛名称、竞赛级别（国家级/省部级/校级等）、获奖级别，并上传获奖证书或参赛证明。',
+ '1. 每人每学期限申报一项；\n2. 佐证材料须包含获奖证书或官方公示截图；\n3. 团队获奖须注明本人排名。',
+ 'trophy', 1, 1),
+(2, 'research_star', '科研之星',
+ '科研之星用于表彰在科研活动中表现突出的学生，主要成果类型包括科研项目、软件著作权、发表论文三类。',
+ '1. 主要成果类型为科研项目/软件著作权/发表论文三选一；\n2. 须提供立项、获批或发表证明材料；\n3. 团队成果须注明本人排名。',
+ 'flask', 2, 1),
+(3, 'innovation_star', '双创之星',
+ '双创之星用于表彰在创新创业实践中表现突出的学生，申报需提供创业公司名称、行业类型、申报人排名及注册时间。',
+ '1. 公司须为在校期间注册；\n2. 须提供营业执照等佐证材料；\n3. 须注明申报人排名。',
+ 'lightbulb', 3, 1);
+
+-- ============================================================
 -- 6. 站内消息（user_messages）— 首页未读消息数
 --    category：system_notice / audit_remind / dynamic_remind（对应 seed_dictionaries.sql）
 --    sender_type：1=系统 2=人工 3=自动触发；sender_id NULL（种子中暂无教师用户）

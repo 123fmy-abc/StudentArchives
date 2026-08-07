@@ -6,11 +6,13 @@ import lombok.Getter;
 import lombok.Setter;
 
 import java.time.LocalDateTime;
+import org.hibernate.annotations.SQLRestriction;
 
 @Getter
 @Setter
 @Entity
 @Table(name = "statistics_cache")
+@SQLRestriction(BaseEntity.DELETED_AT_IS_NULL)
 public class StatisticsCache extends BaseEntity {
 
     @Column(name = "school_id", nullable = false)

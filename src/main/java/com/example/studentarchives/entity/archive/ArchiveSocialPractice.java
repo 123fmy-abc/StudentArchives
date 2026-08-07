@@ -9,11 +9,13 @@ import lombok.Setter;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import org.hibernate.annotations.SQLRestriction;
 
 @Getter
 @Setter
 @Entity
 @Table(name = "archive_social_practices")
+@SQLRestriction(BaseEntity.DELETED_AT_IS_NULL)
 public class ArchiveSocialPractice extends BaseEntity {
 
     @Column(name = "archive_id", nullable = false)

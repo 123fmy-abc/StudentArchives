@@ -6,11 +6,13 @@ import lombok.Getter;
 import lombok.Setter;
 
 import java.math.BigDecimal;
+import org.hibernate.annotations.SQLRestriction;
 
 @Getter
 @Setter
 @Entity
 @Table(name = "semester_gpa_summaries")
+@SQLRestriction(BaseEntity.DELETED_AT_IS_NULL)
 public class SemesterGpaSummary extends BaseEntity {
 
     @Column(name = "user_id", nullable = false)

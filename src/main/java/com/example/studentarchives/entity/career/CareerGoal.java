@@ -6,11 +6,13 @@ import lombok.Getter;
 import lombok.Setter;
 
 import java.time.LocalDate;
+import org.hibernate.annotations.SQLRestriction;
 
 @Getter
 @Setter
 @Entity
 @Table(name = "career_goals")
+@SQLRestriction(BaseEntity.DELETED_AT_IS_NULL)
 public class CareerGoal extends BaseEntity {
 
     @Column(name = "career_plan_id", nullable = false)

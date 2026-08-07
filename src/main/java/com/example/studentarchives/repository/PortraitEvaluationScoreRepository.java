@@ -16,4 +16,9 @@ public interface PortraitEvaluationScoreRepository extends JpaRepository<Portrai
      * 查询学生某学期的各维度画像得分
      */
     List<PortraitEvaluationScore> findByUserIdAndSemesterId(Long userId, Long semesterId);
+
+    /**
+     * 查询学生全部画像得分，按学期倒序（用于成长摘要取最近一次评估）
+     */
+    List<PortraitEvaluationScore> findByUserIdOrderBySemesterIdDesc(Long userId);
 }

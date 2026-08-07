@@ -8,11 +8,13 @@ import lombok.Getter;
 import lombok.Setter;
 
 import java.math.BigDecimal;
+import org.hibernate.annotations.SQLRestriction;
 
 @Getter
 @Setter
 @Entity
 @Table(name = "growth_timeline_abilities")
+@SQLRestriction(BaseEntity.DELETED_AT_IS_NULL)
 public class GrowthTimelineAbility extends BaseEntity {
 
     @Column(name = "timeline_id", nullable = false)

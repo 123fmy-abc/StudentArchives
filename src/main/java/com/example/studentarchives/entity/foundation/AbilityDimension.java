@@ -6,11 +6,13 @@ import jakarta.persistence.Entity;
 import jakarta.persistence.Table;
 import lombok.Getter;
 import lombok.Setter;
+import org.hibernate.annotations.SQLRestriction;
 
 @Getter
 @Setter
 @Entity
 @Table(name = "ability_dimensions")
+@SQLRestriction(BaseEntity.DELETED_AT_IS_NULL)
 public class AbilityDimension extends BaseEntity {
 
     @Column(name = "dimension_name", nullable = false, length = 50)

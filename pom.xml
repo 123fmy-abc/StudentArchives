@@ -126,6 +126,35 @@
 			<artifactId>aliyun-sdk-oss</artifactId>
 			<version>3.17.4</version>
 		</dependency>
+		<!-- OpenPDF：档案导出生成 PDF（个人中心 4.17 导出任务） -->
+		<dependency>
+			<groupId>com.github.librepdf</groupId>
+			<artifactId>openpdf</artifactId>
+			<version>1.3.30</version>
+		</dependency>
+		<dependency>
+			<groupId>com.github.librepdf</groupId>
+			<artifactId>openpdf-fonts-extra</artifactId>
+			<version>1.3.30</version>
+		</dependency>
+		<!-- openhtmltopdf：导出模板 HTML → PDF（纯 JVM，无外部服务） -->
+		<dependency>
+			<groupId>com.openhtmltopdf</groupId>
+			<artifactId>openhtmltopdf-pdfbox</artifactId>
+			<version>1.0.10</version>
+		</dependency>
+		<!-- openhtmltopdf SVG 支持：简历模板内联图标渲染 -->
+		<dependency>
+			<groupId>com.openhtmltopdf</groupId>
+			<artifactId>openhtmltopdf-svg-support</artifactId>
+			<version>1.0.10</version>
+		</dependency>
+		<!-- Mustache：导出模板占位符渲染（{{key}} / {{#list}}...{{/list}}） -->
+		<dependency>
+			<groupId>com.github.spullara.mustache.java</groupId>
+			<artifactId>compiler</artifactId>
+			<version>0.9.13</version>
+		</dependency>
 	</dependencies>
 
 	<build>

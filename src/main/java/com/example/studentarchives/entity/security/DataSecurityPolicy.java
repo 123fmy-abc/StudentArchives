@@ -8,11 +8,13 @@ import lombok.Getter;
 import lombok.Setter;
 
 import java.time.LocalDateTime;
+import org.hibernate.annotations.SQLRestriction;
 
 @Getter
 @Setter
 @Entity
 @Table(name = "data_security_policies")
+@SQLRestriction(BaseEntity.DELETED_AT_IS_NULL)
 public class DataSecurityPolicy extends BaseEntity {
 
     @Column(name = "school_id")

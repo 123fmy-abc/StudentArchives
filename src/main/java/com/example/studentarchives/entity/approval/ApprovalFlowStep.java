@@ -6,11 +6,13 @@ import jakarta.persistence.Entity;
 import jakarta.persistence.Table;
 import lombok.Getter;
 import lombok.Setter;
+import org.hibernate.annotations.SQLRestriction;
 
 @Getter
 @Setter
 @Entity
 @Table(name = "approval_flow_steps")
+@SQLRestriction(BaseEntity.DELETED_AT_IS_NULL)
 public class ApprovalFlowStep extends BaseEntity {
 
     @Column(name = "flow_id", nullable = false)

@@ -9,11 +9,13 @@ import lombok.Getter;
 import lombok.Setter;
 
 import java.time.LocalDateTime;
+import org.hibernate.annotations.SQLRestriction;
 
 @Getter
 @Setter
 @Entity
 @Table(name = "user_messages")
+@SQLRestriction(BaseEntity.DELETED_AT_IS_NULL)
 public class UserMessage extends BaseEntity {
 
     @Column(name = "user_id", nullable = false)

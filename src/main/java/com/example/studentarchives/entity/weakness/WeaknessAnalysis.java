@@ -4,10 +4,12 @@ import com.example.studentarchives.entity.BaseEntity;
 import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.Setter;
+import org.hibernate.annotations.SQLRestriction;
 @Getter
 @Setter
 @Entity
 @Table(name = "weakness_analyses")
+@SQLRestriction(BaseEntity.DELETED_AT_IS_NULL)
 public class WeaknessAnalysis extends BaseEntity {
 
     @Column(name = "user_id", nullable = false)

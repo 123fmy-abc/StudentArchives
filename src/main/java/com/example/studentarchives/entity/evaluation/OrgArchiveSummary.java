@@ -7,11 +7,13 @@ import lombok.Setter;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import org.hibernate.annotations.SQLRestriction;
 
 @Getter
 @Setter
 @Entity
 @Table(name = "org_archive_summaries")
+@SQLRestriction(BaseEntity.DELETED_AT_IS_NULL)
 public class OrgArchiveSummary extends BaseEntity {
 
     @Column(name = "school_id", nullable = false)

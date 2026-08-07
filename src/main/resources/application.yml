@@ -94,6 +94,13 @@ jwt:
   expiration-ms: 86400000
   refresh-expiration-ms: 604800000
 
+# ===== 档案导出模板渲染配置 =====
+student:
+  export:
+    # 中文字体文件路径（可选）。为空时自动探测常见系统字体（Windows 微软雅黑/黑体、Linux Noto Sans CJK/文泉驿）。
+    # 生产容器（Dockerfile 已安装 font-noto-cjk）无需配置。
+    font-path: ${STUDENT_EXPORT_FONT_PATH:}
+
 # ===== 日志配置 =====
 logging:
   file:

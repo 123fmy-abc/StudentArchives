@@ -6,11 +6,13 @@ import jakarta.persistence.Entity;
 import jakarta.persistence.Table;
 import lombok.Getter;
 import lombok.Setter;
+import org.hibernate.annotations.SQLRestriction;
 
 @Getter
 @Setter
 @Entity
 @Table(name = "data_masking_rules")
+@SQLRestriction(BaseEntity.DELETED_AT_IS_NULL)
 public class DataMaskingRule extends BaseEntity {
 
     @Column(name = "school_id")

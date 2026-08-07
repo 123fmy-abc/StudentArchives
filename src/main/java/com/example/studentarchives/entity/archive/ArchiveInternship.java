@@ -8,11 +8,13 @@ import lombok.Getter;
 import lombok.Setter;
 
 import java.time.LocalDate;
+import org.hibernate.annotations.SQLRestriction;
 
 @Getter
 @Setter
 @Entity
 @Table(name = "archive_internships")
+@SQLRestriction(BaseEntity.DELETED_AT_IS_NULL)
 public class ArchiveInternship extends BaseEntity {
 
     @Column(name = "archive_id", nullable = false)

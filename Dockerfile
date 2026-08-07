@@ -14,8 +14,8 @@ WORKDIR /app
 # 创建日志目录
 RUN mkdir -p /var/log/student-archives
 
-# 时区
-RUN apk add --no-cache tzdata
+# 时区 + 中文字体（导出模板 HTML→PDF 渲染需要）
+RUN apk add --no-cache tzdata font-noto-cjk
 ENV TZ=Asia/Shanghai
 
 COPY --from=builder /build/target/student-archives-0.0.1-SNAPSHOT.jar app.jar
