@@ -1,12 +1,12 @@
-package com.example.studentarchives.service.Fmy;
+package com.example.studentarchives.service.Lzw;
 
 import com.example.studentarchives.common.PageParam;
 import com.example.studentarchives.common.PageResult;
 import com.example.studentarchives.common.ResultCode;
-import com.example.studentarchives.dto.Fmy.activity.request.ActivityListRequest;
-import com.example.studentarchives.dto.Fmy.activity.response.ActivityDetailResponse;
-import com.example.studentarchives.dto.Fmy.activity.response.ActivityListItemResponse;
-import com.example.studentarchives.dto.Fmy.activity.response.ActivityStatusResponse;
+import com.example.studentarchives.dto.Lzw.activity.request.ActivityListRequest;
+import com.example.studentarchives.dto.Lzw.activity.response.ActivityDetailResponse;
+import com.example.studentarchives.dto.Lzw.activity.response.ActivityListItemResponse;
+import com.example.studentarchives.dto.Lzw.activity.response.ActivityStatusResponse;
 import com.example.studentarchives.entity.archive.Archive;
 import com.example.studentarchives.entity.award.AwardApplication;
 import com.example.studentarchives.entity.career.CareerPlan;
