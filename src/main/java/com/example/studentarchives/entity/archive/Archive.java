@@ -46,7 +46,7 @@ public class Archive extends BaseEntity {
 
     /** 提交流程公共字段（提交/审核/退回/通过/撤销时间戳等） */
     @Embedded
-    private ArchiveAuditInfo auditInfo;
+    private ArchiveAuditInfo auditInfo = new ArchiveAuditInfo();
 
     /** 更正原因（仅 archives 表有此列，不在 ArchiveAuditInfo 中） */
     @Lob
