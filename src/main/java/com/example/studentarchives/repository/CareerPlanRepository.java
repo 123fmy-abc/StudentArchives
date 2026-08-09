@@ -1,23 +1,43 @@
 package com.example.studentarchives.repository;
 
 import com.example.studentarchives.entity.career.CareerPlan;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.stereotype.Repository;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
-import org.springframework.stereotype.Repository;
 
-import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Optional;
+import java.time.LocalDateTime;
 
 /**
- * 职业规划 Repository
+ * 职业规划 Repository（对应表 career_plans）
  */
 @Repository
 public interface CareerPlanRepository extends JpaRepository<CareerPlan, Long> {
 
-    /** 查询学生全部职业规划记录（用于活动列表聚合 + Java 侧筛选） */
+    /** 按 ID + 归属用户查询（归属校验） */
+    Optional<CareerPlan> findByIdAndUserId(Long id, Long userId);
+
+    /** 查询用户全部规划（导出等场景使用） */
     List<CareerPlan> findByUserId(Long userId);
+
+    /** 分页查询用户全部规划（按创建时间倒序） */
+    List<CareerPlan> findByUserId(Long userId, Pageable pageable);
+
+    /** 统计用户规划总数 */
+    long countByUserId(Long userId);
+
+    /** 分页查询用户指定学期规划 */
+    List<CareerPlan> findByUserIdAndSemesterId(Long userId, Long semesterId, Pageable pageable);
+
+    /** 统计用户指定学期规划数 */
+    long countByUserIdAndSemesterId(Long userId, Long semesterId);
+
+    /** 取用户指定学期最近一条规划（复制场景） */
+    Optional<CareerPlan> findFirstByUserIdAndSemesterIdOrderByIdDesc(Long userId, Long semesterId);
 
     /** 软删除（通过 native query 绕过 updatable=false 限制） */
     @Modifying

@@ -1,13 +1,13 @@
-package com.example.studentarchives.controller.Fmy;
+package com.example.studentarchives.controller.Lzw;
 
 import com.example.studentarchives.common.ApiResult;
 import com.example.studentarchives.common.PageResult;
-import com.example.studentarchives.dto.Fmy.activity.request.ActivityListRequest;
-import com.example.studentarchives.dto.Fmy.activity.response.ActivityDetailResponse;
-import com.example.studentarchives.dto.Fmy.activity.response.ActivityListItemResponse;
-import com.example.studentarchives.dto.Fmy.activity.response.ActivityStatusResponse;
+import com.example.studentarchives.dto.Lzw.activity.request.ActivityListRequest;
+import com.example.studentarchives.dto.Lzw.activity.response.ActivityDetailResponse;
+import com.example.studentarchives.dto.Lzw.activity.response.ActivityListItemResponse;
+import com.example.studentarchives.dto.Lzw.activity.response.ActivityStatusResponse;
 import com.example.studentarchives.enums.ActivityTypeEnum;
-import com.example.studentarchives.service.Fmy.ActivityService;
+import com.example.studentarchives.service.Lzw.ActivityService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;

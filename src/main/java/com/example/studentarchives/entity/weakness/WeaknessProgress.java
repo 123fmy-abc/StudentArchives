@@ -8,11 +8,13 @@ import lombok.Getter;
 import lombok.Setter;
 
 import java.time.LocalDateTime;
+import org.hibernate.annotations.SQLRestriction;
 
 @Getter
 @Setter
 @Entity
 @Table(name = "weakness_progress")
+@SQLRestriction(BaseEntity.DELETED_AT_IS_NULL)
 public class WeaknessProgress extends BaseEntity {
 
     @Column(name = "weakness_id", nullable = false)

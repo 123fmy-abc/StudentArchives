@@ -6,20 +6,22 @@ import jakarta.persistence.Entity;
 import jakarta.persistence.Table;
 import lombok.Getter;
 import lombok.Setter;
+import org.hibernate.annotations.SQLRestriction;
 
 @Getter
 @Setter
 @Entity
 @Table(name = "majors")
+@SQLRestriction(BaseEntity.DELETED_AT_IS_NULL)
 public class Major extends BaseEntity {
 
-    @Column(name = "college_id")
+    @Column(name = "college_id", nullable = false)
     private Long collegeId;
 
     @Column(name = "name", nullable = false, length = 100)
     private String name;
 
-    @Column(name = "code", length = 50)
+    @Column(name = "code", nullable = false, length = 50)
     private String code;
 
     @Column(name = "status", nullable = false)

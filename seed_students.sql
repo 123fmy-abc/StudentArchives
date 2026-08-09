@@ -32,12 +32,14 @@ INSERT INTO `users` (`id`, `school_id`, `user_no`, `name`, `gender`, `birth_date
 -- ============================================================
 -- 6. 学生档案
 -- ============================================================
-INSERT INTO `student_profiles` (`id`, `user_id`, `class_id`, `political_status`, `volunteer_hours`) VALUES
-(1, 1, 1, '共青团员', 120.50),
-(2, 2, 1, '群众',     85.00),
-(3, 3, 1, '共青团员', 200.00),
-(4, 4, 1, '共青团员', 150.75),
-(5, 5, 1, '群众',     95.30);
+-- political_status 存字典编码（对应 seed_dictionaries.sql 中 dict_type='political_status' 的 dict_code）
+-- league_member=共青团员  masses=群众
+INSERT INTO `student_profiles` (`id`, `user_id`, `class_id`, `political_status`, `student_status`, `degree_type`, `volunteer_hours`) VALUES
+(1, 1, 1, 'league_member', 'current', 'undergraduate', 120.50),
+(2, 2, 1, 'masses',        'current', 'undergraduate', 85.00),
+(3, 3, 1, 'league_member', 'current', 'undergraduate', 200.00),
+(4, 4, 1, 'league_member', 'current', 'undergraduate', 150.75),
+(5, 5, 1, 'masses',        'current', 'undergraduate', 95.30);
 
 -- ============================================================
 -- 7. 联系信息（含指定 QQ 邮箱）

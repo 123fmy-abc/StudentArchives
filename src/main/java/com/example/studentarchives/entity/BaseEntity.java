@@ -3,15 +3,23 @@ package com.example.studentarchives.entity;
 import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.Setter;
-import org.hibernate.annotations.SQLRestriction;
 
 import java.time.LocalDateTime;
 
 @Getter
 @Setter
 @MappedSuperclass
-@SQLRestriction("deleted_at IS NULL")
 public abstract class BaseEntity {
+
+    /**
+     * 软删除过滤条件，须在每个具体实体类上显式声明：
+     * {@code @SQLRestriction(BaseEntity.DELETED_AT_IS_NULL)}
+     * <p>
+     * 原因：Hibernate 的 {@code @SQLRestriction}（及旧版 {@code @Where}）不会从
+     * {@code @MappedSuperclass} 继承到子实体（已知问题 HHH-18723）。此前把注解放在本基类上
+     * 是无效的——导致软删除后数据仍可被查询/更新。请勿把该注解加回本基类。
+     */
+    public static final String DELETED_AT_IS_NULL = "deleted_at IS NULL";
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)

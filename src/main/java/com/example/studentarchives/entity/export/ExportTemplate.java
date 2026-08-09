@@ -7,11 +7,13 @@ import jakarta.persistence.Lob;
 import jakarta.persistence.Table;
 import lombok.Getter;
 import lombok.Setter;
+import org.hibernate.annotations.SQLRestriction;
 
 @Getter
 @Setter
 @Entity
 @Table(name = "export_templates")
+@SQLRestriction(BaseEntity.DELETED_AT_IS_NULL)
 public class ExportTemplate extends BaseEntity {
 
     @Column(name = "school_id", nullable = false)

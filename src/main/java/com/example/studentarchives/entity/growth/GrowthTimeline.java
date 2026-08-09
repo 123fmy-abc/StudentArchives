@@ -9,11 +9,13 @@ import lombok.Getter;
 import lombok.Setter;
 
 import java.time.LocalDate;
+import org.hibernate.annotations.SQLRestriction;
 
 @Getter
 @Setter
 @Entity
 @Table(name = "growth_timelines")
+@SQLRestriction(BaseEntity.DELETED_AT_IS_NULL)
 public class GrowthTimeline extends BaseEntity {
 
     @Column(name = "school_id", nullable = false)

@@ -1,4 +1,4 @@
-package com.example.studentarchives.dto.Fmy.activity.response;
+package com.example.studentarchives.dto.Lzw.activity.response;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
 import lombok.AllArgsConstructor;

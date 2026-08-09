@@ -10,6 +10,8 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
+import java.util.Collection;
+import java.util.List;
 import java.util.Optional;
 
 /**
@@ -21,6 +23,16 @@ public interface UserRepository extends JpaRepository<User, Long> {
     Optional<User> findByUserNo(String userNo);
 
     Optional<User> findByUserNoAndStatus(String userNo, Integer status);
+
+    /**
+     * 查询指定学校下 ID 最小的用户（用于导出模板种子器的 created_by）
+     */
+    Optional<User> findFirstBySchoolIdOrderByIdAsc(Long schoolId);
+
+    /**
+     * 批量查询用户（用于审核人/教师姓名聚合查询）
+     */
+    List<User> findByIdIn(Collection<Long> ids);
 
     /**
      * 查询用户认证状态（用于 JWT 过滤器与刷新令牌）

@@ -6,6 +6,8 @@ import jakarta.validation.ConstraintViolation;
 import jakarta.validation.ConstraintViolationException;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.DataAccessException;
+import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
@@ -19,6 +21,8 @@ import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 import org.springframework.web.multipart.MultipartException;
+import org.springframework.web.multipart.support.MissingServletRequestPartException;
+import org.springframework.web.servlet.resource.NoResourceFoundException;
 
 /**
  * 全局异常处理器
@@ -84,6 +88,14 @@ public class GlobalExceptionHandler {
         return ApiResult.error(ResultCode.PARAM_MISSING, "缺少必填参数: " + e.getParameterName());
     }
 
+    /** 缺少文件上传 part（multipart 请求未携带 file 等字段），避免被兜底处理成 500 */
+    @ExceptionHandler(MissingServletRequestPartException.class)
+    @ResponseStatus(HttpStatus.BAD_REQUEST)
+    public ApiResult<Void> handleMissingPart(MissingServletRequestPartException e) {
+        log.warn("缺少文件上传参数: {}", e.getRequestPartName());
+        return ApiResult.error(ResultCode.PARAM_MISSING, "缺少文件上传参数: " + e.getRequestPartName());
+    }
+
     /** 文件上传格式错误（非 multipart/form-data 请求） */
     @ExceptionHandler(MultipartException.class)
     @ResponseStatus(HttpStatus.BAD_REQUEST)
@@ -118,6 +130,16 @@ public class GlobalExceptionHandler {
         return ApiResult.error(ResultCode.PARAM_FORMAT_ERROR, "不支持的 Content-Type，请使用 application/json");
     }
 
+    // ==================== 请求路径不存在（404） ====================
+
+    /** 请求路径无对应 Handler（Spring 6.1+ 抛 NoResourceFoundException），避免被兜底异常处理成 500 */
+    @ExceptionHandler(NoResourceFoundException.class)
+    @ResponseStatus(HttpStatus.NOT_FOUND)
+    public ApiResult<Void> handleNoResourceFound(NoResourceFoundException e) {
+        log.warn("请求路径不存在: {}", e.getResourcePath());
+        return ApiResult.error(ResultCode.DATA_NOT_EXIST, "请求的接口不存在");
+    }
+
     // ==================== 其他异常 ====================
 
     /** 非法参数 */
@@ -129,6 +151,24 @@ public class GlobalExceptionHandler {
     }
 
     // ==================== 数据访问异常 ====================
+
+    /** 唯一索引冲突（MySQL 1062），如重复标签、重复编码 */
+    @ExceptionHandler(DuplicateKeyException.class)
+    @ResponseStatus(HttpStatus.CONFLICT)
+    public ApiResult<Void> handleDuplicateKey(DuplicateKeyException e) {
+        log.warn("唯一索引冲突: {}", e.getMostSpecificCause() != null
+                ? e.getMostSpecificCause().getMessage() : e.getMessage());
+        return ApiResult.error(ResultCode.DATA_DUPLICATE, "数据已存在，请勿重复提交");
+    }
+
+    /** 数据完整性违反（非空约束、字段超长、外键失败等），避免被当作缓存故障处理 */
+    @ExceptionHandler(DataIntegrityViolationException.class)
+    @ResponseStatus(HttpStatus.CONFLICT)
+    public ApiResult<Void> handleDataIntegrityViolation(DataIntegrityViolationException e) {
+        log.warn("数据完整性违反: {}", e.getMostSpecificCause() != null
+                ? e.getMostSpecificCause().getMessage() : e.getMessage());
+        return ApiResult.error(ResultCode.DB_UNIQUE_CONSTRAINT, "数据校验失败，请检查提交内容");
+    }
 
     /** Redis 或数据库连接异常（如 Redis 不可用） */
     @ExceptionHandler(DataAccessException.class)

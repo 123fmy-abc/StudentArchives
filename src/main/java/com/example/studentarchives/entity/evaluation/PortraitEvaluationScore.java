@@ -7,11 +7,13 @@ import lombok.Setter;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import org.hibernate.annotations.SQLRestriction;
 
 @Getter
 @Setter
 @Entity
 @Table(name = "portrait_evaluation_scores")
+@SQLRestriction(BaseEntity.DELETED_AT_IS_NULL)
 public class PortraitEvaluationScore extends BaseEntity {
 
     @Column(name = "user_id", nullable = false)

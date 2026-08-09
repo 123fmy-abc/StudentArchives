@@ -15,7 +15,7 @@ public enum ExportTaskStatusEnum {
 
     PENDING(0, "待执行"),
     RUNNING(1, "执行中"),
-    COMPLETED(2, "完成"),
+    COMPLETED(2, "已完成"),
     FAILED(3, "失败"),
     ;
 

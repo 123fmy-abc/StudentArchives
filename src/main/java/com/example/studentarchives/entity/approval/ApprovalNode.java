@@ -9,11 +9,13 @@ import lombok.Getter;
 import lombok.Setter;
 
 import java.time.LocalDateTime;
+import org.hibernate.annotations.SQLRestriction;
 
 @Getter
 @Setter
 @Entity
 @Table(name = "approval_nodes")
+@SQLRestriction(BaseEntity.DELETED_AT_IS_NULL)
 public class ApprovalNode extends BaseEntity {
 
     @Column(name = "instance_id", nullable = false)

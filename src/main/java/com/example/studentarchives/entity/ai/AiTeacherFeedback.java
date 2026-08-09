@@ -7,11 +7,13 @@ import jakarta.persistence.Lob;
 import jakarta.persistence.Table;
 import lombok.Getter;
 import lombok.Setter;
+import org.hibernate.annotations.SQLRestriction;
 
 @Getter
 @Setter
 @Entity
 @Table(name = "ai_teacher_feedbacks")
+@SQLRestriction(BaseEntity.DELETED_AT_IS_NULL)
 public class AiTeacherFeedback extends BaseEntity {
 
     @Column(name = "generation_log_id", nullable = false)

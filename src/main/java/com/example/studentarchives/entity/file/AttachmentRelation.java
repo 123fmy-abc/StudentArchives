@@ -8,6 +8,7 @@ import lombok.Getter;
 import lombok.Setter;
 
 import java.time.LocalDateTime;
+import org.hibernate.annotations.SQLRestriction;
 
 /**
  * 通用附件关联实体（多态）
@@ -19,6 +20,7 @@ import java.time.LocalDateTime;
 @Setter
 @Entity
 @Table(name = "file_uploads")
+@SQLRestriction(BaseEntity.DELETED_AT_IS_NULL)
 public class AttachmentRelation extends BaseEntity {
 
     @Column(name = "user_id", nullable = false)

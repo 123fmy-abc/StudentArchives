@@ -6,6 +6,7 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
+import java.util.Collection;
 import java.util.List;
 
 /**
@@ -19,4 +20,9 @@ public interface EvaluationIndicatorRepository extends JpaRepository<EvaluationI
      */
     @Query("SELECT e FROM EvaluationIndicator e WHERE e.version = :version AND e.status = 1 ORDER BY e.sort ASC")
     List<EvaluationIndicator> findActiveByVersion(@Param("version") Integer version);
+
+    /**
+     * 批量查询指标（用于画像分数计算明细的名称映射）
+     */
+    List<EvaluationIndicator> findByIdIn(Collection<Long> ids);
 }

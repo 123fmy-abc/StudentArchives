@@ -1,4 +1,4 @@
-package com.example.studentarchives.dto.Fmy.activity.request;
+package com.example.studentarchives.dto.Lzw.activity.request;
 
 import com.example.studentarchives.common.PageParam;
 import com.fasterxml.jackson.annotation.JsonProperty;

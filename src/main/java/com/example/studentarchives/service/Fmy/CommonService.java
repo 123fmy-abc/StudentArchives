@@ -272,7 +272,7 @@ public class CommonService {
             throw new BusinessException(ResultCode.DATA_LOCKED, "文件下载链接已过期");
         }
 
-        String fileUrl = ossFileService.getFileUrl(relation.getFilePath());
+        String fileUrl = ossFileService.getFileUrl(relation.getFilePath(), relation.getOriginalName());
         if (fileUrl == null) {
             throw new BusinessException(ResultCode.DATA_LOCKED, "文件下载链接已过期");
         }

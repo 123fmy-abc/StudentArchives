@@ -8,11 +8,13 @@ import lombok.Getter;
 import lombok.Setter;
 
 import java.math.BigDecimal;
+import org.hibernate.annotations.SQLRestriction;
 
 @Getter
 @Setter
 @Entity
 @Table(name = "evaluation_indicators")
+@SQLRestriction(BaseEntity.DELETED_AT_IS_NULL)
 public class EvaluationIndicator extends BaseEntity {
 
     @Column(name = "school_id")

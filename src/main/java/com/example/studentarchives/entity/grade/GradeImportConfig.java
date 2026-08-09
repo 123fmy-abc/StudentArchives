@@ -4,11 +4,13 @@ import com.example.studentarchives.entity.BaseEntity;
 import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.Setter;
+import org.hibernate.annotations.SQLRestriction;
 
 @Getter
 @Setter
 @Entity
 @Table(name = "grade_import_configs")
+@SQLRestriction(BaseEntity.DELETED_AT_IS_NULL)
 public class GradeImportConfig extends BaseEntity {
 
     @Column(name = "school_id", nullable = false)

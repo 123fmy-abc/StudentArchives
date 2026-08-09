@@ -8,11 +8,13 @@ import lombok.Getter;
 import lombok.Setter;
 
 import java.time.LocalDateTime;
+import org.hibernate.annotations.SQLRestriction;
 
 @Getter
 @Setter
 @Entity
 @Table(name = "approval_instances")
+@SQLRestriction(BaseEntity.DELETED_AT_IS_NULL)
 public class ApprovalInstance extends BaseEntity {
 
     @Column(name = "approvable_type", length = 100, nullable = false)
