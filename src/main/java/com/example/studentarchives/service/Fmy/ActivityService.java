@@ -10,6 +10,7 @@ import com.example.studentarchives.dto.Fmy.activity.response.ActivityStatusRespo
 import com.example.studentarchives.entity.archive.Archive;
 import com.example.studentarchives.entity.award.AwardApplication;
 import com.example.studentarchives.entity.career.CareerPlan;
+import com.example.studentarchives.entity.embed.ArchiveAuditInfo;
 import com.example.studentarchives.entity.file.AttachmentRelation;
 import com.example.studentarchives.enums.ActivityTypeEnum;
 import com.example.studentarchives.enums.ApplyStatusEnum;
@@ -26,6 +27,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
@@ -261,6 +263,7 @@ public class ActivityService {
 
     private ActivityListItemResponse toListItem(Archive a) {
         ApplyStatusEnum s = ApplyStatusEnum.of(a.getStatus());
+        var ai = nullSafe(a.getAuditInfo());
         return ActivityListItemResponse.builder()
                 .id(a.getId()).type("archive")
                 .archiveType(a.getArchiveType())
@@ -268,9 +271,9 @@ public class ActivityService {
                 .status(a.getStatus()).statusLabel(s.getLabel())
                 .semesterId(a.getSemesterId())
                 .semesterName(lookupSemesterName(a.getSemesterId()))
-                .submitTime(format(a.getAuditInfo().getSubmittedAt()))
-                .currentVersion(a.getAuditInfo().getCurrentVersion())
-                .submitCount(a.getAuditInfo().getSubmitCount())
+                .submitTime(format(ai.getSubmittedAt()))
+                .currentVersion(ai.getCurrentVersion())
+                .submitCount(ai.getSubmitCount())
                 .canEdit(s == ApplyStatusEnum.DRAFT || s == ApplyStatusEnum.REJECTED)
                 .canDelete(s == ApplyStatusEnum.DRAFT || s == ApplyStatusEnum.REJECTED)
                 .canWithdraw(s == ApplyStatusEnum.PENDING)
@@ -279,6 +282,7 @@ public class ActivityService {
 
     private ActivityListItemResponse toListItem(AwardApplication a) {
         ApplyStatusEnum s = ApplyStatusEnum.of(a.getStatus());
+        var ai = nullSafe(a.getAuditInfo());
         return ActivityListItemResponse.builder()
                 .id(a.getId()).type("award")
                 .archiveType(a.getAwardType())
@@ -286,9 +290,9 @@ public class ActivityService {
                 .status(a.getStatus()).statusLabel(s.getLabel())
                 .semesterId(a.getSemesterId())
                 .semesterName(lookupSemesterName(a.getSemesterId()))
-                .submitTime(format(a.getAuditInfo().getSubmittedAt()))
-                .currentVersion(a.getAuditInfo().getCurrentVersion())
-                .submitCount(a.getAuditInfo().getSubmitCount())
+                .submitTime(format(ai.getSubmittedAt()))
+                .currentVersion(ai.getCurrentVersion())
+                .submitCount(ai.getSubmitCount())
                 .canEdit(s == ApplyStatusEnum.DRAFT || s == ApplyStatusEnum.REJECTED)
                 .canDelete(s == ApplyStatusEnum.DRAFT || s == ApplyStatusEnum.REJECTED)
                 .canWithdraw(s == ApplyStatusEnum.PENDING)
@@ -297,15 +301,16 @@ public class ActivityService {
 
     private ActivityListItemResponse toListItem(CareerPlan p) {
         ApplyStatusEnum s = ApplyStatusEnum.of(p.getStatus());
+        var ai = nullSafe(p.getAuditInfo());
         return ActivityListItemResponse.builder()
                 .id(p.getId()).type("career_plan")
                 .title(p.getTitle())
                 .status(p.getStatus()).statusLabel(s.getLabel())
                 .semesterId(p.getSemesterId())
                 .semesterName(lookupSemesterName(p.getSemesterId()))
-                .submitTime(format(p.getAuditInfo().getSubmittedAt()))
-                .currentVersion(p.getAuditInfo().getCurrentVersion())
-                .submitCount(p.getAuditInfo().getSubmitCount())
+                .submitTime(format(ai.getSubmittedAt()))
+                .currentVersion(ai.getCurrentVersion())
+                .submitCount(ai.getSubmitCount())
                 .canEdit(s == ApplyStatusEnum.DRAFT || s == ApplyStatusEnum.REJECTED)
                 .canDelete(s == ApplyStatusEnum.DRAFT || s == ApplyStatusEnum.REJECTED)
                 .canWithdraw(s == ApplyStatusEnum.PENDING)
@@ -510,6 +515,11 @@ public class ActivityService {
 
     // ==================== 私有：工具方法 ====================
 
+    /** 空安全获取 auditInfo，防止 Hibernate 将 @Embedded 置 null 导致 NPE */
+    private static ArchiveAuditInfo nullSafe(ArchiveAuditInfo ai) {
+        return ai != null ? ai : new ArchiveAuditInfo();
+    }
+
     private String lookupSemesterName(Long semesterId) {
         if (semesterId == null) return null;
         return semesterRepository.findById(semesterId)
@@ -527,9 +537,11 @@ public class ActivityService {
                 .build()).toList();
     }
 
+    private static final DateTimeFormatter DTF = DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ssXXX");
+
     private static String format(LocalDateTime dt) {
         if (dt == null) return null;
-        return dt.format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ssXXX"));
+        return dt.atZone(java.time.ZoneId.of("Asia/Shanghai")).format(DTF);
     }
 
     private static String formatDate(java.time.LocalDate d) {
