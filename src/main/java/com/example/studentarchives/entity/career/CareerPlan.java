@@ -52,7 +52,7 @@ public class CareerPlan extends BaseEntity {
 
     /** 提交流程公共字段（提交/审核/退回/通过/撤销时间戳等） */
     @Embedded
-    private ArchiveAuditInfo auditInfo;
+    private ArchiveAuditInfo auditInfo = new ArchiveAuditInfo();
 
     /** 生成的主文件ID（如导出的规划PDF）；上传的佐证材料通过 file_uploads.biz_type='career_plan' 关联多个文件 */
     @Column(name = "file_id")
