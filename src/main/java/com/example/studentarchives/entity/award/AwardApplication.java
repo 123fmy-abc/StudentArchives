@@ -46,5 +46,5 @@ public class AwardApplication extends BaseEntity {
 
     /** 提交流程公共字段（提交/审核/退回/通过/撤销时间戳等） */
     @Embedded
-    private ArchiveAuditInfo auditInfo;
+    private ArchiveAuditInfo auditInfo = new ArchiveAuditInfo();
 }
