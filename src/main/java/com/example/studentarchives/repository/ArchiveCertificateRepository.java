@@ -5,12 +5,18 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
 
 import java.util.List;
+import java.util.Optional;
 
 /**
  * 档案证书 Repository
  */
 @Repository
 public interface ArchiveCertificateRepository extends JpaRepository<ArchiveCertificate, Long> {
+
+    /**
+     * 根据档案 ID 查询证书信息
+     */
+    Optional<ArchiveCertificate> findByArchiveId(Long archiveId);
 
     /**
      * 根据档案 ID 列表查询证书信息
