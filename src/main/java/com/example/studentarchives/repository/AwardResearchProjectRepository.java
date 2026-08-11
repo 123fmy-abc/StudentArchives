@@ -12,8 +12,7 @@ import java.util.List;
 @Repository
 public interface AwardResearchProjectRepository extends JpaRepository<AwardResearchProject, Long> {
 
-    /**
-     * 根据科研之星 ID 列表查询科研项目明细
-     */
+    List<AwardResearchProject> findByResearchStarId(Long researchStarId);
+
     List<AwardResearchProject> findByResearchStarIdIn(List<Long> researchStarIds);
 }
