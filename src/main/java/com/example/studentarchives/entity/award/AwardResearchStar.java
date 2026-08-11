@@ -18,6 +18,6 @@ public class AwardResearchStar extends BaseEntity {
     @Column(name = "application_id", nullable = false)
     private Long applicationId;
 
-    @Column(name = "primary_category", nullable = false, length = 50)
+    @Column(name = "primary_category", length = 50)
     private String primaryCategory;
 }
