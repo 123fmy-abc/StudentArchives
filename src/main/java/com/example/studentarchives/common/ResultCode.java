@@ -78,6 +78,18 @@ public enum ResultCode {
     BIZ_DUPLICATE_SUBMISSION(40009, "重复提交", 409),
     BIZ_RULE_LIMIT(40010, "超出业务规则限制", 400),
 
+    // ========== 管理端业务（《管理端接口文档》补充错误码） ==========
+    // 编码规则：错误码与学生端/教师端共用同一体系。20006 在学生端已定义为「账号被禁用」，
+    // 50004/50005 分别定义为「邮件发送失败」「OSS 上传失败」，故管理端不再占用；
+    // 「需要管理员权限」统一并入 20005（ACCESS_DENIED）。
+    // 指标/评分相关错误码分配在 40000-49999「业务相关」段的专属子区间 41001-41005，
+    // 与 50000-59999「第三方服务」段的 THIRD_* 错误码不再重叠，避免同值二义。
+    INDICATOR_VERSION_CONFLICT(41001, "指标版本冲突", 409),
+    INDICATOR_RULE_VERSION_PUBLISHED(41002, "规则版本已发布", 409),
+    INDICATOR_HAS_CHILDREN(41003, "存在子指标", 409),
+    INDICATOR_WEIGHT_SUM_INVALID(41004, "权重合计不为 1", 400),
+    INDICATOR_RECALC_TASK_RUNNING(41005, "存在生效中任务", 409),
+
     // ========== 第三方服务（50000-59999） ==========
     THIRD_WECHAT_ERROR(50001, "微信接口异常", 502),
     THIRD_ALIPAY_ERROR(50002, "支付宝接口异常", 502),

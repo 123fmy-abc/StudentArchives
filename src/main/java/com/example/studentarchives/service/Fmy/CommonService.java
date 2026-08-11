@@ -14,25 +14,40 @@ import com.example.studentarchives.dto.Fmy.common.response.FileUploadResponse;
 import com.example.studentarchives.dto.Fmy.common.response.IndicatorTreeResponse;
 import com.example.studentarchives.dto.Fmy.common.response.SemesterItemResponse;
 import com.example.studentarchives.dto.Fmy.common.response.AvatarUploadResponse;
+import com.example.studentarchives.dto.Fmy.indicator.response.AdminIndicatorTreeResponse;
 import com.example.studentarchives.entity.file.AttachmentLimit;
 import com.example.studentarchives.entity.file.AttachmentRelation;
+import com.example.studentarchives.entity.foundation.AbilityDimension;
 import com.example.studentarchives.entity.foundation.EvaluationIndicator;
-import com.example.studentarchives.entity.user.UserContactInfo;
 import com.example.studentarchives.entity.foundation.IndicatorRuleVersion;
+import com.example.studentarchives.entity.org.Clazz;
+import com.example.studentarchives.entity.org.Major;
 import com.example.studentarchives.entity.user.Role;
+import com.example.studentarchives.entity.user.RoleScope;
+import com.example.studentarchives.entity.user.StudentProfile;
+import com.example.studentarchives.entity.user.User;
+import com.example.studentarchives.entity.user.UserContactInfo;
 import com.example.studentarchives.entity.user.UserRole;
 import com.example.studentarchives.exception.BusinessException;
 import com.example.studentarchives.repository.ArchiveTypeConfigRepository;
 import com.example.studentarchives.repository.AttachmentLimitRepository;
 import com.example.studentarchives.repository.AttachmentRelationRepository;
+import com.example.studentarchives.repository.ClazzRepository;
 import com.example.studentarchives.repository.DictionaryRepository;
 import com.example.studentarchives.repository.AbilityDimensionRepository;
 import com.example.studentarchives.repository.EvaluationIndicatorRepository;
 import com.example.studentarchives.repository.IndicatorRuleVersionRepository;
+import com.example.studentarchives.repository.MajorRepository;
 import com.example.studentarchives.repository.RoleRepository;
+import com.example.studentarchives.repository.RoleScopeRepository;
 import com.example.studentarchives.repository.SemesterRepository;
+import com.example.studentarchives.repository.StudentProfileRepository;
 import com.example.studentarchives.repository.UserContactInfoRepository;
+import com.example.studentarchives.repository.UserRepository;
 import com.example.studentarchives.repository.UserRoleRepository;
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.cache.annotation.Cacheable;
@@ -76,6 +91,12 @@ public class CommonService {
     private final AbilityDimensionRepository abilityDimensionRepository;
     private final RoleRepository roleRepository;
     private final UserRoleRepository userRoleRepository;
+    private final UserRepository userRepository;
+    private final StudentProfileRepository studentProfileRepository;
+    private final ClazzRepository clazzRepository;
+    private final MajorRepository majorRepository;
+    private final RoleScopeRepository roleScopeRepository;
+    private final ObjectMapper objectMapper;
 
     /**
      * 接口传入 type → 数据库 file_category 映射
@@ -214,7 +235,7 @@ public class CommonService {
     /**
      * 获取文件预览信息
      * <p>
-     * 校验当前用户是否为文件所有者，管理员可预览任意文件。
+     * 权限校验：文件所有者、管理员、或其授权范围覆盖该学生的教师可预览。
      *
      * @param fileId 文件 ID
      * @param userId 当前用户 ID
@@ -225,8 +246,8 @@ public class CommonService {
         AttachmentRelation relation = attachmentRelationRepository.findById(fileId)
                 .orElseThrow(() -> new BusinessException(ResultCode.DATA_NOT_EXIST, "文件不存在"));
 
-        // 权限校验：文件所有者或管理员可预览
-        if (!Objects.equals(relation.getUserId(), userId) && !isAdmin(userId)) {
+        // 权限校验：文件所有者、管理员、或其授权范围覆盖该学生的教师可预览
+        if (!canAccessFile(userId, relation.getUserId())) {
             throw new BusinessException(ResultCode.ACCESS_DENIED, "无访问权限");
         }
 
@@ -250,7 +271,7 @@ public class CommonService {
     /**
      * 生成文件下载 URL
      * <p>
-     * 校验当前用户是否为文件所有者，管理员可下载任意文件。
+     * 权限校验：文件所有者、管理员、或其授权范围覆盖该学生的教师可下载。
      *
      * @param fileId 文件 ID
      * @param userId 当前用户 ID
@@ -261,8 +282,8 @@ public class CommonService {
         AttachmentRelation relation = attachmentRelationRepository.findById(fileId)
                 .orElseThrow(() -> new BusinessException(ResultCode.DATA_NOT_EXIST, "文件不存在"));
 
-        // 权限校验：文件所有者或管理员可下载
-        if (!Objects.equals(relation.getUserId(), userId) && !isAdmin(userId)) {
+        // 权限校验：文件所有者、管理员、或其授权范围覆盖该学生的教师可下载
+        if (!canAccessFile(userId, relation.getUserId())) {
             throw new BusinessException(ResultCode.ACCESS_DENIED, "无访问权限");
         }
 
@@ -511,8 +532,9 @@ public class CommonService {
     /**
      * 获取指标树
      * <p>
-     * 数据来源：evaluation_indicators、indicator_rule_versions、ability_dimensions 表，
-     * 仅返回 status=1 且 deleted_at IS NULL 的指标。
+     * 已发布版本优先读取 {@code indicator_rule_versions.tree_snapshot}（发布时点的完整指标树快照，
+     * 历史版本可精确回溯，且不包含发布后未发布的草稿改动）；
+     * 快照落地前已发布的旧数据回退到按 {@code evaluation_indicators.version} 查询。
      * 使用 Caffeine 缓存（5 分钟过期），避免频繁查询指标树。
      *
      * @param versionId 指定指标版本 ID（null 则返回当前生效版本）
@@ -522,32 +544,20 @@ public class CommonService {
     @Transactional(readOnly = true)
     @Cacheable(value = "indicators", key = "#versionId != null ? #versionId.toString().concat('-').concat(#schoolId.toString()) : 'latest-'.concat(#schoolId.toString())")
     public IndicatorTreeResponse getIndicators(Long versionId, Long schoolId) {
-        IndicatorRuleVersion version;
+        IndicatorRuleVersion version = resolveRuleVersion(versionId, schoolId);
 
-        if (versionId != null) {
-            // 指定版本
-            version = indicatorRuleVersionRepository.findById(versionId)
-                    .orElseThrow(() -> new BusinessException(ResultCode.DATA_NOT_EXIST, "指标版本不存在"));
+        List<IndicatorTreeResponse.IndicatorNode> tree;
+        if (version.getTreeSnapshot() != null && !version.getTreeSnapshot().isBlank()) {
+            // 已发布版本：直接读取发布时点的完整指标树快照，历史版本可精确回溯
+            tree = toStudentNodes(readSnapshot(version.getTreeSnapshot()));
         } else {
-            // 当前生效版本
-            version = indicatorRuleVersionRepository.findCurrentEffective(schoolId)
-                    .orElseThrow(() -> new BusinessException(ResultCode.DATA_NOT_EXIST, "未找到当前生效的指标版本"));
+            // 兼容快照落地前已发布的旧数据：按版本号查当前指标表（历史版本将返回空树）
+            List<EvaluationIndicator> allIndicators = evaluationIndicatorRepository.findActiveByVersion(version.getVersion());
+            Map<String, String> dimensionNameMap = abilityDimensionRepository.findAllActive().stream()
+                    .collect(Collectors.toMap(AbilityDimension::getDimensionCode,
+                            AbilityDimension::getDimensionName, (a, b) -> a));
+            tree = buildIndicatorTree(allIndicators, null, dimensionNameMap);
         }
-
-        // 查询该版本下所有启用指标
-        List<EvaluationIndicator> allIndicators = evaluationIndicatorRepository
-                .findActiveByVersion(version.getVersion());
-
-        // 构建维度名称映射（dimensionCode → dimensionName）
-        Map<String, String> dimensionNameMap = abilityDimensionRepository.findAllActive()
-                .stream()
-                .collect(Collectors.toMap(
-                        com.example.studentarchives.entity.foundation.AbilityDimension::getDimensionCode,
-                        com.example.studentarchives.entity.foundation.AbilityDimension::getDimensionName,
-                        (a, b) -> a));
-
-        // 构建树结构
-        List<IndicatorTreeResponse.IndicatorNode> tree = buildIndicatorTree(allIndicators, null, dimensionNameMap);
 
         return IndicatorTreeResponse.builder()
                 .versionId(version.getId())
@@ -555,6 +565,51 @@ public class CommonService {
                 .effectiveAt(version.getEffectiveAt() != null ? version.getEffectiveAt().toString() : null)
                 .indicators(tree)
                 .build();
+    }
+
+    /**
+     * 解析指标规则版本：versionId 指定时按 ID 查询，否则取当前生效版本。
+     */
+    private IndicatorRuleVersion resolveRuleVersion(Long versionId, Long schoolId) {
+        if (versionId != null) {
+            return indicatorRuleVersionRepository.findById(versionId)
+                    .orElseThrow(() -> new BusinessException(ResultCode.DATA_NOT_EXIST, "指标版本不存在"));
+        }
+        return indicatorRuleVersionRepository.findCurrentEffective(schoolId)
+                .orElseThrow(() -> new BusinessException(ResultCode.DATA_NOT_EXIST, "未找到当前生效的指标版本"));
+    }
+
+    /**
+     * 反序列化指标树快照 JSON（发布时写入的完整节点结构）。
+     */
+    private List<AdminIndicatorTreeResponse.IndicatorNode> readSnapshot(String snapshotJson) {
+        try {
+            return objectMapper.readValue(snapshotJson,
+                    new TypeReference<List<AdminIndicatorTreeResponse.IndicatorNode>>() {});
+        } catch (JsonProcessingException e) {
+            throw new BusinessException(ResultCode.SYSTEM_ERROR, "指标树快照解析失败");
+        }
+    }
+
+    /**
+     * 管理端完整节点 → 学生端精简节点（字段子集映射，递归）。
+     */
+    private List<IndicatorTreeResponse.IndicatorNode> toStudentNodes(List<AdminIndicatorTreeResponse.IndicatorNode> nodes) {
+        if (nodes == null) {
+            return null;
+        }
+        return nodes.stream()
+                .map(n -> IndicatorTreeResponse.IndicatorNode.builder()
+                        .indicatorId(n.getId())
+                        .indicatorCode(n.getIndicatorCode())
+                        .indicatorName(n.getIndicatorName())
+                        .level(n.getLevel())
+                        .weight(n.getWeight())
+                        .dimensionCode(n.getDimensionCode())
+                        .dimensionName(n.getDimensionName())
+                        .children(toStudentNodes(n.getChildren()))
+                        .build())
+                .collect(Collectors.toList());
     }
 
     /**
@@ -587,6 +642,84 @@ public class CommonService {
     }
 
     // ==================== 角色权限校验 ====================
+
+    /**
+     * 判断当前用户是否有权访问附件
+     * <p>
+     * 权限规则（满足任一即可）：
+     * 1. 当前用户是附件所有者（学生本人）；
+     * 2. 当前用户是管理员（admin 角色）；
+     * 3. 当前用户是教师/辅导员等，且其 {@code role_scopes} 授权范围覆盖附件所有者：
+     *    学校(1)/学院(2)/专业(3)/班级(4) 范围与所有者的组织归属逐级匹配。
+     *    课程(5)/年级(6) 等范围暂无可直接映射的组织归属，不据此放行。
+     *
+     * @param operatorId 当前操作者用户 ID
+     * @param ownerId    附件所有者用户 ID（学生）
+     * @return 有权访问返回 true
+     */
+    private boolean canAccessFile(Long operatorId, Long ownerId) {
+        // 1. 附件所有者（学生本人）
+        if (Objects.equals(operatorId, ownerId)) {
+            return true;
+        }
+        // 2. 管理员
+        if (isAdmin(operatorId)) {
+            return true;
+        }
+        if (operatorId == null || ownerId == null) {
+            return false;
+        }
+
+        // 解析附件所有者的组织归属：users.school_id → student_profiles.class_id
+        // → classes.major_id → majors.college_id（school_id 取 users 表即可）
+        User owner = userRepository.findById(ownerId).orElse(null);
+        if (owner == null) {
+            return false;
+        }
+        Long schoolId = owner.getSchoolId();
+        Long classId = null;
+        Long majorId = null;
+        Long collegeId = null;
+        StudentProfile profile = studentProfileRepository.findByUserId(ownerId).orElse(null);
+        if (profile != null && profile.getClassId() != null) {
+            classId = profile.getClassId();
+            Clazz clazz = clazzRepository.findById(profile.getClassId()).orElse(null);
+            if (clazz != null && clazz.getMajorId() != null) {
+                majorId = clazz.getMajorId();
+                Major major = majorRepository.findById(clazz.getMajorId()).orElse(null);
+                if (major != null) {
+                    collegeId = major.getCollegeId();
+                }
+            }
+        }
+
+        // 3. 授权范围匹配（仅启用状态的 role_scopes）
+        List<RoleScope> scopes = roleScopeRepository.findByUserIdAndStatus(operatorId, 1);
+        for (RoleScope scope : scopes) {
+            Long scopeId = scope.getScopeId();
+            Integer scopeType = scope.getScopeType();
+            if (scopeId == null || scopeType == null) {
+                continue;
+            }
+            switch (scopeType) {
+                case 1 -> { // 学校
+                    if (scopeId.equals(schoolId)) return true;
+                }
+                case 2 -> { // 学院
+                    if (scopeId.equals(collegeId)) return true;
+                }
+                case 3 -> { // 专业
+                    if (scopeId.equals(majorId)) return true;
+                }
+                case 4 -> { // 班级
+                    if (scopeId.equals(classId)) return true;
+                }
+                default -> { // 课程(5)/年级(6) 暂不据此放行
+                }
+            }
+        }
+        return false;
+    }
 
     /**
      * 判断当前用户是否拥有管理员角色

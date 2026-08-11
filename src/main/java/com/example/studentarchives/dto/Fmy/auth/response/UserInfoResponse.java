@@ -35,5 +35,6 @@ public class UserInfoResponse {
     private List<String> roles;
     private List<String> roleNames;
     private List<String> permissions;
+    private List<UserScopeInfoResponse> scopes;
     private String avatar;
 }

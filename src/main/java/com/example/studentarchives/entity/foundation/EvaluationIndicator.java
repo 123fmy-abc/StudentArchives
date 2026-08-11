@@ -38,6 +38,9 @@ public class EvaluationIndicator extends BaseEntity {
     @Column(name = "weight", precision = 5, scale = 4)
     private BigDecimal weight;
 
+    @Column(name = "description", length = 500)
+    private String description;
+
     @Column(name = "scoring_rule", columnDefinition = "JSON")
     private String scoringRule;
 

@@ -21,6 +21,17 @@ import static com.example.studentarchives.config.security.SecurityConstants.PUBL
  * 安全配置
  * <p>
  * JWT 无状态认证，登录接口公开，其余 API 需认证。
+ * <p>
+ * 鉴权边界说明：
+ * <ul>
+ *   <li>{@code /admin/**}：HTTP 层仅要求认证（authenticated），角色/权限码由各管理端 Service 经
+ *       {@link com.example.studentarchives.service.Fmy.AdminAuthService} 逐接口校验（admin 角色或对应权限码），
+ *       越权统一返回 20005 无访问权限。</li>
+ *   <li><code>/teacher/audits/&#42;/revoke</code> - 撤销已审核记录属于管理员纠错权限, HTTP 层兜底要求 ADMIN 角色,
+ *       避免未来实现 /teacher/audits/{taskId}/revoke 时因路径前缀被误解为普通教师可操作.</li>
+ *   <li>{@code /teacher/**} - 教师端接口需登录, 具体数据范围由 Service 层按教师授权班级/专业校验.</li>
+ *   <li>{@code /activities/**}：学生端动态记录模块，需登录。</li>
+ * </ul>
  */
 //类级别的注解
 @Configuration //告诉 Spring 这是一个配置类，里面定义的 @Bean 方法会被注册到 Spring 容器中
@@ -56,6 +67,14 @@ public class SecurityConfig {
                     .requestMatchers("/error", "/favicon.ico", "/static/**", "/webjars/**").permitAll()
                     // 业务接口需认证（公开路径已在之前通过 permitAll 排除）
                     .requestMatchers("/auth/**", "/common/**", "/home/**", "/profile/**", "/messages/**").authenticated()
+                    // 管理端接口需认证（角色/权限码校验由各服务层经 AdminAuthService 执行，越权返回 20005）
+                    .requestMatchers("/admin/**").authenticated()
+                    // 撤销已审核记录：HTTP 层要求 ADMIN 角色，防止路径前缀 /teacher 造成权限误解
+                    .requestMatchers("/teacher/audits/*/revoke").hasRole("ADMIN")
+                    // 教师端接口需登录，具体数据范围由 Service 层按教师授权班级/专业校验
+                    .requestMatchers("/teacher/**").authenticated()
+                    // 学生端动态记录模块需登录（对齐《学生端接口文档》六、动态记录模块）
+                    .requestMatchers("/activities/**").authenticated()
                     // 其他未匹配的兜底放行（如健康检查、静态资源等）
                     .anyRequest().permitAll()
             )

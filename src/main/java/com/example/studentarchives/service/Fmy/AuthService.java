@@ -15,17 +15,27 @@ import com.example.studentarchives.dto.Fmy.auth.response.CaptchaResponse;
 import com.example.studentarchives.dto.Fmy.auth.response.LoginResponse;
 import com.example.studentarchives.dto.Fmy.auth.response.TokenRefreshResponse;
 import com.example.studentarchives.dto.Fmy.auth.response.UserInfoResponse;
+import com.example.studentarchives.dto.Fmy.auth.response.UserScopeInfoResponse;
+import com.example.studentarchives.entity.org.Clazz;
+import com.example.studentarchives.entity.org.College;
+import com.example.studentarchives.entity.org.Major;
 import com.example.studentarchives.entity.org.School;
 import com.example.studentarchives.entity.user.Permission;
 import com.example.studentarchives.entity.user.Role;
+import com.example.studentarchives.entity.user.RoleScope;
 import com.example.studentarchives.entity.user.User;
 import com.example.studentarchives.entity.user.UserContactInfo;
 import com.example.studentarchives.entity.user.UserRole;
 import com.example.studentarchives.entity.user.RolePermission;
+import com.example.studentarchives.enums.ScopeTypeEnum;
 import com.example.studentarchives.exception.BusinessException;
+import com.example.studentarchives.repository.ClazzRepository;
+import com.example.studentarchives.repository.CollegeRepository;
+import com.example.studentarchives.repository.MajorRepository;
 import com.example.studentarchives.repository.PermissionRepository;
 import com.example.studentarchives.repository.RolePermissionRepository;
 import com.example.studentarchives.repository.RoleRepository;
+import com.example.studentarchives.repository.RoleScopeRepository;
 import com.example.studentarchives.repository.SchoolRepository;
 import com.example.studentarchives.repository.UserContactInfoRepository;
 import com.example.studentarchives.repository.UserRepository;
@@ -46,7 +56,9 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
+import java.util.function.Function;
 import java.util.stream.Collectors;
 
 /**
@@ -74,6 +86,10 @@ public class AuthService {
     private final RolePermissionRepository rolePermissionRepository;
     private final PermissionRepository permissionRepository;
     private final SchoolRepository schoolRepository;
+    private final RoleScopeRepository roleScopeRepository;
+    private final ClazzRepository clazzRepository;
+    private final MajorRepository majorRepository;
+    private final CollegeRepository collegeRepository;
     private final LoginLogService loginLogService;
 
     private final JwtUtil jwtUtil;
@@ -232,6 +248,7 @@ public class AuthService {
         School school = schoolRepository.findById(user.getSchoolId()).orElse(null);
         List<Role> roles = getUserRoles(user.getId());
         List<String> permissions = getUserPermissions(roles);
+        List<RoleScope> roleScopes = roleScopeRepository.findByUserIdAndStatus(user.getId(), 1);
 
         List<String> roleCodes = roles.stream().map(Role::getCode).collect(Collectors.toList());
         List<String> roleNames = roles.stream().map(Role::getName).collect(Collectors.toList());
@@ -249,8 +266,75 @@ public class AuthService {
                 .roles(roleCodes)
                 .roleNames(roleNames)
                 .permissions(permissions)
+                .scopes(resolveUserScopes(roleScopes))
                 .avatar(contactInfo != null ? contactInfo.getAvatar() : null)
                 .build();
+    }
+
+    /**
+     * 解析用户数据范围（role_scopes），并关联出范围名称。
+     * <p>
+     * 范围名称按 scope_type 关联对应组织表：
+     * 1=学校→schools、2=学院→colleges、3=专业→majors、4=班级→classes，
+     * 5=课程/6=年级暂无独立关联表，scopeName 返回 null。
+     */
+    private List<UserScopeInfoResponse> resolveUserScopes(List<RoleScope> roleScopes) {
+        if (roleScopes.isEmpty()) {
+            return Collections.emptyList();
+        }
+
+        List<Long> schoolIds = scopeIds(roleScopes, ScopeTypeEnum.SCHOOL.getValue());
+        List<Long> collegeIds = scopeIds(roleScopes, ScopeTypeEnum.COLLEGE.getValue());
+        List<Long> majorIds = scopeIds(roleScopes, ScopeTypeEnum.MAJOR.getValue());
+        List<Long> clazzIds = scopeIds(roleScopes, ScopeTypeEnum.CLASS.getValue());
+
+        Map<Long, String> schoolNames = idToName(schoolRepository.findAllById(schoolIds), School::getId, School::getName);
+        Map<Long, String> collegeNames = idToName(collegeRepository.findAllById(collegeIds), College::getId, College::getName);
+        Map<Long, String> majorNames = idToName(majorRepository.findAllById(majorIds), Major::getId, Major::getName);
+        Map<Long, String> clazzNames = idToName(clazzRepository.findAllById(clazzIds), Clazz::getId, Clazz::getName);
+
+        return roleScopes.stream()
+                .map(rs -> UserScopeInfoResponse.builder()
+                        .scopeType(rs.getScopeType())
+                        .scopeTypeLabel(scopeTypeLabel(rs.getScopeType()))
+                        .scopeId(rs.getScopeId())
+                        .scopeName(scopeName(rs, schoolNames, collegeNames, majorNames, clazzNames))
+                        .semesterId(rs.getSemesterId())
+                        .build())
+                .collect(Collectors.toList());
+    }
+
+    /** 提取指定范围类型下的 scopeId 列表（去重） */
+    private List<Long> scopeIds(List<RoleScope> roleScopes, int scopeType) {
+        return roleScopes.stream()
+                .filter(rs -> Integer.valueOf(scopeType).equals(rs.getScopeType()))
+                .map(RoleScope::getScopeId)
+                .distinct()
+                .collect(Collectors.toList());
+    }
+
+    /** 实体列表 → {id: name} 映射（批量关联范围名称） */
+    private <T> Map<Long, String> idToName(List<T> entities, Function<T, Long> idFn, Function<T, String> nameFn) {
+        return entities.stream()
+                .collect(Collectors.toMap(idFn, nameFn, (a, b) -> a));
+    }
+
+    /** 按范围类型返回范围名称；课程/年级等未关联表返回 null */
+    private String scopeName(RoleScope rs, Map<Long, String> schoolNames, Map<Long, String> collegeNames,
+                             Map<Long, String> majorNames, Map<Long, String> clazzNames) {
+        return switch (Objects.requireNonNullElse(rs.getScopeType(), 0)) {
+            case 1 -> schoolNames.get(rs.getScopeId());
+            case 2 -> collegeNames.get(rs.getScopeId());
+            case 3 -> majorNames.get(rs.getScopeId());
+            case 4 -> clazzNames.get(rs.getScopeId());
+            default -> null;
+        };
+    }
+
+    /** 范围类型标签 */
+    private String scopeTypeLabel(Integer scopeType) {
+        ScopeTypeEnum e = ScopeTypeEnum.of(scopeType);
+        return e != null ? e.getLabel() : "未知";
     }
 
     // ==================== 退出登录 ====================

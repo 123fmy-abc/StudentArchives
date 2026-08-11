@@ -16,6 +16,10 @@
 #   - 直接 java -jar：java -jar app.jar --spring.profiles.active=dev
 
 spring:
+  # ===== Flyway（开发环境允许补跑漏掉的迁移）=====
+  flyway:
+    out-of-order: true
+
   # ===== 数据源（远程共享 MySQL，全体队员使用同一数据库）=====
   datasource:
     url: jdbc:mysql://${DB_HOST:8.137.191.26}:${DB_PORT:3306}/${DB_NAME:student_archives}?useUnicode=true&characterEncoding=utf-8&serverTimezone=Asia/Shanghai&useSSL=true&allowPublicKeyRetrieval=false

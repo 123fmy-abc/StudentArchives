@@ -4,9 +4,9 @@ import lombok.AllArgsConstructor;
 import lombok.Getter;
 
 /**
- * 操作日志关联业务类型枚举（对齐 operation_logs.related_type）
+ * 操作日志关联业务类型枚举（对齐 system_logs.related_type）
  * <p>
- * 学生档案系统表 operation_logs.related_type
+ * 学生档案系统表 system_logs.related_type
  * archive/award_application/career_plan/growth_timeline
  */
 @Getter
