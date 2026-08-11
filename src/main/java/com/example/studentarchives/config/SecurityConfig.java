@@ -55,7 +55,7 @@ public class SecurityConfig {
                     // 静态资源、错误页面等无需认证（放在 /** 之前才生效）
                     .requestMatchers("/error", "/favicon.ico", "/static/**", "/webjars/**").permitAll()
                     // 业务接口需认证（公开路径已在之前通过 permitAll 排除）
-                    .requestMatchers("/auth/**", "/common/**", "/home/**", "/profile/**").authenticated()
+                    .requestMatchers("/auth/**", "/common/**", "/home/**", "/profile/**", "/messages/**").authenticated()
                     // 其他未匹配的兜底放行（如健康检查、静态资源等）
                     .anyRequest().permitAll()
             )
