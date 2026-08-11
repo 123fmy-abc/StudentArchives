@@ -8,6 +8,7 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 
 import java.util.List;
+import java.util.Map;
 
 /**
  * 动态记录详情响应（GET /activities/{type}/{activityId}）
@@ -131,6 +132,12 @@ public class ActivityDetailResponse {
 
     @JsonProperty("submit_count")
     private Integer submitCount;
+
+    // ==================== 类型专用详情 ====================
+
+    /** 类型专用详情对象（如学科竞赛的 competitionName/competitionType 等） */
+    @JsonProperty("detail")
+    private Map<String, Object> detail;
 
     // ==================== 嵌套列表 ====================
 
