@@ -7,32 +7,30 @@ import com.example.studentarchives.dto.Lzw.activity.request.ActivityListRequest;
 import com.example.studentarchives.dto.Lzw.activity.response.ActivityDetailResponse;
 import com.example.studentarchives.dto.Lzw.activity.response.ActivityListItemResponse;
 import com.example.studentarchives.dto.Lzw.activity.response.ActivityStatusResponse;
-import com.example.studentarchives.entity.archive.Archive;
+import com.example.studentarchives.entity.archive.*;
 import com.example.studentarchives.entity.award.AwardApplication;
 import com.example.studentarchives.entity.career.CareerPlan;
 import com.example.studentarchives.entity.embed.ArchiveAuditInfo;
 import com.example.studentarchives.entity.file.AttachmentRelation;
+import com.example.studentarchives.entity.foundation.Dictionary;
+import com.example.studentarchives.entity.version.ModelVersion;
 import com.example.studentarchives.enums.ActivityTypeEnum;
 import com.example.studentarchives.enums.ApplyStatusEnum;
+import com.example.studentarchives.enums.ArchiveTypeEnum;
+import com.example.studentarchives.enums.AwardTypeEnum;
+import com.example.studentarchives.enums.ModelVersionModelTypeEnum;
 import com.example.studentarchives.exception.BusinessException;
-import com.example.studentarchives.repository.ArchiveRepository;
-import com.example.studentarchives.repository.AttachmentRelationRepository;
-import com.example.studentarchives.repository.AwardApplicationRepository;
-import com.example.studentarchives.repository.CareerPlanRepository;
-import com.example.studentarchives.repository.SemesterRepository;
-import com.example.studentarchives.util.DateUtils;
+import com.example.studentarchives.repository.*;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.Comparator;
-import java.util.List;
-import java.util.Set;
+import java.util.*;
+import java.util.stream.Collectors;
 
 /**
  * 动态记录 Service
@@ -53,6 +51,21 @@ public class ActivityService {
     private final CareerPlanRepository careerPlanRepository;
     private final AttachmentRelationRepository attachmentRelationRepository;
     private final SemesterRepository semesterRepository;
+    private final ModelVersionRepository modelVersionRepository;
+    private final UserRepository userRepository;
+    private final DictionaryRepository dictionaryRepository;
+
+    // Archive extension repositories
+    private final ArchiveCompetitionRepository competitionRepository;
+    private final ArchiveScholarshipRepository scholarshipRepository;
+    private final ArchiveInnovationRepository innovationRepository;
+    private final ArchiveResearchRepository researchRepository;
+    private final ArchiveCertificateRepository certificateRepository;
+    private final ArchiveInternshipRepository internshipRepository;
+    private final ArchiveOrganizationRepository organizationRepository;
+    private final ArchiveTrainingProjectRepository trainingProjectRepository;
+    private final ArchiveSocialPracticeRepository socialPracticeRepository;
+    private final ArchiveBookReviewRepository bookReviewRepository;
 
     /** 允许的排序字段白名单 */
     private static final Set<String> ALLOWED_SORT_FIELDS = Set.of("submit_time", "created_at", "updated_at", "id");
@@ -264,10 +277,13 @@ public class ActivityService {
     private ActivityListItemResponse toListItem(Archive a) {
         ApplyStatusEnum s = ApplyStatusEnum.of(a.getStatus());
         var ai = nullSafe(a.getAuditInfo());
+        ArchiveTypeEnum at = ArchiveTypeEnum.of(a.getArchiveType());
         return ActivityListItemResponse.builder()
                 .id(a.getId()).type("archive")
                 .archiveType(a.getArchiveType())
+                .archiveTypeLabel(at != null ? at.getLabel() : null)
                 .title(a.getTitle())
+                .content(buildContent("archive", a.getArchiveType()))
                 .status(a.getStatus()).statusLabel(s.getLabel())
                 .semesterId(a.getSemesterId())
                 .semesterName(lookupSemesterName(a.getSemesterId()))
@@ -283,10 +299,13 @@ public class ActivityService {
     private ActivityListItemResponse toListItem(AwardApplication a) {
         ApplyStatusEnum s = ApplyStatusEnum.of(a.getStatus());
         var ai = nullSafe(a.getAuditInfo());
+        AwardTypeEnum at = AwardTypeEnum.of(a.getAwardType());
         return ActivityListItemResponse.builder()
                 .id(a.getId()).type("award")
                 .archiveType(a.getAwardType())
+                .archiveTypeLabel(at != null ? at.getLabel() : null)
                 .title(a.getTitle())
+                .content("奖项报名已提交")
                 .status(a.getStatus()).statusLabel(s.getLabel())
                 .semesterId(a.getSemesterId())
                 .semesterName(lookupSemesterName(a.getSemesterId()))
@@ -305,6 +324,7 @@ public class ActivityService {
         return ActivityListItemResponse.builder()
                 .id(p.getId()).type("career_plan")
                 .title(p.getTitle())
+                .content("职业规划已提交")
                 .status(p.getStatus()).statusLabel(s.getLabel())
                 .semesterId(p.getSemesterId())
                 .semesterName(lookupSemesterName(p.getSemesterId()))
@@ -321,58 +341,51 @@ public class ActivityService {
 
     private ActivityDetailResponse toDetail(Archive a) {
         ApplyStatusEnum s = ApplyStatusEnum.of(a.getStatus());
+        ArchiveTypeEnum at = ArchiveTypeEnum.of(a.getArchiveType());
         return ActivityDetailResponse.builder()
                 .id(a.getId()).type("archive")
+                .archiveType(a.getArchiveType())
+                .archiveTypeLabel(at != null ? at.getLabel() : null)
                 .title(a.getTitle())
-                .status(a.getStatus()).statusLabel(s.getLabel())
                 .semesterId(a.getSemesterId())
                 .semesterName(lookupSemesterName(a.getSemesterId()))
-                .createdAt(format(a.getCreatedAt()))
-                .updatedAt(format(a.getUpdatedAt()))
-                .archiveType(a.getArchiveType())
-                .courseCode(a.getCourseCode())
-                .obtainedAt(formatDate(a.getObtainedAt()))
-                .duplicateCheckStatus(a.getDuplicateCheckStatus())
-                .duplicateInfo(a.getDuplicateInfo())
-                .correctionReason(a.getCorrectionReason())
-                .submitTime(format(a.getAuditInfo().getSubmittedAt()))
-                .auditedAt(format(a.getAuditInfo().getAuditedAt()))
-                .auditorId(a.getAuditInfo().getAuditorId())
-                .rejectedReason(a.getAuditInfo().getRejectedReason())
-                .returnedAt(format(a.getAuditInfo().getReturnedAt()))
-                .passedAt(format(a.getAuditInfo().getPassedAt()))
-                .revokedAt(format(a.getAuditInfo().getRevokedAt()))
-                .currentVersion(a.getAuditInfo().getCurrentVersion())
-                .submitCount(a.getAuditInfo().getSubmitCount())
+                .status(a.getStatus()).statusLabel(s.getLabel())
+                .submitTime(format(a.getAuditInfo() != null ? a.getAuditInfo().getSubmittedAt() : null))
+                .auditedAt(format(a.getAuditInfo() != null ? a.getAuditInfo().getAuditedAt() : null))
+                .auditorId(a.getAuditInfo() != null ? a.getAuditInfo().getAuditorId() : null)
+                .auditorName(resolveAuditorName(a.getAuditInfo()))
+                .rejectedReason(a.getAuditInfo() != null ? a.getAuditInfo().getRejectedReason() : null)
+                .currentVersion(a.getAuditInfo() != null ? a.getAuditInfo().getCurrentVersion() : null)
+                .submitCount(a.getAuditInfo() != null ? a.getAuditInfo().getSubmitCount() : null)
+                .detail(buildArchiveDetail(a))
                 .evidenceFiles(queryFiles("archive", a.getId()))
+                .approvalHistory(Collections.emptyList())
+                .versionHistory(queryVersionHistory(ModelVersionModelTypeEnum.ARCHIVE.getValue(), a.getId()))
                 .build();
     }
 
     private ActivityDetailResponse toDetail(AwardApplication a) {
         ApplyStatusEnum s = ApplyStatusEnum.of(a.getStatus());
+        AwardTypeEnum at = AwardTypeEnum.of(a.getAwardType());
         return ActivityDetailResponse.builder()
                 .id(a.getId()).type("award")
+                .archiveType(a.getAwardType())
+                .archiveTypeLabel(at != null ? at.getLabel() : null)
                 .title(a.getTitle())
-                .status(a.getStatus()).statusLabel(s.getLabel())
                 .semesterId(a.getSemesterId())
                 .semesterName(lookupSemesterName(a.getSemesterId()))
-                .createdAt(format(a.getCreatedAt()))
-                .updatedAt(format(a.getUpdatedAt()))
-                .awardType(a.getAwardType())
-                .certificateNo(a.getCertificateNo())
-                .issuingUnit(a.getIssuingUnit())
-                .validUntil(formatDate(a.getValidUntil()))
-                .participantRole(a.getParticipantRole())
-                .submitTime(format(a.getAuditInfo().getSubmittedAt()))
-                .auditedAt(format(a.getAuditInfo().getAuditedAt()))
-                .auditorId(a.getAuditInfo().getAuditorId())
-                .rejectedReason(a.getAuditInfo().getRejectedReason())
-                .returnedAt(format(a.getAuditInfo().getReturnedAt()))
-                .passedAt(format(a.getAuditInfo().getPassedAt()))
-                .revokedAt(format(a.getAuditInfo().getRevokedAt()))
-                .currentVersion(a.getAuditInfo().getCurrentVersion())
-                .submitCount(a.getAuditInfo().getSubmitCount())
+                .status(a.getStatus()).statusLabel(s.getLabel())
+                .submitTime(format(a.getAuditInfo() != null ? a.getAuditInfo().getSubmittedAt() : null))
+                .auditedAt(format(a.getAuditInfo() != null ? a.getAuditInfo().getAuditedAt() : null))
+                .auditorId(a.getAuditInfo() != null ? a.getAuditInfo().getAuditorId() : null)
+                .auditorName(resolveAuditorName(a.getAuditInfo()))
+                .rejectedReason(a.getAuditInfo() != null ? a.getAuditInfo().getRejectedReason() : null)
+                .currentVersion(a.getAuditInfo() != null ? a.getAuditInfo().getCurrentVersion() : null)
+                .submitCount(a.getAuditInfo() != null ? a.getAuditInfo().getSubmitCount() : null)
+                .detail(buildAwardDetail(a))
                 .evidenceFiles(queryFiles("award", a.getId()))
+                .approvalHistory(Collections.emptyList())
+                .versionHistory(queryVersionHistory(ModelVersionModelTypeEnum.AWARD_APPLICATION.getValue(), a.getId()))
                 .build();
     }
 
@@ -381,27 +394,20 @@ public class ActivityService {
         return ActivityDetailResponse.builder()
                 .id(p.getId()).type("career_plan")
                 .title(p.getTitle())
-                .status(p.getStatus()).statusLabel(s.getLabel())
                 .semesterId(p.getSemesterId())
                 .semesterName(lookupSemesterName(p.getSemesterId()))
-                .createdAt(format(p.getCreatedAt()))
-                .updatedAt(format(p.getUpdatedAt()))
-                .content(p.getContent())
-                .requirement(p.getRequirement())
-                .progressRate(p.getProgressRate())
-                .source(p.getSource())
-                .aiSuggestionId(p.getAiSuggestionId())
-                .requireConfirm(p.getRequireConfirm())
-                .submitTime(format(p.getAuditInfo().getSubmittedAt()))
-                .auditedAt(format(p.getAuditInfo().getAuditedAt()))
-                .auditorId(p.getAuditInfo().getAuditorId())
-                .rejectedReason(p.getAuditInfo().getRejectedReason())
-                .returnedAt(format(p.getAuditInfo().getReturnedAt()))
-                .passedAt(format(p.getAuditInfo().getPassedAt()))
-                .revokedAt(format(p.getAuditInfo().getRevokedAt()))
-                .currentVersion(p.getAuditInfo().getCurrentVersion())
-                .submitCount(p.getAuditInfo().getSubmitCount())
+                .status(p.getStatus()).statusLabel(s.getLabel())
+                .submitTime(format(p.getAuditInfo() != null ? p.getAuditInfo().getSubmittedAt() : null))
+                .auditedAt(format(p.getAuditInfo() != null ? p.getAuditInfo().getAuditedAt() : null))
+                .auditorId(p.getAuditInfo() != null ? p.getAuditInfo().getAuditorId() : null)
+                .auditorName(resolveAuditorName(p.getAuditInfo()))
+                .rejectedReason(p.getAuditInfo() != null ? p.getAuditInfo().getRejectedReason() : null)
+                .currentVersion(p.getAuditInfo() != null ? p.getAuditInfo().getCurrentVersion() : null)
+                .submitCount(p.getAuditInfo() != null ? p.getAuditInfo().getSubmitCount() : null)
+                .detail(buildCareerPlanDetail(p))
                 .evidenceFiles(queryFiles("career_plan", p.getId()))
+                .approvalHistory(Collections.emptyList())
+                .versionHistory(queryVersionHistory(ModelVersionModelTypeEnum.CAREER_PLAN.getValue(), p.getId()))
                 .build();
     }
 
@@ -535,6 +541,169 @@ public class ActivityService {
                 .fileName(f.getOriginalName())
                 .fileSize(f.getFileSize())
                 .build()).toList();
+    }
+
+    // ==================== 私有：详情构建 ====================
+
+    /** 根据档案类型构建 detail 对象（查扩展表 + 字典标签） */
+    private Map<String, Object> buildArchiveDetail(Archive a) {
+        Map<String, Object> detail = new LinkedHashMap<>();
+        String type = a.getArchiveType();
+        if (type == null) return detail;
+
+        // 通用字段
+        if (a.getObtainedAt() != null) detail.put("obtainTime", formatDate(a.getObtainedAt()));
+        if (a.getCourseCode() != null) detail.put("courseCode", a.getCourseCode());
+
+        // 查扩展表
+        switch (type) {
+            case "academic_competition" -> competitionRepository.findByArchiveId(a.getId()).ifPresent(ext -> {
+                detail.put("competitionName", ext.getCompetitionName());
+                detail.put("competitionType", ext.getCompetitionType());
+                detail.put("competitionTypeLabel", resolveLabel("competition_type", ext.getCompetitionType()));
+                detail.put("awardLevel", ext.getAwardLevel());
+                detail.put("awardLevelLabel", resolveLabel("award_level", ext.getAwardLevel()));
+                detail.put("participantRole", ext.getParticipantRole());
+            });
+            case "scholarship" -> scholarshipRepository.findByArchiveId(a.getId()).ifPresent(ext -> {
+                detail.put("scholarshipName", ext.getScholarshipName());
+                detail.put("scholarshipCategory", ext.getScholarshipCategory());
+                detail.put("scholarshipCategoryLabel", resolveLabel("scholarship_category", ext.getScholarshipCategory()));
+                detail.put("awardLevel", ext.getAwardLevel());
+                detail.put("awardLevelLabel", resolveLabel("award_level", ext.getAwardLevel()));
+            });
+            case "innovation_entrepreneurship" -> innovationRepository.findByArchiveId(a.getId()).ifPresent(ext -> {
+                detail.put("companyName", ext.getCompanyName());
+                detail.put("industryType", ext.getIndustryType());
+                detail.put("industryTypeLabel", resolveLabel("industry_type", ext.getIndustryType()));
+                detail.put("projectType", ext.getProjectType());
+                detail.put("projectTypeLabel", resolveLabel("project_type", ext.getProjectType()));
+                detail.put("participantRole", ext.getParticipantRole());
+                if (ext.getRegisteredAt() != null) detail.put("registeredAt", formatDate(ext.getRegisteredAt()));
+            });
+            case "academic_research" -> researchRepository.findByArchiveId(a.getId()).ifPresent(ext -> {
+                detail.put("projectName", ext.getProjectName());
+                detail.put("projectLevel", ext.getProjectLevel());
+                detail.put("projectLevelLabel", resolveLabel("project_level", ext.getProjectLevel()));
+                detail.put("projectType", ext.getProjectType());
+                detail.put("projectTypeLabel", resolveLabel("project_type", ext.getProjectType()));
+                detail.put("participantRole", ext.getParticipantRole());
+                if (ext.getStartDate() != null) detail.put("startDate", formatDate(ext.getStartDate()));
+                if (ext.getEndDate() != null) detail.put("endDate", formatDate(ext.getEndDate()));
+            });
+            case "honor_certificate" -> certificateRepository.findByArchiveId(a.getId()).ifPresent(ext -> {
+                detail.put("certificateType", ext.getCertificateType());
+                detail.put("certificateTypeLabel", resolveLabel("certificate_type", ext.getCertificateType()));
+                detail.put("certificateName", ext.getCertificateName());
+                detail.put("certificateNo", ext.getCertificateNo());
+                detail.put("issuingUnit", ext.getIssuingUnit());
+                if (ext.getValidUntil() != null) detail.put("validUntil", formatDate(ext.getValidUntil()));
+            });
+            case "internship" -> internshipRepository.findByArchiveId(a.getId()).ifPresent(ext -> {
+                detail.put("companyName", ext.getCompanyName());
+                detail.put("location", ext.getLocation());
+                detail.put("position", ext.getPosition());
+                if (ext.getStartDate() != null) detail.put("startDate", formatDate(ext.getStartDate()));
+                if (ext.getEndDate() != null) detail.put("endDate", formatDate(ext.getEndDate()));
+            });
+            case "organization" -> organizationRepository.findByArchiveId(a.getId()).ifPresent(ext -> {
+                detail.put("orgLevel", ext.getOrgLevel());
+                detail.put("orgLevelLabel", resolveLabel("org_level", ext.getOrgLevel()));
+                detail.put("department", ext.getDepartment());
+                detail.put("positionTitle", ext.getPositionTitle());
+                if (ext.getStartDate() != null) detail.put("startDate", formatDate(ext.getStartDate()));
+                if (ext.getEndDate() != null) detail.put("endDate", formatDate(ext.getEndDate()));
+            });
+            case "training_project" -> trainingProjectRepository.findByArchiveId(a.getId()).ifPresent(ext -> {
+                detail.put("projectName", ext.getProjectName());
+                detail.put("projectContent", ext.getProjectContent());
+                if (ext.getStartDate() != null) detail.put("startDate", formatDate(ext.getStartDate()));
+                if (ext.getEndDate() != null) detail.put("endDate", formatDate(ext.getEndDate()));
+            });
+            case "social_practice" -> socialPracticeRepository.findByArchiveId(a.getId()).ifPresent(ext -> {
+                detail.put("activityName", ext.getActivityName());
+                detail.put("practiceLocation", ext.getPracticeLocation());
+                detail.put("practiceUnit", ext.getPracticeUnit());
+                detail.put("participantRole", ext.getParticipantRole());
+                if (ext.getStartDate() != null) detail.put("startDate", formatDate(ext.getStartDate()));
+                if (ext.getEndDate() != null) detail.put("endDate", formatDate(ext.getEndDate()));
+                if (ext.getVolunteerHours() != null) detail.put("volunteerHours", ext.getVolunteerHours());
+            });
+            case "book_review" -> bookReviewRepository.findByArchiveId(a.getId()).ifPresent(ext -> {
+                detail.put("bookName", ext.getBookName());
+                if (ext.getReadMonth() != null) detail.put("readMonth", formatDate(ext.getReadMonth()));
+                detail.put("reviewContent", ext.getReviewContent());
+            });
+        }
+        return detail;
+    }
+
+    private Map<String, Object> buildAwardDetail(AwardApplication a) {
+        Map<String, Object> detail = new LinkedHashMap<>();
+        detail.put("awardType", a.getAwardType());
+        AwardTypeEnum at = AwardTypeEnum.of(a.getAwardType());
+        if (at != null) detail.put("awardTypeLabel", at.getLabel());
+        if (a.getCertificateNo() != null) detail.put("certificateNo", a.getCertificateNo());
+        if (a.getIssuingUnit() != null) detail.put("issuingUnit", a.getIssuingUnit());
+        if (a.getValidUntil() != null) detail.put("validUntil", formatDate(a.getValidUntil()));
+        if (a.getParticipantRole() != null) detail.put("participantRole", a.getParticipantRole());
+        return detail;
+    }
+
+    private Map<String, Object> buildCareerPlanDetail(CareerPlan p) {
+        Map<String, Object> detail = new LinkedHashMap<>();
+        if (p.getContent() != null) detail.put("content", p.getContent());
+        if (p.getRequirement() != null) detail.put("requirement", p.getRequirement());
+        if (p.getProgressRate() != null) detail.put("progressRate", p.getProgressRate());
+        if (p.getSource() != null) detail.put("source", p.getSource());
+        if (p.getAiSuggestionId() != null) detail.put("aiSuggestionId", p.getAiSuggestionId());
+        if (p.getRequireConfirm() != null) detail.put("requireConfirm", p.getRequireConfirm());
+        return detail;
+    }
+
+    /** 查审核人姓名 */
+    private String resolveAuditorName(ArchiveAuditInfo audit) {
+        if (audit == null || audit.getAuditorId() == null) return null;
+        return userRepository.findById(audit.getAuditorId())
+                .map(u -> u.getName())
+                .orElse(null);
+    }
+
+    /** 查版本历史 */
+    private List<ActivityDetailResponse.VersionHistoryItem> queryVersionHistory(String modelType, Long modelId) {
+        List<ModelVersion> versions = modelVersionRepository
+                .findByModelTypeAndModelIdOrderByVersionAsc(modelType, modelId);
+        if (versions.isEmpty()) return Collections.emptyList();
+        return versions.stream()
+                .map(v -> ActivityDetailResponse.VersionHistoryItem.builder()
+                        .version(v.getVersion())
+                        .title(v.getTitle())
+                        .status(v.getStatus())
+                        .statusLabel(v.getStatus() != null ? ApplyStatusEnum.of(v.getStatus()).getLabel() : null)
+                        .createdAt(format(v.getCreatedAt()))
+                        .build())
+                .collect(Collectors.toList());
+    }
+
+    /** 字典标签解析（dict_type → dict_code → dict_name） */
+    private String resolveLabel(String dictType, String dictCode) {
+        if (dictType == null || dictCode == null) return null;
+        return dictionaryRepository.findActiveByDictType(dictType).stream()
+                .filter(d -> dictCode.equals(d.getDictCode()))
+                .findFirst()
+                .map(Dictionary::getDictName)
+                .orElse(null);
+    }
+
+    /** 列表 content 生成 */
+    private String buildContent(String type, String archiveType) {
+        if ("archive".equals(type)) {
+            ArchiveTypeEnum at = ArchiveTypeEnum.of(archiveType);
+            return (at != null ? at.getLabel() : "档案") + "申报已提交";
+        }
+        if ("award".equals(type)) return "奖项报名已提交";
+        if ("career_plan".equals(type)) return "职业规划已提交";
+        return null;
     }
 
     private static final DateTimeFormatter DTF = DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ssXXX");
