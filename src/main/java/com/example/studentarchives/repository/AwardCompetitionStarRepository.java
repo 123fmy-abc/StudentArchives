@@ -5,6 +5,7 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
 
 import java.util.List;
+import java.util.Optional;
 
 /**
  * 竞赛之星奖项明细 Repository
@@ -12,8 +13,7 @@ import java.util.List;
 @Repository
 public interface AwardCompetitionStarRepository extends JpaRepository<AwardCompetitionStar, Long> {
 
-    /**
-     * 根据申请 ID 列表查询竞赛奖项明细
-     */
+    Optional<AwardCompetitionStar> findByApplicationId(Long applicationId);
+
     List<AwardCompetitionStar> findByApplicationIdIn(List<Long> applicationIds);
 }
