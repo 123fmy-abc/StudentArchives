@@ -1,4 +1,4 @@
-package com.example.studentarchives.service.Fmy;
+package com.example.studentarchives.service.Lzw;
 
 import com.example.studentarchives.common.ResultCode;
 import com.example.studentarchives.entity.archive.*;

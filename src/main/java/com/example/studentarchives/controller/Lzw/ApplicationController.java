@@ -1,8 +1,8 @@
-package com.example.studentarchives.controller.Fmy;
+package com.example.studentarchives.controller.Lzw;
 
 import com.example.studentarchives.common.ApiResult;
-import com.example.studentarchives.service.Fmy.ApplicationService;
-import com.example.studentarchives.service.Fmy.ApplicationService.*;
+import com.example.studentarchives.service.Lzw.ApplicationService;
+import com.example.studentarchives.service.Lzw.ApplicationService.*;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
