@@ -20,6 +20,7 @@ import java.util.stream.Collectors;
 @AllArgsConstructor
 public class PageResult<T> {
 
+    private long total;
     private List<T> list;
     private Pagination pagination;
 
@@ -42,6 +43,7 @@ public class PageResult<T> {
     /** 创建空分页 */
     public static <T> PageResult<T> empty() {
         return PageResult.<T>builder()
+                .total(0)
                 .list(Collections.emptyList())
                 .pagination(Pagination.builder()
                         .page(1)
@@ -57,6 +59,7 @@ public class PageResult<T> {
         int perPage = pageParam.getPerPage();
         int totalPages = (int) Math.ceil((double) total / perPage);
         return PageResult.<T>builder()
+                .total(total)
                 .list(list)
                 .pagination(Pagination.builder()
                         .page(pageParam.getPage())
@@ -71,6 +74,7 @@ public class PageResult<T> {
     public <R> PageResult<R> map(Function<T, R> mapper) {
         List<R> mappedList = list.stream().map(mapper).collect(Collectors.toList());
         return PageResult.<R>builder()
+                .total(pagination.getTotal())
                 .list(mappedList)
                 .pagination(Pagination.builder()
                         .page(pagination.getPage())

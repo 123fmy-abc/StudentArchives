@@ -6,6 +6,7 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.stereotype.Repository;
 
 import java.util.List;
+import java.util.Optional;
 
 /**
  * 档案类型配置 Repository
@@ -20,4 +21,9 @@ public interface ArchiveTypeConfigRepository extends JpaRepository<ArchiveTypeCo
      */
     @Query("SELECT a FROM ArchiveTypeConfig a WHERE a.status = 1 ORDER BY a.sort ASC")
     List<ArchiveTypeConfig> findAllActive();
+
+    /**
+     * 按档案类型编码查询已启用的配置
+     */
+    Optional<ArchiveTypeConfig> findByArchiveTypeAndStatus(String archiveType, Integer status);
 }
