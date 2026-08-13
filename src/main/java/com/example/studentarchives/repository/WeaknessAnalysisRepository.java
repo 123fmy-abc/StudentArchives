@@ -16,4 +16,9 @@ public interface WeaknessAnalysisRepository extends JpaRepository<WeaknessAnalys
      * 查询学生全部短板分析，按创建时间倒序（最新在前）
      */
     List<WeaknessAnalysis> findByUserIdOrderByCreatedAtDesc(Long userId);
+
+    /**
+     * 按关联来源模型与记录ID查询短板分析（用于 AI 建议的 archive/career_plan 来源映射）
+     */
+    List<WeaknessAnalysis> findByUserIdAndRelatedTypeAndRelatedId(Long userId, String relatedType, Long relatedId);
 }
