@@ -4,6 +4,8 @@ import com.example.studentarchives.entity.user.StudentProfile;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
 
+import java.util.Collection;
+import java.util.List;
 import java.util.Optional;
 
 /**
@@ -17,4 +19,8 @@ import java.util.Optional;
 public interface StudentProfileRepository extends JpaRepository<StudentProfile, Long> {
 
     Optional<StudentProfile> findByUserId(Long userId);
+
+    List<StudentProfile> findByUserIdIn(Collection<Long> userIds);
+
+    List<StudentProfile> findByClassIdIn(Collection<Long> classIds);
 }
