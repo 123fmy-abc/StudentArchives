@@ -30,7 +30,7 @@ import com.example.studentarchives.repository.TeacherProfileRepository;
 import com.example.studentarchives.repository.UserContactInfoRepository;
 import com.example.studentarchives.repository.UserRepository;
 import com.example.studentarchives.repository.UserRoleRepository;
-import com.example.studentarchives.service.Fmy.AdminAuthService;
+import com.example.studentarchives.service.common.AdminAuthService;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import jakarta.persistence.criteria.Predicate;
 import lombok.AllArgsConstructor;
