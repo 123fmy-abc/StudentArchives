@@ -57,6 +57,11 @@ public interface EvaluationIndicatorRepository extends JpaRepository<EvaluationI
     Optional<EvaluationIndicator> findBySchoolIdAndIndicatorCode(Long schoolId, String indicatorCode);
 
     /**
+     * 判断是否存在未删除的指标引用指定能力维度编码
+     */
+    boolean existsByDimensionCode(String dimensionCode);
+
+    /**
      * 发布指标规则版本时，将全校指标快照版本号统一推进到新版本
      */
     @Modifying

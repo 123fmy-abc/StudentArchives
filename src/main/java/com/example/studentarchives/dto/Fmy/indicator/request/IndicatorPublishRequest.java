@@ -31,4 +31,14 @@ public class IndicatorPublishRequest {
 
     /** 生效时间，ISO 8601 格式，如 2026-02-01T00:00:00+08:00，不传则取当前时间 */
     private String effectiveAt;
+
+    /**
+     * 基于指定历史版本快照发布新版本（可选）。
+     * <p>
+     * 传入时，系统从该历史版本的 {@code indicator_rule_versions.tree_snapshot} 深拷贝生成新版本的
+     * 指标树快照与 {@code indicator_versions} 记录，而不是从当前草稿树 ({@code evaluation_indicators})
+     * 发布。这样可避免连带引入草稿中其他未预期改动，也支持对历史版本做修正后重新发布。
+     * 不传时保持原有行为：基于当前全校草稿树发布。
+     */
+    private Long sourceVersionId;
 }

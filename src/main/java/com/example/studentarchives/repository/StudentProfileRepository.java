@@ -2,8 +2,12 @@ package com.example.studentarchives.repository;
 
 import com.example.studentarchives.entity.user.StudentProfile;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
+import java.util.Collection;
+import java.util.List;
 import java.util.Optional;
 
 /**
@@ -17,4 +21,21 @@ import java.util.Optional;
 public interface StudentProfileRepository extends JpaRepository<StudentProfile, Long> {
 
     Optional<StudentProfile> findByUserId(Long userId);
+
+    /**
+     * 查询某班级下全部学生（评分重算 targetType=2 指定班级时使用）
+     */
+    List<StudentProfile> findByClassId(Long classId);
+
+    /**
+     * 批量查询指定班级集合下的全部学生（评分重算 targetType=5 指定专业时使用）
+     */
+    List<StudentProfile> findByClassIdIn(Collection<Long> classIds);
+
+    /**
+     * 查询某学校下全部学生（评分重算 targetType=4 全量 / targetType=3 指定学期时使用）。
+     * 学生归属学校由 users.school_id 决定。
+     */
+    @Query("SELECT sp FROM StudentProfile sp WHERE sp.userId IN (SELECT u.id FROM User u WHERE u.schoolId = :schoolId)")
+    List<StudentProfile> findBySchoolId(@Param("schoolId") Long schoolId);
 }

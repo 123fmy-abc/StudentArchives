@@ -5,11 +5,15 @@ import com.example.studentarchives.common.PageResult;
 import com.example.studentarchives.common.ResultCode;
 import com.example.studentarchives.dto.Fmy.indicator.request.IndicatorCreateRequest;
 import com.example.studentarchives.dto.Fmy.indicator.request.IndicatorPublishRequest;
+import com.example.studentarchives.dto.Fmy.indicator.request.IndicatorRuleVersionSnapshotPatchRequest;
+import com.example.studentarchives.dto.Fmy.indicator.request.IndicatorStatusBatchRequest;
+import com.example.studentarchives.dto.Fmy.indicator.request.IndicatorStatusUpdateRequest;
 import com.example.studentarchives.dto.Fmy.indicator.request.IndicatorUpdateRequest;
 import com.example.studentarchives.dto.Fmy.indicator.response.AdminIndicatorTreeResponse;
 import com.example.studentarchives.dto.Fmy.indicator.response.IndicatorCreateResponse;
 import com.example.studentarchives.dto.Fmy.indicator.response.IndicatorPublishResponse;
 import com.example.studentarchives.dto.Fmy.indicator.response.IndicatorRuleVersionItem;
+import com.example.studentarchives.dto.Fmy.indicator.response.IndicatorStatusChangeResponse;
 import com.example.studentarchives.entity.foundation.AbilityDimension;
 import com.example.studentarchives.entity.foundation.EvaluationIndicator;
 import com.example.studentarchives.entity.foundation.IndicatorRuleVersion;
@@ -22,6 +26,7 @@ import com.example.studentarchives.repository.IndicatorRuleVersionRepository;
 import com.example.studentarchives.repository.IndicatorVersionRepository;
 import com.example.studentarchives.repository.SchoolRepository;
 import com.example.studentarchives.repository.SemesterRepository;
+import com.example.studentarchives.service.common.AdminAuthService;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -34,15 +39,18 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.util.ArrayList;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
 import java.util.Comparator;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 /**
@@ -65,7 +73,9 @@ import java.util.stream.Collectors;
  * </ul>
  * <p>
  * <b>权重口径说明：</b>数据库 {@code evaluation_indicators.weight} 为 0-1 小数（DECIMAL(5,4)），
- * 一级指标权重之和应为 1，各级子指标权重之和应等于父指标权重。校验失败返回 41004。
+ * 仅启用状态（status=1）的指标参与权重统计；编辑期一级启用指标权重之和不得超过 1，
+ * 各级启用子指标权重之和不得超过父指标权重（允许部分启用中间态），
+ * 发布（1.5）时严格校验一级之和 = 1、各级启用子级之和 = 父权重，校验失败返回 41004。
  */
 @Slf4j
 @Service
@@ -96,10 +106,14 @@ public class AdminIndicatorService {
      * <p>
      * <b>按学期过滤：</b>semesterId 不传时取该校当前学期（is_current=1）。
      * <ul>
-     *   <li>该学期已发布过规则版本 → 返回该学期最近发布版本的权威指标树（读取
-     *       {@code indicator_rule_versions.tree_snapshot}，只读历史视图，不含发布后的草稿改动）；</li>
-     *   <li>该学期未发布过 → 返回学校下当前草稿树（含未发布的草稿改动，便于发布前编辑确认），
-     *       顶部返回当前生效规则版本元数据。</li>
+     *   <li>该学期已发布过规则版本 → 返回该学期最近发布版本的权威指标树（快照，只读历史视图）；</li>
+     *   <li>该学期未发布过：
+     *     <ul>
+     *       <li>{@code draft=true} → 返回学校下当前草稿树（含未发布的草稿改动，供发布前编辑确认）；</li>
+     *       <li>{@code draft=false}（默认）→ 回退到全校当前生效/最新已发布版本的权威快照，
+     *           避免管理端在指标体系重组期间看到半成品草稿。</li>
+     *     </ul>
+     *   </li>
      * </ul>
      * 树节点携带权重、状态、计分规则与版本信息，可按 status 过滤（0=禁用 1=启用）。
      *
@@ -107,13 +121,14 @@ public class AdminIndicatorService {
      * @param schoolId   学校 ID
      * @param semesterId 学期 ID（可选，不传取当前学期）
      * @param status     0=禁用 1=启用，不传返回全部
+     * @param draft      true=强制返回当前草稿树；false/null=优先返回已发布版本的权威快照
      */
     @Transactional(readOnly = true)
-    public AdminIndicatorTreeResponse getTree(Long userId, Long schoolId, Long semesterId, Integer status) {
+    public AdminIndicatorTreeResponse getTree(Long userId, Long schoolId, Long semesterId, Integer status, Boolean draft) {
         adminAuthService.requireAdminOrPermission(userId, "indicator:manage");
         validateSchoolAndSemester(schoolId, semesterId);
 
-        // 解析查询学期：参数优先，未传则取该校当前学期；仍无则按学校维度查询（原行为）
+        // 解析查询学期：参数优先，未传则取该校当前学期；仍无则按学校维度查询
         Long querySemesterId = semesterId != null
                 ? semesterId
                 : semesterRepository.findCurrentBySchoolId(schoolId).map(Semester::getId).orElse(null);
@@ -135,9 +150,26 @@ public class AdminIndicatorService {
                         .indicators(tree)
                         .build();
             }
-            // 该学期未发布过：回退当前草稿树（编辑视图），供发布前编辑确认
+            // 该学期未发布过：按 draft 参数决定返回草稿树还是回退已发布快照
         }
 
+        if (!Boolean.TRUE.equals(draft)) {
+            // 默认返回全校当前生效/最新的已发布版本快照，避免展示半成品草稿
+            IndicatorRuleVersion current = indicatorRuleVersionRepository.findCurrentEffective(schoolId)
+                    .orElseGet(() -> indicatorRuleVersionRepository.findTopBySchoolIdOrderByVersionDesc(schoolId).orElse(null));
+            if (current != null) {
+                List<AdminIndicatorTreeResponse.IndicatorNode> tree = resolveVersionTree(schoolId, current, status);
+                return AdminIndicatorTreeResponse.builder()
+                        .versionId(current.getId())
+                        .version(current.getVersion())
+                        .versionName(current.getVersionName())
+                        .effectiveAt(current.getEffectiveAt() != null ? toIso(current.getEffectiveAt()) : null)
+                        .indicators(tree)
+                        .build();
+            }
+        }
+
+        // draft=true 或全校尚未发布过任何版本：返回当前草稿树
         IndicatorRuleVersion current = indicatorRuleVersionRepository.findCurrentEffective(schoolId)
                 .orElseGet(() -> indicatorRuleVersionRepository.findTopBySchoolIdOrderByVersionDesc(schoolId).orElse(null));
 
@@ -181,6 +213,9 @@ public class AdminIndicatorService {
             if (!Objects.equals(parent.getSchoolId(), schoolId)) {
                 throw new BusinessException(ResultCode.PARAM_ERROR, "父级指标不属于该学校");
             }
+            if (!Integer.valueOf(1).equals(parent.getStatus())) {
+                throw new BusinessException(ResultCode.DATA_STATUS_ERROR, "父级指标已禁用，无法在其下创建子指标");
+            }
             level = parent.getLevel() + 1;
             if (level > MAX_LEVEL) {
                 throw new BusinessException(ResultCode.PARAM_ERROR, "仅支持三级指标，父级指标下不能继续创建子指标");
@@ -213,6 +248,7 @@ public class AdminIndicatorService {
         if (parent != null && (dimensionCode == null || dimensionCode.isEmpty())) {
             dimensionCode = parent.getDimensionCode();
         }
+        validateDimensionCodeActive(dimensionCode);
 
         // 同级权重之和校验：子指标之和 = 父权重，一级之和 = 1
         validateSiblingWeights(schoolId, parent, request.getWeight());
@@ -226,7 +262,8 @@ public class AdminIndicatorService {
         indicator.setPath(path);
         indicator.setWeight(request.getWeight());
         indicator.setDescription(request.getDescription());
-        indicator.setScoringRule(request.getScoringRule() != null ? request.getScoringRule().toString() : null);
+        JsonNode scoringRule = request.getScoringRule();
+        indicator.setScoringRule(scoringRule != null && !scoringRule.isNull() ? scoringRule.toString() : null);
         indicator.setDimensionCode(dimensionCode);
         indicator.setStatus(1);
         indicator.setVersion(currentVersionNumber(schoolId));
@@ -262,25 +299,38 @@ public class AdminIndicatorService {
         EvaluationIndicator indicator = evaluationIndicatorRepository.findById(indicatorId)
                 .orElseThrow(() -> new BusinessException(ResultCode.DATA_NOT_EXIST, "指标不存在"));
 
-        // 计分规则：仅三级指标可修改，且修改时必须通过校验
-        boolean ruleChanged = request.getScoringRule() != null && !request.getScoringRule().isNull();
+        // 更新接口不允许修改树结构字段
+        if (request.getParentId() != null) {
+            throw new BusinessException(ResultCode.PARAM_ERROR, "更新指标不允许修改 parentId");
+        }
+
+        // 状态变更为独立生命周期操作，已拆分为 1.8（单个）/1.9（批量）专用接口，1.3 不再支持 status 字段
+        if (request.getStatus() != null) {
+            throw new BusinessException(ResultCode.PARAM_ERROR,
+                    "status 字段已废弃，请使用 1.8 修改指标状态（单个）或 1.9（批量）接口");
+        }
+
+        // 计分规则：仅三级指标可修改；显式传 null 时非三级指标清空，三级指标必填
+        JsonNode scoringRule = request.getScoringRule();
+        boolean ruleProvided = scoringRule != null;
+        boolean ruleIsNull = ruleProvided && scoringRule.isNull();
+        boolean ruleChanged = ruleProvided && !ruleIsNull;
         if (ruleChanged && !Integer.valueOf(MAX_LEVEL).equals(indicator.getLevel())) {
             throw new BusinessException(ResultCode.PARAM_ERROR, "仅三级指标可修改 scoringRule");
         }
-        scoringRuleValidator.validate(request.getScoringRule());
-
-        // 禁用校验：某指标禁用时，其下级必须全部为禁用状态
-        if (request.getStatus() != null && request.getStatus() == 0) {
-            boolean hasEnabledChild = evaluationIndicatorRepository.findByParentIdOrderBySortAsc(indicatorId).stream()
-                    .anyMatch(c -> Integer.valueOf(1).equals(c.getStatus()));
-            if (hasEnabledChild) {
-                throw new BusinessException(ResultCode.DATA_STATUS_ERROR, "存在启用状态的子指标，请先禁用全部下级");
+        if (ruleIsNull) {
+            if (Integer.valueOf(MAX_LEVEL).equals(indicator.getLevel())) {
+                throw new BusinessException(ResultCode.PARAM_ERROR, "三级指标必填 scoringRule");
             }
+            indicator.setScoringRule(null);
         }
+        scoringRuleValidator.validate(scoringRule);
 
-        // 权重变更时校验同级权重之和
-        if (request.getWeight() != null && request.getWeight().compareTo(indicator.getWeight()) != 0) {
-            validateSiblingWeightsAfterChange(indicator, request.getWeight());
+        // 权重变更时校验启用同级权重之和（禁用状态不参与启用权重和）
+        boolean weightChanged = request.getWeight() != null
+                && request.getWeight().compareTo(indicator.getWeight()) != 0;
+        if (weightChanged) {
+            validateWeightAgainstEnabledSiblings(indicator, request.getWeight());
         }
 
         if (request.getIndicatorName() != null) {
@@ -293,20 +343,189 @@ public class AdminIndicatorService {
             indicator.setDescription(request.getDescription());
         }
         if (ruleChanged) {
-            indicator.setScoringRule(request.getScoringRule().toString());
+            indicator.setScoringRule(scoringRule.toString());
         }
         if (request.getDimensionCode() != null) {
+            validateDimensionCodeActive(request.getDimensionCode());
             indicator.setDimensionCode(request.getDimensionCode());
         }
         if (request.getSort() != null) {
             indicator.setSort(request.getSort());
         }
-        if (request.getStatus() != null) {
-            indicator.setStatus(request.getStatus());
-        }
         evaluationIndicatorRepository.save(indicator);
 
         log.info("更新指标: id={}, operatorId={}", indicatorId, userId);
+    }
+
+    // ==================== 1.8 / 1.9 修改指标状态 ====================
+
+    /**
+     * 修改指标状态（单个）（PATCH /admin/indicators/{indicatorId}/status，文档 1.8）
+     * <p>
+     * 与通用更新接口（1.3）解耦，单独变更某指标启用/禁用状态。
+     * 禁用时自动级联禁用其所有后代节点；启用时校验启用同级权重之和不超过父权重（一级之和不超过 1），
+     * 严格"等于父权重"由发布（1.5）统一校验。仅作用于当前草稿树，不影响已发布版本快照。
+     *
+     * @param userId      当前登录用户 ID
+     * @param indicatorId 指标 ID
+     * @param request     状态变更请求（status：0=禁用 1=启用）
+     * @return 状态变更结果（含实际影响数量与级联禁用后代数）
+     */
+    @Transactional
+    public IndicatorStatusChangeResponse updateIndicatorStatus(Long userId, Long indicatorId,
+                                                               IndicatorStatusUpdateRequest request) {
+        adminAuthService.requireAdminOrPermission(userId, "indicator:manage");
+        EvaluationIndicator indicator = evaluationIndicatorRepository.findById(indicatorId)
+                .orElseThrow(() -> new BusinessException(ResultCode.DATA_NOT_EXIST, "指标不存在"));
+        Integer status = request.getStatus();
+        IndicatorStatusChangeResponse response = applyStatusChange(indicator.getSchoolId(), List.of(indicator), status);
+        // 单个接口需返回目标指标 ID（applyStatusChange 为单/批量共用，不设置 indicatorId）
+        response.setIndicatorId(indicatorId);
+        log.info("修改指标状态: indicatorId={}, status={}, affectedCount={}, descendantCount={}, operatorId={}",
+                indicatorId, status, response.getAffectedCount(), response.getDescendantCount(), userId);
+        return response;
+    }
+
+    /**
+     * 批量修改指标状态（PATCH /admin/indicators/status，文档 1.9）
+     * <p>
+     * 对一批指标统一启用/禁用。整体一个事务，任一指标校验失败（指标不存在、跨学校混合、
+     * 启用后同级权重超过父权重）则整批不生效（fail-fast）。禁用时对列表内每个指标级联禁用其所有后代。
+     *
+     * @param userId  当前登录用户 ID
+     * @param request 批量状态变更请求（indicatorIds：1~100 个；status：0=禁用 1=启用）
+     * @return 状态变更结果（含实际影响数量与级联禁用后代数）
+     */
+    @Transactional
+    public IndicatorStatusChangeResponse updateIndicatorStatusBatch(Long userId, IndicatorStatusBatchRequest request) {
+        adminAuthService.requireAdminOrPermission(userId, "indicator:manage");
+        List<Long> ids = request.getIndicatorIds().stream().distinct().collect(Collectors.toList());
+        List<EvaluationIndicator> targets = evaluationIndicatorRepository.findByIdIn(ids);
+        if (targets.size() != ids.size()) {
+            Set<Long> existingIds = targets.stream().map(EvaluationIndicator::getId).collect(Collectors.toSet());
+            List<Long> missingIds = ids.stream()
+                    .filter(id -> !existingIds.contains(id))
+                    .collect(Collectors.toList());
+            throw new BusinessException(ResultCode.DATA_NOT_EXIST, "指标不存在: " + missingIds);
+        }
+        Long schoolId = targets.get(0).getSchoolId();
+        if (targets.stream().anyMatch(t -> !schoolId.equals(t.getSchoolId()))) {
+            throw new BusinessException(ResultCode.PARAM_ERROR, "指标不属于同一学校，无法批量修改");
+        }
+        Integer status = request.getStatus();
+        IndicatorStatusChangeResponse response = applyStatusChange(schoolId, targets, status);
+        log.info("批量修改指标状态: indicatorCount={}, status={}, affectedCount={}, descendantCount={}, operatorId={}",
+                ids.size(), status, response.getAffectedCount(), response.getDescendantCount(), userId);
+        return response;
+    }
+
+    /**
+     * 应用一次状态变更（单条/批量共用）
+     * <p>
+     * 禁用（status=0）时级联禁用全部后代；启用（status=1）时校验受影响父级分组的启用同级权重和不超过目标。
+     * 仅状态实际发生变化的指标计入 {@code affectedCount}；级联禁用的后代计入 {@code descendantCount}。
+     */
+    private IndicatorStatusChangeResponse applyStatusChange(Long schoolId, List<EvaluationIndicator> targets,
+                                                            Integer newStatus) {
+        List<EvaluationIndicator> all = evaluationIndicatorRepository.findBySchoolIdOrderBySortAsc(schoolId);
+        Map<Long, EvaluationIndicator> byId = all.stream()
+                .collect(Collectors.toMap(EvaluationIndicator::getId, x -> x, (a, b) -> a));
+        Map<Long, List<EvaluationIndicator>> childrenByParent = all.stream()
+                .filter(e -> e.getParentId() != null)
+                .collect(Collectors.groupingBy(EvaluationIndicator::getParentId));
+
+        Set<Long> targetIds = targets.stream().map(EvaluationIndicator::getId).collect(Collectors.toSet());
+        // 待变更状态集合：目标 + （禁用时）所有后代
+        Set<Long> affectedIds = new HashSet<>(targetIds);
+        if (Integer.valueOf(0).equals(newStatus)) {
+            for (EvaluationIndicator target : targets) {
+                collectDescendantIds(target.getId(), childrenByParent, affectedIds);
+            }
+        }
+
+        List<EvaluationIndicator> toSave = new ArrayList<>();
+        int descendantCount = 0;
+        for (Long id : affectedIds) {
+            EvaluationIndicator e = byId.get(id);
+            if (e == null || newStatus.equals(e.getStatus())) {
+                continue;
+            }
+            e.setStatus(newStatus);
+            toSave.add(e);
+            if (!targetIds.contains(id)) {
+                descendantCount++;
+            }
+        }
+
+        // 启用：校验受影响父级分组的启用同级权重之和不超过目标（严格"="由发布时统一校验）
+        if (Integer.valueOf(1).equals(newStatus)) {
+            validateEnableSiblingSumsNotExceed(all, targets);
+        }
+
+        if (!toSave.isEmpty()) {
+            evaluationIndicatorRepository.saveAll(toSave);
+        }
+        return IndicatorStatusChangeResponse.builder()
+                .status(newStatus)
+                .affectedCount(toSave.size())
+                .descendantCount(descendantCount)
+                .build();
+    }
+
+    /** 递归收集后代 ID（复用一份 childrenByParent map，供批量禁用场景去重收集） */
+    private void collectDescendantIds(Long parentId, Map<Long, List<EvaluationIndicator>> childrenByParent,
+                                      Set<Long> result) {
+        List<EvaluationIndicator> children = childrenByParent.get(parentId);
+        if (children == null || children.isEmpty()) {
+            return;
+        }
+        for (EvaluationIndicator child : children) {
+            result.add(child.getId());
+            collectDescendantIds(child.getId(), childrenByParent, result);
+        }
+    }
+
+    /**
+     * 启用后校验：对每个受影响父级分组（目标指标的父级分组 + 启用了一级指标时的 level-1 分组），
+     * 按内存中更新后的状态计算启用同级权重之和，超过目标（父权重或 1）返回 41004。
+     */
+    private void validateEnableSiblingSumsNotExceed(List<EvaluationIndicator> all,
+                                                    List<EvaluationIndicator> targets) {
+        if (targets.stream().anyMatch(t -> t.getParentId() == null)) {
+            BigDecimal sum = all.stream()
+                    .filter(e -> e.getParentId() == null)
+                    .filter(e -> Integer.valueOf(1).equals(e.getStatus()))
+                    .map(EvaluationIndicator::getWeight)
+                    .filter(Objects::nonNull)
+                    .reduce(BigDecimal.ZERO, BigDecimal::add);
+            if (sum.compareTo(BigDecimal.ONE) > 0) {
+                throw new BusinessException(ResultCode.INDICATOR_WEIGHT_SUM_INVALID,
+                        "启用后一级指标权重之和 " + sum + " 超过 1");
+            }
+        }
+
+        Set<Long> affectedParents = targets.stream()
+                .map(EvaluationIndicator::getParentId)
+                .filter(Objects::nonNull)
+                .collect(Collectors.toSet());
+        for (Long parentId : affectedParents) {
+            EvaluationIndicator parent = all.stream()
+                    .filter(x -> x.getId().equals(parentId)).findFirst().orElse(null);
+            if (parent == null || parent.getWeight() == null) {
+                continue;
+            }
+            BigDecimal sum = all.stream()
+                    .filter(e -> Objects.equals(e.getParentId(), parentId))
+                    .filter(e -> Integer.valueOf(1).equals(e.getStatus()))
+                    .map(EvaluationIndicator::getWeight)
+                    .filter(Objects::nonNull)
+                    .reduce(BigDecimal.ZERO, BigDecimal::add);
+            if (sum.compareTo(parent.getWeight()) > 0) {
+                throw new BusinessException(ResultCode.INDICATOR_WEIGHT_SUM_INVALID,
+                        "启用后指标 [" + parent.getIndicatorName() + "] 下子指标权重之和 "
+                                + sum + " 超过父权重 " + parent.getWeight());
+            }
+        }
     }
 
     // ==================== 1.4 删除指标 ====================
@@ -337,13 +556,15 @@ public class AdminIndicatorService {
      * 发布指标规则版本（POST /admin/indicators/publish）
      * <p>
      * 将当前草稿指标树打包为一个新的规则版本（request.semesterId 可指定归属学期，
-     * 不传则取该校当前学期）：
+     * 不传则取该校当前学期）。若 request.sourceVersionId 非空，则基于指定历史版本的快照深拷贝发布，
+     * 而不是从当前草稿树发布，从而避免连带引入草稿中的未预期改动：
      * <ol>
-     *   <li>校验权重：一级指标之和=1，各级子指标之和=父权重，失败返回 41004；</li>
+     *   <li>基于草稿发布时校验权重：一级指标之和=1，各级子指标之和=父权重，失败返回 41004；
+     *       基于历史版本发布时跳过权重校验（源版本已校验过，且其快照不可变更权重/计分规则）；</li>
      *   <li>版本名称重复返回 41002 规则版本已发布；</li>
      *   <li>生成新全局版本号，全校指标版本号先统一推进到新版本，保证快照内节点 version 一致；</li>
-     *   <li>创建 indicator_rule_versions 记录并写入完整指标树快照（tree_snapshot，节点携带新版本号）；</li>
-     *   <li>将全校指标当前配置写入 indicator_versions 快照（该版本权威记录）。</li>
+     *   <li>创建 indicator_rule_versions 记录并写入完整指标树快照；基于历史版本时深拷贝源快照并刷新节点版本号；</li>
+     *   <li>将指标配置写入 indicator_versions 快照；基于历史版本时深拷贝源版本的 indicator_versions 记录。</li>
      * </ol>
      */
     @Transactional
@@ -360,7 +581,22 @@ public class AdminIndicatorService {
                     .orElseThrow(() -> new BusinessException(ResultCode.PARAM_ERROR, "学期不存在"));
         }
 
-        validateWeightsForPublish(schoolId);
+        IndicatorRuleVersion sourceVersion = null;
+        if (request.getSourceVersionId() != null) {
+            sourceVersion = indicatorRuleVersionRepository.findById(request.getSourceVersionId())
+                    .orElseThrow(() -> new BusinessException(ResultCode.DATA_NOT_EXIST, "源规则版本不存在"));
+            if (!Objects.equals(sourceVersion.getSchoolId(), schoolId)) {
+                throw new BusinessException(ResultCode.PARAM_ERROR, "源规则版本不属于该学校");
+            }
+            if (sourceVersion.getTreeSnapshot() == null || sourceVersion.getTreeSnapshot().isBlank()) {
+                throw new BusinessException(ResultCode.PARAM_ERROR, "源规则版本无指标树快照，无法基于该版本发布");
+            }
+        }
+
+        // 基于草稿发布才需要校验当前草稿树的权重；基于历史版本快照发布则信任源版本已校验的结果
+        if (sourceVersion == null) {
+            validateWeightsForPublish(schoolId);
+        }
 
         if (indicatorRuleVersionRepository.findBySchoolIdAndVersionName(schoolId, request.getVersionName()).isPresent()) {
             throw new BusinessException(ResultCode.INDICATOR_RULE_VERSION_PUBLISHED,
@@ -373,7 +609,7 @@ public class AdminIndicatorService {
         LocalDateTime now = LocalDateTime.now();
         LocalDateTime effectiveAt = parseEffectiveAt(request.getEffectiveAt(), now);
 
-        // 全校指标版本号先推进到新版本，保证 tree_snapshot 内节点 version 与本次发布版本一致
+        // 全校指标版本号先推进到新版本，保证后续读取口径一致
         evaluationIndicatorRepository.restampVersion(schoolId, nextVersion, now);
 
         IndicatorRuleVersion version = new IndicatorRuleVersion();
@@ -383,25 +619,48 @@ public class AdminIndicatorService {
         version.setVersionName(request.getVersionName());
         version.setEffectiveAt(effectiveAt);
         version.setCreatedBy(userId);
-        // 发布时点写入完整指标树快照（节点携带新版本号），供按历史版本查询指标树
-        version.setTreeSnapshot(buildTreeSnapshot(schoolId));
-        indicatorRuleVersionRepository.save(version);
 
-        // 快照当前全校指标配置到 indicator_versions
-        List<EvaluationIndicator> indicators = evaluationIndicatorRepository.findBySchoolIdOrderBySortAsc(schoolId);
-        for (EvaluationIndicator e : indicators) {
-            IndicatorVersion snapshot = new IndicatorVersion();
-            snapshot.setIndicatorId(e.getId());
-            snapshot.setVersion(nextVersion);
-            snapshot.setWeight(e.getWeight());
-            snapshot.setScoringRule(e.getScoringRule());
-            snapshot.setChangeSummary(request.getVersionName());
-            snapshot.setCreatedBy(userId);
-            indicatorVersionRepository.save(snapshot);
+        if (sourceVersion != null) {
+            // 基于历史版本快照深拷贝：刷新节点内部版本号为新版本，保证响应一致性
+            version.setTreeSnapshot(cloneSnapshotWithVersion(sourceVersion.getTreeSnapshot(), nextVersion));
+            indicatorRuleVersionRepository.save(version);
+
+            // 深拷贝源版本的 indicator_versions 记录
+            List<IndicatorVersion> sourceSnapshots = indicatorVersionRepository.findByVersion(sourceVersion.getVersion());
+            for (IndicatorVersion src : sourceSnapshots) {
+                IndicatorVersion snapshot = new IndicatorVersion();
+                snapshot.setIndicatorId(src.getIndicatorId());
+                snapshot.setVersion(nextVersion);
+                snapshot.setWeight(src.getWeight());
+                snapshot.setScoringRule(src.getScoringRule());
+                snapshot.setChangeSummary(request.getVersionName());
+                snapshot.setCreatedBy(userId);
+                indicatorVersionRepository.save(snapshot);
+            }
+
+            log.info("基于历史版本发布指标规则版本: schoolId={}, sourceVersionId={}, newVersion={}, versionName={}, operatorId={}",
+                    schoolId, sourceVersion.getId(), nextVersion, request.getVersionName(), userId);
+        } else {
+            // 基于当前草稿树发布
+            version.setTreeSnapshot(buildTreeSnapshot(schoolId));
+            indicatorRuleVersionRepository.save(version);
+
+            // 快照当前全校指标配置到 indicator_versions
+            List<EvaluationIndicator> indicators = evaluationIndicatorRepository.findBySchoolIdOrderBySortAsc(schoolId);
+            for (EvaluationIndicator e : indicators) {
+                IndicatorVersion snapshot = new IndicatorVersion();
+                snapshot.setIndicatorId(e.getId());
+                snapshot.setVersion(nextVersion);
+                snapshot.setWeight(e.getWeight());
+                snapshot.setScoringRule(e.getScoringRule());
+                snapshot.setChangeSummary(request.getVersionName());
+                snapshot.setCreatedBy(userId);
+                indicatorVersionRepository.save(snapshot);
+            }
+
+            log.info("发布指标规则版本: schoolId={}, version={}, versionName={}, operatorId={}",
+                    schoolId, nextVersion, request.getVersionName(), userId);
         }
-
-        log.info("发布指标规则版本: schoolId={}, version={}, versionName={}, operatorId={}",
-                schoolId, nextVersion, request.getVersionName(), userId);
 
         return IndicatorPublishResponse.builder()
                 .version(nextVersion)
@@ -447,6 +706,82 @@ public class AdminIndicatorService {
                 .collect(Collectors.toList());
 
         return PageResult.of(items, total, pageParam);
+    }
+
+    // ==================== 1.7 修补历史版本快照 ====================
+
+    /**
+     * 修补历史指标规则版本快照（PATCH /admin/indicators/rule-versions/{versionId}/snapshot）
+     * <p>
+     * 仅允许修改指定历史版本 {@code indicator_rule_versions.tree_snapshot} 中某指标的元数据字段
+     * （indicatorName、description、indicatorCode），用于修正发布后发现的名字/说明/编码笔误。
+     * 禁止修改 weight、scoringRule、status、parentId、level 等会影响评分或树结构的字段；
+     * 如需调整权重/计分规则，请使用 {@code POST /admin/indicators/publish?sourceVersionId=xx} 发布新版本。
+     * <p>
+     * 修补后该历史版本的快照立即生效，学生端/公共端按该历史版本查询时将看到修正后的内容，
+     * 但已产生的评分记录（score_calculation_details / portrait_evaluation_scores）保持原样，不受影响。
+     *
+     * @param userId    当前登录用户 ID
+     * @param schoolId  学校 ID
+     * @param versionId 规则版本 ID
+     * @param request   修补请求
+     */
+    @Transactional
+    public void patchRuleVersionSnapshot(Long userId, Long schoolId, Long versionId,
+                                         IndicatorRuleVersionSnapshotPatchRequest request) {
+        adminAuthService.requireAdminOrPermission(userId, "indicator:manage");
+        validateSchoolAndSemester(schoolId, null);
+
+        IndicatorRuleVersion version = indicatorRuleVersionRepository.findById(versionId)
+                .orElseThrow(() -> new BusinessException(ResultCode.DATA_NOT_EXIST, "规则版本不存在"));
+        if (!Objects.equals(version.getSchoolId(), schoolId)) {
+            throw new BusinessException(ResultCode.PARAM_ERROR, "规则版本不属于该学校");
+        }
+        if (version.getTreeSnapshot() == null || version.getTreeSnapshot().isBlank()) {
+            throw new BusinessException(ResultCode.PARAM_ERROR, "该规则版本无指标树快照，无法修补");
+        }
+
+        boolean changeName = request.getIndicatorName() != null && !request.getIndicatorName().isBlank();
+        boolean changeDesc = request.getDescription() != null && !request.getDescription().isBlank();
+        boolean changeCode = request.getNewIndicatorCode() != null && !request.getNewIndicatorCode().isBlank();
+        if (!changeName && !changeDesc && !changeCode) {
+            throw new BusinessException(ResultCode.PARAM_ERROR, "至少需要指定一项要修改的元数据字段");
+        }
+
+        List<AdminIndicatorTreeResponse.IndicatorNode> tree = readTreeSnapshot(version.getTreeSnapshot());
+        AdminIndicatorTreeResponse.IndicatorNode target = findNodeByCode(tree, request.getIndicatorCode());
+        if (target == null) {
+            throw new BusinessException(ResultCode.DATA_NOT_EXIST,
+                    "快照中不存在指标编码: " + request.getIndicatorCode());
+        }
+
+        // 若修改编码，需保证快照内编码不重复
+        if (request.getNewIndicatorCode() != null && !request.getNewIndicatorCode().isBlank()
+                && !request.getNewIndicatorCode().equals(request.getIndicatorCode())) {
+            if (findNodeByCode(tree, request.getNewIndicatorCode()) != null) {
+                throw new BusinessException(ResultCode.DATA_DUPLICATE,
+                        "快照中已存在指标编码: " + request.getNewIndicatorCode());
+            }
+            target.setIndicatorCode(request.getNewIndicatorCode());
+        }
+        if (changeName) {
+            target.setIndicatorName(request.getIndicatorName());
+        }
+        if (changeDesc) {
+            target.setDescription(request.getDescription());
+        }
+
+        try {
+            String patchedSnapshot = objectMapper.writeValueAsString(tree);
+            jsonSchemaValidator.validateJson(patchedSnapshot, "indicator_rule_versions.tree_snapshot");
+            version.setTreeSnapshot(patchedSnapshot);
+            indicatorRuleVersionRepository.save(version);
+        } catch (JsonProcessingException e) {
+            throw new BusinessException(ResultCode.SYSTEM_ERROR, "指标树快照序列化失败");
+        }
+
+        log.info("修补指标规则版本快照: versionId={}, indicatorCode={}, operatorId={}",
+                versionId, request.getIndicatorCode(), userId);
     }
 
     // ==================== 私有辅助方法 ====================
@@ -513,7 +848,14 @@ public class AdminIndicatorService {
             List<AdminIndicatorTreeResponse.IndicatorNode> tree = readTreeSnapshot(version.getTreeSnapshot());
             return status != null ? filterNodesByStatus(tree, status) : tree;
         }
-        // 兼容快照落地前发布的旧版本：按版本号回退查询当前指标表
+        // 兼容快照落地前发布的旧版本：活表仅对最新版本仍近似可用（发布时全校指标整体推进版本号，
+        // 更早的历史版本号在活表中已无数据，无法还原）。旧版本直接返回空树并告警，不做错误还原。
+        Integer latestVersion = indicatorRuleVersionRepository
+                .findTopBySchoolIdOrderByVersionDesc(schoolId).map(IndicatorRuleVersion::getVersion).orElse(null);
+        if (!version.getVersion().equals(latestVersion)) {
+            log.warn("指标规则版本 {} 无 tree_snapshot 且非最新版本，无法还原历史指标树", version.getVersion());
+            return List.of();
+        }
         List<EvaluationIndicator> indicators = evaluationIndicatorRepository.findBySchoolIdOrderBySortAsc(schoolId).stream()
                 .filter(e -> version.getVersion().equals(e.getVersion()))
                 .filter(e -> status == null || status.equals(e.getStatus()))
@@ -532,6 +874,51 @@ public class AdminIndicatorService {
         } catch (JsonProcessingException e) {
             throw new BusinessException(ResultCode.SYSTEM_ERROR, "指标树快照解析失败");
         }
+    }
+
+    /**
+     * 深拷贝历史版本快照，并将所有节点内部 version 字段刷新为指定新版本号。
+     * 返回的 JSON 字符串可供新的 indicator_rule_versions 记录直接使用。
+     */
+    private String cloneSnapshotWithVersion(String sourceSnapshot, int newVersion) {
+        List<AdminIndicatorTreeResponse.IndicatorNode> tree = readTreeSnapshot(sourceSnapshot);
+        refreshNodeVersion(tree, newVersion);
+        try {
+            String cloned = objectMapper.writeValueAsString(tree);
+            jsonSchemaValidator.validateJson(cloned, "indicator_rule_versions.tree_snapshot");
+            return cloned;
+        } catch (JsonProcessingException e) {
+            throw new BusinessException(ResultCode.SYSTEM_ERROR, "指标树快照深拷贝失败");
+        }
+    }
+
+    /** 递归刷新快照树中所有节点的 version 字段 */
+    private void refreshNodeVersion(List<AdminIndicatorTreeResponse.IndicatorNode> nodes, int version) {
+        if (nodes == null) {
+            return;
+        }
+        for (AdminIndicatorTreeResponse.IndicatorNode node : nodes) {
+            node.setVersion(version);
+            refreshNodeVersion(node.getChildren(), version);
+        }
+    }
+
+    /** 在快照树中按 indicatorCode 递归查找节点 */
+    private AdminIndicatorTreeResponse.IndicatorNode findNodeByCode(
+            List<AdminIndicatorTreeResponse.IndicatorNode> nodes, String indicatorCode) {
+        if (nodes == null || indicatorCode == null) {
+            return null;
+        }
+        for (AdminIndicatorTreeResponse.IndicatorNode node : nodes) {
+            if (indicatorCode.equals(node.getIndicatorCode())) {
+                return node;
+            }
+            AdminIndicatorTreeResponse.IndicatorNode found = findNodeByCode(node.getChildren(), indicatorCode);
+            if (found != null) {
+                return found;
+            }
+        }
+        return null;
     }
 
     /** 按 status 递归过滤快照指标树节点：命中禁用的节点连同其子树一起剔除 */
@@ -573,24 +960,33 @@ public class AdminIndicatorService {
                 : evaluationIndicatorRepository.findByParentIdOrderBySortAsc(parent.getId());
     }
 
-    /** 创建时的同级权重之和校验：现有同级之和 + 新权重 = 父权重（一级 = 1） */
+    /** 创建时的同级权重之和校验：现有启用同级之和 + 新权重 不得超过父权重（一级 = 1） */
     private void validateSiblingWeights(Long schoolId, EvaluationIndicator parent, BigDecimal newWeight) {
         BigDecimal target = parent == null ? BigDecimal.ONE : parent.getWeight();
         BigDecimal sum = siblingsOf(schoolId, parent).stream()
+                .filter(s -> Integer.valueOf(1).equals(s.getStatus()))
                 .map(EvaluationIndicator::getWeight)
                 .filter(Objects::nonNull)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
         if (newWeight != null) {
             sum = sum.add(newWeight);
         }
-        if (sum.compareTo(target) != 0) {
+        if (sum.compareTo(target) > 0) {
             throw new BusinessException(ResultCode.INDICATOR_WEIGHT_SUM_INVALID,
-                    "同级指标权重之和应为 " + target + "，当前合计 " + sum);
+                    "同级指标权重之和不能超过 " + target + "，当前合计 " + sum);
         }
     }
 
-    /** 更新时的同级权重之和校验：剔除自身后的同级之和 + 新权重 = 父权重（一级 = 1） */
-    private void validateSiblingWeightsAfterChange(EvaluationIndicator indicator, BigDecimal newWeight) {
+    /**
+     * 更新指标权重时的同级权重之和校验：仅当指标为启用状态时校验；
+     * 启用同级之和（剔除自身）+ 新权重 不得超过父权重（一级 = 1）。
+     * 严格"等于父权重"由发布时 {@link #validateWeightsForPublish} 统一校验，允许编辑期部分启用中间态。
+     * 状态变更（启用/禁用）已拆分为 1.8/1.9 专用接口，不再经过本方法。
+     */
+    private void validateWeightAgainstEnabledSiblings(EvaluationIndicator indicator, BigDecimal newWeight) {
+        if (!Integer.valueOf(1).equals(indicator.getStatus())) {
+            return;
+        }
         BigDecimal target = BigDecimal.ONE;
         List<EvaluationIndicator> siblings;
         if (indicator.getParentId() == null) {
@@ -603,27 +999,51 @@ public class AdminIndicatorService {
         }
         BigDecimal sum = siblings.stream()
                 .filter(s -> !s.getId().equals(indicator.getId()))
+                .filter(s -> Integer.valueOf(1).equals(s.getStatus()))
                 .map(EvaluationIndicator::getWeight)
                 .filter(Objects::nonNull)
                 .reduce(BigDecimal.ZERO, BigDecimal::add)
                 .add(newWeight);
-        if (sum.compareTo(target) != 0) {
+        if (sum.compareTo(target) > 0) {
             throw new BusinessException(ResultCode.INDICATOR_WEIGHT_SUM_INVALID,
-                    "同级指标权重之和应为 " + target + "，当前合计 " + sum);
+                    "同级指标权重之和不能超过 " + target + "，当前合计 " + sum);
         }
     }
 
-    /** 发布前递归校验全校权重：一级之和=1；有子节点的指标，其子指标之和=父权重 */
+    /**
+     * 校验能力维度编码是否指向一个启用的能力维度。
+     * 编码为空时不校验（允许一级指标不绑定维度）。
+     */
+    private void validateDimensionCodeActive(String dimensionCode) {
+        if (dimensionCode == null || dimensionCode.isBlank()) {
+            return;
+        }
+        AbilityDimension dimension = abilityDimensionRepository.findByDimensionCode(dimensionCode)
+                .orElseThrow(() -> new BusinessException(ResultCode.PARAM_ERROR,
+                        "能力维度编码不存在: " + dimensionCode));
+        if (!Integer.valueOf(1).equals(dimension.getStatus())) {
+            throw new BusinessException(ResultCode.DATA_STATUS_ERROR,
+                    "能力维度已禁用: " + dimensionCode);
+        }
+    }
+
+    /**
+     * 发布前递归校验全校权重：仅校验启用状态指标；
+     * 一级启用指标之和=1；启用父指标下，其启用子指标之和=父权重。
+     */
     private void validateWeightsForPublish(Long schoolId) {
         List<EvaluationIndicator> all = evaluationIndicatorRepository.findBySchoolIdOrderBySortAsc(schoolId);
-        if (all.isEmpty()) {
-            throw new BusinessException(ResultCode.INDICATOR_WEIGHT_SUM_INVALID, "指标树为空，无法发布");
+        List<EvaluationIndicator> enabled = all.stream()
+                .filter(e -> Integer.valueOf(1).equals(e.getStatus()))
+                .collect(Collectors.toList());
+        if (enabled.isEmpty()) {
+            throw new BusinessException(ResultCode.INDICATOR_WEIGHT_SUM_INVALID, "没有启用状态的指标，无法发布");
         }
-        Map<Long, Long> childCount = all.stream()
+        Map<Long, Long> enabledChildCount = enabled.stream()
                 .filter(e -> e.getParentId() != null)
                 .collect(Collectors.groupingBy(EvaluationIndicator::getParentId, Collectors.counting()));
 
-        BigDecimal level1Sum = all.stream()
+        BigDecimal level1Sum = enabled.stream()
                 .filter(e -> e.getParentId() == null)
                 .map(EvaluationIndicator::getWeight)
                 .filter(Objects::nonNull)
@@ -633,12 +1053,12 @@ public class AdminIndicatorService {
                     "一级指标权重之和应为 1，当前合计 " + level1Sum);
         }
 
-        for (EvaluationIndicator e : all) {
-            Long children = childCount.get(e.getId());
+        for (EvaluationIndicator e : enabled) {
+            Long children = enabledChildCount.get(e.getId());
             if (children == null || children == 0) {
                 continue; // 叶子节点，无需校验子级
             }
-            BigDecimal childrenSum = all.stream()
+            BigDecimal childrenSum = enabled.stream()
                     .filter(c -> Objects.equals(c.getParentId(), e.getId()))
                     .map(EvaluationIndicator::getWeight)
                     .filter(Objects::nonNull)

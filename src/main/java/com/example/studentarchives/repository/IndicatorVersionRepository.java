@@ -2,7 +2,11 @@ package com.example.studentarchives.repository;
 
 import com.example.studentarchives.entity.foundation.IndicatorVersion;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
+
+import java.util.List;
 
 /**
  * 指标版本历史 Repository
@@ -12,4 +16,10 @@ import org.springframework.stereotype.Repository;
  */
 @Repository
 public interface IndicatorVersionRepository extends JpaRepository<IndicatorVersion, Long> {
+
+    /**
+     * 查询指定规则版本号下的所有指标快照（用于基于历史版本发布新版本时深拷贝）。
+     */
+    @Query("SELECT v FROM IndicatorVersion v WHERE v.version = :version")
+    List<IndicatorVersion> findByVersion(@Param("version") Integer version);
 }
