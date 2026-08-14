@@ -5,6 +5,7 @@ import com.example.studentarchives.repository.projection.UserAuthStatus;
 import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.cache.annotation.Cacheable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -18,9 +19,14 @@ import java.util.Optional;
  * 用户 Repository
  */
 @Repository
-public interface UserRepository extends JpaRepository<User, Long> {
+public interface UserRepository extends JpaRepository<User, Long>, JpaSpecificationExecutor<User> {
 
     Optional<User> findByUserNo(String userNo);
+
+    /**
+     * 关键词模糊匹配姓名/学号（管理端用户列表搜索）
+     */
+    List<User> findByNameContainingOrUserNoContaining(String name, String userNo);
 
     Optional<User> findByUserNoAndStatus(String userNo, Integer status);
 
