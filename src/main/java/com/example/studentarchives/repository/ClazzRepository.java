@@ -16,4 +16,9 @@ public interface ClazzRepository extends JpaRepository<Clazz, Long> {
     List<Clazz> findByGrade(String grade);
 
     List<Clazz> findByIdIn(Collection<Long> ids);
+
+    /**
+     * 查询某专业下全部班级（评分重算 targetType=5 指定专业时解析班级）
+     */
+    List<Clazz> findByMajorId(Long majorId);
 }

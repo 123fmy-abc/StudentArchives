@@ -46,6 +46,12 @@ public class IndicatorUpdateRequest {
     /** 排序 */
     private Integer sort;
 
-    /** 0=禁用 1=启用 */
+    /**
+     * 已废弃：1.3 不再支持修改状态，状态变更请使用 1.8（单个）或 1.9（批量）接口。
+     * 传值将返回 10001 参数错误。
+     */
     private Integer status;
+
+    /** 父级指标 ID（更新时不允许修改，传值则报错） */
+    private Long parentId;
 }

@@ -34,7 +34,7 @@ public class PortraitEvaluationScore extends BaseEntity {
     @Column(name = "target_score", precision = 5, scale = 2)
     private BigDecimal targetScore;
 
-    @Column(name = "change", precision = 5, scale = 2)
+    @Column(name = "`change`", precision = 5, scale = 2)
     private BigDecimal changeVal;
 
     @Column(name = "gap", precision = 5, scale = 2)

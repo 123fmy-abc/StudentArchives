@@ -4,19 +4,17 @@
 -- 用途：为 5 名种子学生（seed_students.sql 中的张三~陈七，user_id=1~5）
 --       补齐成长时间轴所需数据，供 list / tree / ring 三种视图与
 --       summary（experiences / skills）测试。每名学生 3 条代表性事件。
+-- 注：事件能力维度得分子表已随能力维度字典移除，时间轴仅保留事件与标签。
 --
 -- 前提：已依次执行以下种子文件
 --   1. seed_students.sql      （schools id=1 / users id=1~5）
 --   2. seed_semesters.sql     （semesters 1~5）
 --   3. seed_roles_permissions.sql
 --   4. seed_dictionaries.sql
---   5. seed_indicators.sql    （ability_dimensions）
---   6. seed_dashboard.sql     （archives id=1~40，source_id 引用其 id）
+--   5. seed_dashboard.sql     （archives id=1~40，source_id 引用其 id）
 --
 -- 数据口径（与《学生端接口文档》4.2 一致）：
 --   - growth_timelines        时间轴节点，source_id/source_type 关联来源档案
---   - growth_timeline_abilities 事件带来的能力维度得分变化（dimension_code 与
---                               ability_dimensions 一致：academic/competition/research/socialWork/comprehensive）
 --   - growth_timeline_tags    事件标签
 --   - event_type：1=奖项 2=成绩 3=实践 4=职业规划 5=短板改进 6=能力提升
 --   - status 统一为 2（已通过）
@@ -51,40 +49,7 @@ INSERT INTO `growth_timelines`
 (15, 1, 5, 3, 6, '参与大创项目',                         '参与大学生创新创业训练计划项目，提升实践能力。',                           NULL, '2025-12-15', 40, 'archive', 'cq-2025-project',     2, '2025-12-15 10:00:00', '2025-12-15 10:00:00');
 
 -- ============================================================
--- 2. 事件能力维度子表（growth_timeline_abilities）
--- ============================================================
-INSERT INTO `growth_timeline_abilities`
-(`id`, `timeline_id`, `dimension_code`, `score`) VALUES
--- ---- 张三（timeline 1~3）----
-(1,  1, 'competition',    90.00),
-(2,  1, 'comprehensive', 85.00),
-(3,  2, 'socialWork',    85.00),
-(4,  3, 'competition',   95.00),
-(5,  3, 'academic',      85.00),
--- ---- 李四（timeline 4~6）----
-(6,  4, 'competition',   75.00),
-(7,  4, 'academic',      80.00),
-(8,  5, 'socialWork',    82.00),
-(9,  6, 'research',      70.00),
--- ---- 王五（timeline 7~9）----
-(10, 7, 'competition',   92.00),
-(11, 7, 'research',      85.00),
-(12, 8, 'research',      95.00),
-(13, 8, 'academic',      90.00),
-(14, 9, 'socialWork',    90.00),
-(15, 9, 'comprehensive', 85.00),
--- ---- 赵六（timeline 10~12）----
-(16, 10, 'competition',   78.00),
-(17, 11, 'socialWork',    82.00),
-(18, 11, 'comprehensive', 70.00),
-(19, 12, 'research',      80.00),
--- ---- 陈七（timeline 13~15）----
-(20, 13, 'competition',   72.00),
-(21, 14, 'socialWork',    75.00),
-(22, 15, 'research',      65.00);
-
--- ============================================================
--- 3. 事件标签子表（growth_timeline_tags）
+-- 2. 事件标签子表（growth_timeline_tags）
 -- ============================================================
 INSERT INTO `growth_timeline_tags`
 (`id`, `timeline_id`, `tag_name`) VALUES

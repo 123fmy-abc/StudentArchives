@@ -31,6 +31,11 @@ public interface ArchiveRepository extends JpaRepository<Archive, Long> {
     List<Archive> findByUserIdAndArchiveType(Long userId, String archiveType);
 
     /**
+     * 按学生 + 状态筛选（评分重算仅统计已通过 status=2 的档案）
+     */
+    List<Archive> findByUserIdAndStatus(Long userId, Integer status);
+
+    /**
      * 软删除（通过 native query 绕过 updatable=false 限制）
      */
     @Modifying

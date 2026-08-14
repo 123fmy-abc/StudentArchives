@@ -25,7 +25,7 @@ import static com.example.studentarchives.config.security.SecurityConstants.PUBL
  * 鉴权边界说明：
  * <ul>
  *   <li>{@code /admin/**}：HTTP 层仅要求认证（authenticated），角色/权限码由各管理端 Service 经
- *       {@link com.example.studentarchives.service.Fmy.AdminAuthService} 逐接口校验（admin 角色或对应权限码），
+ *       {@link com.example.studentarchives.service.common.AdminAuthService} 逐接口校验（admin 角色或对应权限码），
  *       越权统一返回 20005 无访问权限。</li>
  *   <li><code>/teacher/audits/&#42;/revoke</code> - 撤销已审核记录属于管理员纠错权限, HTTP 层兜底要求 ADMIN 角色,
  *       避免未来实现 /teacher/audits/{taskId}/revoke 时因路径前缀被误解为普通教师可操作.</li>
@@ -68,6 +68,7 @@ public class SecurityConfig {
                     // 业务接口需认证（公开路径已在之前通过 permitAll 排除）
                     .requestMatchers("/auth/**", "/common/**", "/home/**", "/profile/**", "/messages/**").authenticated()
                     // 管理端接口需认证（角色/权限码校验由各服务层经 AdminAuthService 执行，越权返回 20005）
+
                     .requestMatchers("/admin/**").authenticated()
                     // 撤销已审核记录：HTTP 层要求 ADMIN 角色，防止路径前缀 /teacher 造成权限误解
                     .requestMatchers("/teacher/audits/*/revoke").hasRole("ADMIN")

@@ -45,6 +45,7 @@ import com.example.studentarchives.support.CaptchaGenerator;
 import com.example.studentarchives.support.CaptchaStore;
 import com.example.studentarchives.support.LoginAttemptLimiter;
 import com.example.studentarchives.support.VerificationCodeStore;
+import com.example.studentarchives.service.common.LoginLogService;
 import com.example.studentarchives.util.JwtUtil;
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.JwtException;
