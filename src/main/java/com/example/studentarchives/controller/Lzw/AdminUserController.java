@@ -1,5 +1,6 @@
 package com.example.studentarchives.controller.Lzw;
 
+import com.example.studentarchives.annotation.AuditLog;
 import com.example.studentarchives.common.ApiResult;
 import com.example.studentarchives.common.PageParam;
 import com.example.studentarchives.common.PageResult;
@@ -75,6 +76,7 @@ public class AdminUserController {
 
     // ==================== 6.3 创建用户 ====================
 
+    @AuditLog(module = "user", action = "create", description = "创建用户: #body.userNo")
     @PostMapping
     public ApiResult<CreateUserResponse> createUser(
             @AuthenticationPrincipal Long operatorId,
@@ -84,6 +86,7 @@ public class AdminUserController {
 
     // ==================== 6.4 更新用户信息 ====================
 
+    @AuditLog(module = "user", action = "update", description = "更新用户信息: #userId")
     @PutMapping("/{userId}")
     public ApiResult<Void> updateUser(
             @AuthenticationPrincipal Long operatorId,
@@ -95,6 +98,7 @@ public class AdminUserController {
 
     // ==================== 6.5 启用/禁用用户 ====================
 
+    @AuditLog(module = "user", action = "update-status", description = "启用/禁用用户: #userId → status=#body.status")
     @PutMapping("/{userId}/status")
     public ApiResult<Void> updateStatus(
             @AuthenticationPrincipal Long operatorId,
@@ -106,6 +110,7 @@ public class AdminUserController {
 
     // ==================== 6.6 重置用户密码 ====================
 
+    @AuditLog(module = "user", action = "reset-password", description = "重置用户密码: #userId", logParams = false)
     @PutMapping("/{userId}/password/reset")
     public ApiResult<Void> resetPassword(
             @AuthenticationPrincipal Long operatorId,
@@ -117,6 +122,7 @@ public class AdminUserController {
 
     // ==================== 6.7 分配用户角色（覆盖式） ====================
 
+    @AuditLog(module = "user", action = "update-roles", description = "分配用户角色: #userId")
     @PutMapping("/{userId}/roles")
     public ApiResult<Void> updateRoles(
             @AuthenticationPrincipal Long operatorId,
@@ -128,6 +134,7 @@ public class AdminUserController {
 
     // ==================== 6.8 配置教师数据范围（覆盖式） ====================
 
+    @AuditLog(module = "user", action = "update-scopes", description = "配置教师数据范围: #userId")
     @PutMapping("/{userId}/scopes")
     public ApiResult<Void> updateScopes(
             @AuthenticationPrincipal Long operatorId,
