@@ -143,12 +143,13 @@ public class AuditLogAspect {
         }
 
         // 写入 system_logs 表（恢复数据库审计写库）
-        writeSystemLog(auditLog, principalId, description, success, errorMsg, paramsJson, resultJson);
+        writeSystemLog(auditLog, principalId, description, success, errorMsg, paramsJson, resultJson, paramNames, args);
     }
 
     /** 写库 system_logs（独立事务，失败不影响主流程） */
     private void writeSystemLog(AuditLog auditLog, Long principalId, String description,
-                                boolean success, String errorMsg, String paramsJson, String resultJson) {
+                                boolean success, String errorMsg, String paramsJson, String resultJson,
+                                String[] paramNames, Object[] args) {
         try {
             // system_logs 表 CHECK 约束要求 user_id 或 operator_id 至少一个非空，匿名操作不落库
             if (principalId == null) {
@@ -164,6 +165,15 @@ public class AuditLogAspect {
             systemLog.setModule(auditLog.module());
             systemLog.setAction(auditLog.action());
             systemLog.setDescription(description);
+            // 关联记录（对齐文档「关联业务记录 ID」）
+            String relatedType = auditLog.relatedType();
+            if (relatedType != null && !relatedType.isBlank()) {
+                systemLog.setRelatedType(relatedType);
+            }
+            Long relatedId = resolveRelatedId(auditLog.relatedId(), paramNames, args);
+            if (relatedId != null) {
+                systemLog.setRelatedId(relatedId);
+            }
             systemLog.setLogLevel(LOG_LEVEL_AUDIT);
             systemLog.setIsDeletable(1);
             systemLog.setIsDisplay(1);
@@ -181,6 +191,22 @@ public class AuditLogAspect {
             // 数据库日志写入失败不影响主流程
             LogUtil.audit().info("system-log-err: module={}, action={}, error={}",
                     auditLog.module(), auditLog.action(), e.getMessage());
+        }
+    }
+
+    /** 解析 relatedId SpEL 表达式为 Long；为空或解析失败返回 null */
+    private Long resolveRelatedId(String relatedIdExpr, String[] paramNames, Object[] args) {
+        if (relatedIdExpr == null || relatedIdExpr.isBlank()) {
+            return null;
+        }
+        String value = parseSpel(relatedIdExpr, paramNames, args);
+        if (value == null || value.isBlank()) {
+            return null;
+        }
+        try {
+            return Long.parseLong(value.trim());
+        } catch (NumberFormatException e) {
+            return null;
         }
     }
 
