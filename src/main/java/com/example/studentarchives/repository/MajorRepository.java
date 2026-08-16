@@ -14,4 +14,9 @@ import java.util.List;
 public interface MajorRepository extends JpaRepository<Major, Long> {
 
     List<Major> findByIdIn(Collection<Long> ids);
+
+    /**
+     * 查询某学院下全部专业（操作日志组织维度下钻：collegeId → majors）
+     */
+    List<Major> findByCollegeIdIn(Collection<Long> collegeIds);
 }
