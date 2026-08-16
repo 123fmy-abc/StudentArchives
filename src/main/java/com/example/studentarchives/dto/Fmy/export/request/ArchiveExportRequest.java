@@ -15,10 +15,6 @@ import java.util.List;
 @Setter
 public class ArchiveExportRequest {
 
-    /** 学校ID，必填 */
-    @NotNull(message = "学校ID不能为空")
-    private Long schoolId;
-
     /** 学期ID；为空时取当前学期 */
     private Long semesterId;
 

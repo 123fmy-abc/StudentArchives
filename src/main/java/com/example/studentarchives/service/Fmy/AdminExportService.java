@@ -101,7 +101,8 @@ import java.util.zip.ZipOutputStream;
  *   <li>5.11 POST /admin/exports/archives：一键导出学生档案（管理端）。按组织范围（学校/学院/专业/
  *       班级/年级）批量导出学生基本信息与成长档案：fileType=pdf 时用 export_templates 中
  *       export_type='student_archive' 的模板逐学生渲染后合并；fileType=xlsx 时手写 OOXML 生成
- *       学生基本信息/档案列表工作簿（无 POI 依赖）。任务异步执行，权限码 archive:export，
+ *       学生基本信息/档案列表工作簿（无 POI 依赖）。水印由 purpose 控制：internal（默认）带
+ *       屏幕可见、打印隐藏水印，external 无水印。任务异步执行，权限码 archive:export，
  *       创建审计 action=1，下载审计 action=2 由通用下载端点补写。</li>
  * </ul>
  * <p>
@@ -285,7 +286,7 @@ public class AdminExportService {
 
         User operator = userRepository.findById(userId)
                 .orElseThrow(() -> new BusinessException(ResultCode.DATA_NOT_EXIST, "用户不存在"));
-        Long schoolId = operator.getSchoolId() != null ? operator.getSchoolId() : request.getSchoolId();
+        Long schoolId = adminAuthService.getOperatorSchoolId(userId);
         schoolRepository.findById(schoolId)
                 .orElseThrow(() -> new BusinessException(ResultCode.DATA_NOT_EXIST, "学校不存在"));
 
@@ -474,7 +475,7 @@ public class AdminExportService {
     /**
      * 生成批量学生档案 PDF：逐学生用 student_archive 模板渲染后合并为一个 PDF 文档。
      * <p>
-     * purpose=internal（默认）时屏幕显示、打印隐藏水印；external 时不加水印。
+     * purpose=internal（默认）时添加屏幕可见、打印隐藏水印；external 时不加水印。
      */
     private byte[] buildArchivePdf(ArchiveExportRequest request, Long schoolId, List<Long> studentIds) {
         ExportTemplate template = request.getTemplateId() != null
@@ -483,7 +484,7 @@ public class AdminExportService {
         if (template == null) {
             throw new BusinessException(ResultCode.DATA_NOT_EXIST, "未配置默认导出模板");
         }
-        boolean watermarkEnabled = !"external".equals(request.getPurpose());
+        boolean watermarkEnabled = resolveWatermarkEnabled(request);
         List<String> sections = effectiveSections(request.getSections());
 
         List<byte[]> pdfs = new ArrayList<>();
@@ -511,6 +512,14 @@ public class AdminExportService {
             log.error("合并学生档案 PDF 失败", e);
             throw new BusinessException(ResultCode.OPERATION_FAILED, "学生档案 PDF 生成失败");
         }
+    }
+
+    /**
+     * 解析是否添加打印隐藏水印（与既有导出逻辑一致）：
+     * purpose=internal（默认）→ 添加水印（屏幕可见、打印隐藏）；external → 不添加。
+     */
+    private boolean resolveWatermarkEnabled(ArchiveExportRequest request) {
+        return !"external".equals(request.getPurpose());
     }
 
     /**

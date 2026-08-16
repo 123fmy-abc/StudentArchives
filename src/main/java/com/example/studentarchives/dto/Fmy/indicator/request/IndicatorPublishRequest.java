@@ -17,10 +17,6 @@ import lombok.NoArgsConstructor;
 @AllArgsConstructor
 public class IndicatorPublishRequest {
 
-    /** 学校 ID */
-    @NotNull(message = "schoolId 不能为空")
-    private Long schoolId;
-
     /** 发布版本归属学期 ID（可选，不传则取该校当前学期，仍无则版本不限定学期） */
     private Long semesterId;
 

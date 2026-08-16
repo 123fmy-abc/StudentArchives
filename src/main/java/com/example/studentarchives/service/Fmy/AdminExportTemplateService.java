@@ -86,22 +86,19 @@ public class AdminExportTemplateService {
     /**
      * 获取导出模板列表（GET /admin/export-templates，文档 5.3）
      * <p>
-     * 按学校（必填）/导出类型/启用状态筛选，按更新时间倒序分页；列表项不含
+     * 按当前登录用户所属学校、导出类型、启用状态筛选，按更新时间倒序分页；列表项不含
      * templateContent、headerHtml、footerHtml 等大字段（需调详情接口）。
      *
      * @param userId     当前登录用户 ID
-     * @param schoolId   学校 ID
      * @param exportType 导出类型（可选）
      * @param status     0=禁用 1=启用（可选，不传返回全部）
      * @param pageParam  分页参数
      * @return 分页的模板列表
      */
-    public PageResult<ExportTemplateItem> listTemplates(Long userId, Long schoolId, String exportType,
+    public PageResult<ExportTemplateItem> listTemplates(Long userId, String exportType,
                                                         Integer status, PageParam pageParam) {
         adminAuthService.requireAdminOrPermission(userId, PERMISSION);
-        if (schoolId == null) {
-            throw new BusinessException(ResultCode.PARAM_MISSING, "schoolId 不能为空");
-        }
+        Long schoolId = adminAuthService.getOperatorSchoolId(userId);
         List<ExportTemplate> all = adminExportTemplateRepository.findAll().stream()
                 .filter(t -> Objects.equals(t.getSchoolId(), schoolId))
                 .filter(t -> exportType == null || exportType.isBlank() || Objects.equals(t.getExportType(), exportType))
@@ -160,10 +157,11 @@ public class AdminExportTemplateService {
      */
     public ExportTemplateCreateResponse createTemplate(Long userId, ExportTemplateCreateRequest request) {
         adminAuthService.requireAdminOrPermission(userId, PERMISSION);
+        Long schoolId = adminAuthService.getOperatorSchoolId(userId);
 
-        schoolRepository.findById(request.getSchoolId())
+        schoolRepository.findById(schoolId)
                 .orElseThrow(() -> new BusinessException(ResultCode.DATA_NOT_EXIST, "学校不存在"));
-        checkTemplateCodeUnique(request.getSchoolId(), request.getTemplateCode(), null);
+        checkTemplateCodeUnique(schoolId, request.getTemplateCode(), null);
         // 校验渲染模式对应的内容：1=字段列表模式必填 fieldsConfig，2=自由模板模式必填 templateContent
         boolean freeLayout = request.getTemplateMode() != null && request.getTemplateMode() == 2;
         if (freeLayout) {
@@ -177,7 +175,7 @@ public class AdminExportTemplateService {
         }
 
         ExportTemplate template = new ExportTemplate();
-        template.setSchoolId(request.getSchoolId());
+        template.setSchoolId(schoolId);
         template.setTemplateName(request.getTemplateName());
         template.setTemplateCode(request.getTemplateCode());
         template.setExportType(request.getExportType());

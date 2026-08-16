@@ -52,7 +52,7 @@ public class AdminIndicatorController {
     /**
      * 获取指标树
      * <p>
-     * 返回学校下完整的三级指标树，节点携带权重、状态、计分规则与当前版本信息。
+     * 返回当前登录用户所属学校下完整的三级指标树，节点携带权重、状态、计分规则与当前版本信息。
      * 按学期过滤：semesterId 不传取当前学期；该学期已发布过规则版本则返回其权威快照。
      * 未发布过规则版本时：
      * <ul>
@@ -63,7 +63,6 @@ public class AdminIndicatorController {
      * 可按 status 过滤（0=禁用 1=启用）。
      *
      * @param userId     当前登录用户 ID（由 JWT 过滤器注入）
-     * @param schoolId   学校 ID
      * @param semesterId 学期 ID（可选，不传取当前学期）
      * @param status     0=禁用 1=启用，不传返回全部
      * @param draft      true=强制返回当前草稿树；false/null=优先返回已发布版本的权威快照
@@ -72,11 +71,10 @@ public class AdminIndicatorController {
     @GetMapping("/tree")
     public ApiResult<AdminIndicatorTreeResponse> getTree(
             @AuthenticationPrincipal Long userId,
-            @RequestParam("schoolId") Long schoolId,
             @RequestParam(value = "semesterId", required = false) Long semesterId,
             @RequestParam(value = "status", required = false) Integer status,
             @RequestParam(value = "draft", required = false) Boolean draft) {
-        AdminIndicatorTreeResponse response = adminIndicatorService.getTree(userId, schoolId, semesterId, status, draft);
+        AdminIndicatorTreeResponse response = adminIndicatorService.getTree(userId, semesterId, status, draft);
         return ApiResult.success(response);
     }
 
@@ -222,10 +220,9 @@ public class AdminIndicatorController {
     /**
      * 获取指标规则版本列表
      * <p>
-     * 分页查询学校下历史发布的规则版本，按版本号倒序。
+     * 分页查询当前登录用户所属学校下历史发布的规则版本，按版本号倒序。
      *
      * @param userId     当前登录用户 ID
-     * @param schoolId   学校 ID
      * @param semesterId 学期 ID（可选，预留参数）
      * @param page       页码，默认 1
      * @param perPage    每页条数，默认 20，最大 100
@@ -234,7 +231,6 @@ public class AdminIndicatorController {
     @GetMapping("/rule-versions")
     public ApiResult<PageResult<IndicatorRuleVersionItem>> listRuleVersions(
             @AuthenticationPrincipal Long userId,
-            @RequestParam("schoolId") Long schoolId,
             @RequestParam(value = "semesterId", required = false) Long semesterId,
             @RequestParam(value = "page", required = false, defaultValue = "1") int page,
             @RequestParam(value = "per_page", required = false, defaultValue = "20") int perPage) {
@@ -243,7 +239,7 @@ public class AdminIndicatorController {
                 .perPage(Math.min(Math.max(perPage, 1), 100))
                 .build();
         PageResult<IndicatorRuleVersionItem> result =
-                adminIndicatorService.listRuleVersions(userId, schoolId, semesterId, pageParam);
+                adminIndicatorService.listRuleVersions(userId, semesterId, pageParam);
         return ApiResult.success(result);
     }
 
@@ -256,7 +252,6 @@ public class AdminIndicatorController {
      * 用于修正发布后发现的名字/说明/编码笔误。禁止修改 weight、scoringRule、status 等会影响评分或树结构的字段。
      *
      * @param userId    当前登录用户 ID
-     * @param schoolId  学校 ID
      * @param versionId 规则版本 ID
      * @param request   修补请求
      * @return 操作结果
@@ -266,10 +261,9 @@ public class AdminIndicatorController {
     @PatchMapping("/rule-versions/{versionId}/snapshot")
     public ApiResult<Void> patchRuleVersionSnapshot(
             @AuthenticationPrincipal Long userId,
-            @RequestParam("schoolId") Long schoolId,
             @PathVariable Long versionId,
             @Valid @RequestBody IndicatorRuleVersionSnapshotPatchRequest request) {
-        adminIndicatorService.patchRuleVersionSnapshot(userId, schoolId, versionId, request);
+        adminIndicatorService.patchRuleVersionSnapshot(userId, versionId, request);
         return ApiResult.success("修补成功", null);
     }
 }

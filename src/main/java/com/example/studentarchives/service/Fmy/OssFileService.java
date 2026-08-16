@@ -225,6 +225,20 @@ public class OssFileService {
     }
 
     /**
+     * 获取文件在线预览 URL，并指定预览/另存为时显示的文件名（通过 response-content-disposition）。
+     * <p>
+     * 与 {@link #getPreviewUrl(String)} 相比额外携带文件名，浏览器内嵌预览时“另存为”仍使用正确中文名。
+     *
+     * @param objectKey 对象路径
+     * @param filename  预览文件名
+     * @return 临时预览 URL，文件不存在时返回 null
+     */
+    public String getPreviewUrl(String objectKey, String filename) {
+        if (objectKey == null || !exists(objectKey)) return null;
+        return generatePresignedUrl(objectKey, ossProperties.getUrlExpireMinutes(), "inline", filename);
+    }
+
+    /**
      * 生成临时签名 URL
      *
      * @param objectKey      对象路径

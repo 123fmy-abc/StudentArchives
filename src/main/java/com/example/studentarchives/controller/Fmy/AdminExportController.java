@@ -76,7 +76,7 @@ public class AdminExportController {
      * @return 任务 ID、导出类型与初始状态（待处理，预计耗时 60s）
      */
     @AuditLog(module = "export", action = "create-archives",
-            description = "一键导出学生档案: scopeType=#request.scopeType, scopeId=#request.scopeId, fileType=#request.fileType, templateId=#request.templateId")
+            description = "一键导出学生档案: scopeType=#request.scopeType, scopeId=#request.scopeId, fileType=#request.fileType, templateId=#request.templateId, purpose=#request.purpose")
     @PostMapping("/archives")
     public ApiResult<ArchiveExportResponse> submitArchiveExport(
             @AuthenticationPrincipal Long userId,

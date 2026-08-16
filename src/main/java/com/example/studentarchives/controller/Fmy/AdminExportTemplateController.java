@@ -52,10 +52,9 @@ public class AdminExportTemplateController {
     /**
      * 获取导出模板列表（GET /admin/export-templates，文档 5.3）
      * <p>
-     * 查询学校维度的导出模板列表，支持按导出类型和启用状态筛选，按更新时间倒序分页。
+     * 查询当前登录用户所属学校维度的导出模板列表，支持按导出类型和启用状态筛选，按更新时间倒序分页。
      *
      * @param userId     当前登录用户 ID
-     * @param schoolId   学校 ID（必填）
      * @param exportType 导出类型（可选）：student_archive / career_plan / resume
      * @param status     0=禁用 1=启用（可选，不传返回全部）
      * @param page       页码，默认 1
@@ -65,7 +64,6 @@ public class AdminExportTemplateController {
     @GetMapping
     public ApiResult<PageResult<ExportTemplateItem>> listTemplates(
             @AuthenticationPrincipal Long userId,
-            @RequestParam("schoolId") Long schoolId,
             @RequestParam(value = "exportType", required = false) String exportType,
             @RequestParam(value = "status", required = false) Integer status,
             @RequestParam(value = "page", required = false, defaultValue = "1") int page,
@@ -75,7 +73,7 @@ public class AdminExportTemplateController {
                 .perPage(Math.min(Math.max(perPage, 1), 100))
                 .build();
         PageResult<ExportTemplateItem> result =
-                adminExportTemplateService.listTemplates(userId, schoolId, exportType, status, pageParam);
+                adminExportTemplateService.listTemplates(userId, exportType, status, pageParam);
         return ApiResult.success(result);
     }
 

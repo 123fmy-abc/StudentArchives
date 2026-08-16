@@ -7,6 +7,7 @@ import com.example.studentarchives.exception.BusinessException;
 import com.example.studentarchives.repository.PermissionRepository;
 import com.example.studentarchives.repository.RolePermissionRepository;
 import com.example.studentarchives.repository.RoleRepository;
+import com.example.studentarchives.repository.UserRepository;
 import com.example.studentarchives.repository.UserRoleRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -34,6 +35,30 @@ public class AdminAuthService {
     private final RoleRepository roleRepository;
     private final RolePermissionRepository rolePermissionRepository;
     private final PermissionRepository permissionRepository;
+    private final UserRepository userRepository;
+
+    /**
+     * 获取当前操作人所属学校 ID。
+     * <p>管理端接口统一从学校维度隔离数据，schoolId 不再由前端传入，而是从登录用户
+     * 信息中自动获取。</p>
+     *
+     * @param userId 当前登录用户 ID
+     * @return 用户所属学校 ID
+     * @throws BusinessException 用户不存在或学校 ID 为空
+     */
+    public Long getOperatorSchoolId(Long userId) {
+        if (userId == null) {
+            throw new BusinessException(ResultCode.UNAUTHORIZED, "未登录");
+        }
+        return userRepository.findById(userId)
+                .map(u -> {
+                    if (u.getSchoolId() == null) {
+                        throw new BusinessException(ResultCode.DATA_NOT_EXIST, "用户未绑定学校");
+                    }
+                    return u.getSchoolId();
+                })
+                .orElseThrow(() -> new BusinessException(ResultCode.DATA_NOT_EXIST, "用户不存在"));
+    }
 
     /**
      * 当前用户的角色快照（操作人角色信息）

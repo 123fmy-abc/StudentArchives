@@ -143,14 +143,14 @@ public class ProfileCareerPlanController {
      *
      * @param userId   当前登录用户 ID
      * @param planId   规划 ID
-     * @param purpose  导出用途：internal（内部查看，默认）/ external（外部投递，不添加屏幕水印）
+     * @param purpose  导出用途：internal（内部查看，屏幕水印+打印隐藏）/ external（外部投递，默认，屏幕和打印均无水印）
      * @param response HTTP 响应（用于重定向）
      */
     @GetMapping("/{planId}/download")
     public void downloadPlan(
             @AuthenticationPrincipal Long userId,
             @PathVariable Long planId,
-            @RequestParam(value = "purpose", required = false, defaultValue = "internal") String purpose,
+            @RequestParam(value = "purpose", required = false, defaultValue = "external") String purpose,
             HttpServletResponse response) throws IOException {
         String url = profileCareerPlanService.getCareerPlanDownloadUrl(userId, planId, purpose);
         response.sendRedirect(url);
@@ -164,14 +164,14 @@ public class ProfileCareerPlanController {
      *
      * @param userId  当前登录用户 ID
      * @param planId  规划 ID
-     * @param purpose 导出用途：internal（内部预览，带屏幕水印）/ external（外部投递，无水印）
+     * @param purpose 导出用途：internal（内部预览，屏幕水印+打印隐藏）/ external（外部投递，默认，无水印）
      * @return 预览信息
      */
     @GetMapping("/{planId}/preview")
     public ApiResult<CareerPlanPreviewResponse> previewPlan(
             @AuthenticationPrincipal Long userId,
             @PathVariable Long planId,
-            @RequestParam(value = "purpose", required = false, defaultValue = "internal") String purpose) {
+            @RequestParam(value = "purpose", required = false, defaultValue = "external") String purpose) {
         return ApiResult.success(profileCareerPlanService.getCareerPlanPreviewUrl(userId, planId, purpose));
     }
 

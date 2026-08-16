@@ -25,10 +25,6 @@ import java.math.BigDecimal;
 @AllArgsConstructor
 public class IndicatorCreateRequest {
 
-    /** 学校 ID */
-    @NotNull(message = "schoolId 不能为空")
-    private Long schoolId;
-
     /** 父级指标 ID，为空则创建一级指标 */
     private Long parentId;
 

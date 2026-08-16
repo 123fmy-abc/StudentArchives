@@ -9,7 +9,7 @@ import lombok.NoArgsConstructor;
 /**
  * 职业规划文件预览响应 DTO（GET /profile/career-plans/{planId}/preview）
  * <p>
- * 与下载共用同一份生成/缓存文件，仅返回 inline 预览 URL（response-content-disposition=inline），
+ * 与下载共用同一份生成/缓存文件，返回 OSS 签名 inline 预览 URL（response-content-disposition=inline），
  * 前端可在新标签页内嵌渲染 PDF。
  */
 @Data

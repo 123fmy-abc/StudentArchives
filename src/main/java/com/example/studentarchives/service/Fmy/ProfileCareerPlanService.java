@@ -262,7 +262,7 @@ public class ProfileCareerPlanService {
      *
      * @param userId  当前登录用户 ID
      * @param planId  规划 ID
-     * @param purpose 导出用途：internal（内部查看，默认）/ external（外部投递，不添加屏幕水印）
+     * @param purpose 导出用途：internal（内部查看，屏幕水印+打印隐藏）/ external（外部投递，默认，屏幕和打印均无水印）
      * @return OSS 签名下载 URL
      */
     @Transactional
@@ -274,12 +274,12 @@ public class ProfileCareerPlanService {
      * 获取职业规划文件预览信息（GET /profile/career-plans/{planId}/preview）
      * <p>
      * 与下载共用 {@link #resolveExportFile} 解析同一份生成/缓存文件，保证「预览即所见即所得」；
-     * 仅返回 OSS 签名 inline 预览 URL（response-content-disposition=inline，不触发下载），
-     * 供前端新标签页内嵌渲染 PDF。external 用途返回无水印版本，便于投递前确认版式。
+     * 返回 OSS 签名 inline 预览 URL（response-content-disposition=inline），供前端新标签页内嵌渲染 PDF。
+     * external 用途返回无水印版本，便于投递前确认版式。
      *
      * @param userId  当前登录用户 ID
      * @param planId  规划 ID
-     * @param purpose 导出用途：internal（内部预览，默认）/ external（外部投递，不添加屏幕水印）
+     * @param purpose 导出用途：internal（内部预览，屏幕水印+打印隐藏）/ external（外部投递，默认，无水印）
      * @return 预览信息
      */
     @Transactional
@@ -288,17 +288,14 @@ public class ProfileCareerPlanService {
         if (relation == null || relation.getFilePath() == null) {
             throw new BusinessException(ResultCode.DATA_NOT_EXIST, "未找到规划文件");
         }
-        // OSS 默认域名安全策略强制返回 Content-Disposition: attachment（无法内嵌渲染），
-        // 预览 URL 因此等价于带正确中文名的下载：response-content-disposition 覆盖为
-        // attachment + filename，浏览器打开/下载时使用职业规划文件.pdf，而非 OSS 路径上的 UUID。
-        String previewUrl = ossFileService.getFileUrl(relation.getFilePath(), relation.getOriginalName());
+        String previewUrl = ossFileService.getPreviewUrl(relation.getFilePath(), relation.getOriginalName());
         if (previewUrl == null) {
             throw new BusinessException(ResultCode.DATA_NOT_EXIST, "规划文件不存在");
         }
         return CareerPlanPreviewResponse.builder()
                 .previewUrl(previewUrl)
                 .fileName(relation.getOriginalName())
-                .purpose(purpose != null ? purpose : "internal")
+                .purpose(purpose != null ? purpose : "external")
                 .generatedAt(toIso(LocalDateTime.now()))
                 .build();
     }
@@ -315,7 +312,7 @@ public class ProfileCareerPlanService {
     private AttachmentRelation resolveExportFile(Long userId, Long planId, String purpose) {
         CareerPlan plan = getOwnedPlan(userId, planId);
 
-        String normalizedPurpose = purpose != null ? purpose : "internal";
+        String normalizedPurpose = purpose != null ? purpose : "external";
         if (!"internal".equals(normalizedPurpose) && !"external".equals(normalizedPurpose)) {
             throw new BusinessException(ResultCode.PARAM_ERROR, "用途参数只能是 internal 或 external");
         }
@@ -330,8 +327,9 @@ public class ProfileCareerPlanService {
                 return refreshExportFileName(main);
             }
 
-            // 2) file_id 丢失时的兜底：查已绑定的导出文件并补写 file_id
-            AttachmentRelation exportFile = findExportRelation(plan.getId(), userId);
+            // 2) file_id 丢失时的兜底：查内部用途已绑定的导出文件并补写 file_id
+            AttachmentRelation exportFile = findExportRelation(plan.getId(), userId,
+                    AttachmentBizTypeEnum.CAREER_PLAN_EXPORT.getValue());
             if (exportFile != null && exportFile.getFilePath() != null
                     && !isStale(plan, exportFile) && ossFileService.exists(exportFile.getFilePath())) {
                 plan.setExportFileId(exportFile.getId());
@@ -347,11 +345,15 @@ public class ProfileCareerPlanService {
     // ==================== 职业规划文档生成（4.5 下载） ====================
 
     /**
-     * 惰性生成职业规划独立文档：按规划详情渲染 PDF → 上传 OSS → 绑定
-     * {@code career_plan_export} 附件并写入 {@code career_plans.file_id}。
+     * 惰性生成职业规划独立文档：按规划详情渲染 PDF → 上传 OSS → 绑定导出附件
+     * （internal 用 {@code career_plan_export} 并写入 {@code career_plans.file_id}；
+     * external 用独立的 {@code career_plan_export_external}，不写 file_id）。
      * <p>
      * 模板优先取 {@code export_templates} 中 {@code career_plan} 类型的默认模板，
      * 未播种时用内存兜底模板（同一套默认配置）保证单渲染路径。
+     * <p>
+     * internal / external 使用各自独立的附件行，互不复用：外部投递的无水印文件
+     * 不会覆盖内部水印缓存，internal 的复用也不会命中外部文件。
      *
      * @param userId           当前登录用户 ID
      * @param plan             归属当前用户的规划
@@ -378,19 +380,24 @@ public class ProfileCareerPlanService {
         }
 
         String originalName = EXPORT_FILE_NAME;
+        // 内部/外部使用各自独立的附件行：internal 缓存于 career_plans.file_id（带水印），
+        // external 每次重新生成（无水印），二者不复用同一行，避免相互覆盖污染。
+        String bizType = watermarkEnabled
+                ? AttachmentBizTypeEnum.CAREER_PLAN_EXPORT.getValue()
+                : AttachmentBizTypeEnum.CAREER_PLAN_EXPORT_EXTERNAL.getValue();
         String objectKey;
         try {
-            objectKey = ossFileService.uploadBytes(pdfBytes, "application/pdf",
-                    AttachmentBizTypeEnum.CAREER_PLAN_EXPORT.getValue(), "pdf", originalName);
+            objectKey = ossFileService.uploadBytes(pdfBytes, "application/pdf", bizType, "pdf", originalName);
         } catch (Exception e) {
             log.error("职业规划文件上传OSS失败 userId={} planId={}", userId, plan.getId(), e);
             throw new BusinessException(ResultCode.THIRD_OSS_FAILED, "职业规划文件上传失败");
         }
 
-        // 复用既有导出关系（file_id 或 biz 兜底），替换 OSS 旧对象，避免孤儿文件
-        AttachmentRelation relation = resolveOwnedRelation(plan.getExportFileId(), userId);
+        // 仅复用同用途既有导出关系（替换 OSS 旧对象，避免孤儿文件）：
+        // internal 优先 file_id 主文件；external 不触碰 file_id，只查外部投递行。
+        AttachmentRelation relation = watermarkEnabled ? resolveOwnedRelation(plan.getExportFileId(), userId) : null;
         if (relation == null) {
-            relation = findExportRelation(plan.getId(), userId);
+            relation = findExportRelation(plan.getId(), userId, bizType);
         }
         if (relation != null) {
             ossFileService.deleteFile(relation.getFilePath());
@@ -402,7 +409,7 @@ public class ProfileCareerPlanService {
         } else {
             relation = new AttachmentRelation();
             relation.setUserId(userId);
-            relation.setBizType(AttachmentBizTypeEnum.CAREER_PLAN_EXPORT.getValue());
+            relation.setBizType(bizType);
             relation.setBizId(plan.getId());
             relation.setFileCategory("pdf");
             relation.setOriginalName(originalName);
@@ -416,7 +423,7 @@ public class ProfileCareerPlanService {
         }
         // 先保存关系行（file_id 外键需要行存在），再写规划主文件
         relation = attachmentRelationRepository.save(relation);
-        // external 用途不写入 career_plans.file_id，避免污染 internal 缓存的水印文件
+        // 仅 internal 写入 career_plans.file_id 作为水印缓存；external 不缓存，每次重新生成
         if (watermarkEnabled) {
             plan.setExportFileId(relation.getId());
             careerPlanRepository.save(plan);
@@ -564,10 +571,12 @@ public class ProfileCareerPlanService {
 
     /**
      * 查询规划已绑定的导出文件（排除已软删），file_id 丢失时兜底使用。
+     * 按用途 bizType 区分：internal 用 career_plan_export、external 用 career_plan_export_external，
+     * 避免外部无水印文件被 internal 缓存复用。
      */
-    private AttachmentRelation findExportRelation(Long planId, Long userId) {
+    private AttachmentRelation findExportRelation(Long planId, Long userId, String bizType) {
         return attachmentRelationRepository
-                .findByBizTypeAndBizIdOrderBySortOrderAsc(AttachmentBizTypeEnum.CAREER_PLAN_EXPORT.getValue(), planId)
+                .findByBizTypeAndBizIdOrderBySortOrderAsc(bizType, planId)
                 .stream()
                 .filter(r -> userId.equals(r.getUserId()))
                 .filter(r -> r.getFileStatus() == null || FileStatusEnum.of(r.getFileStatus()) == FileStatusEnum.BOUND)

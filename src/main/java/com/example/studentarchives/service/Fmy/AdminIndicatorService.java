@@ -118,14 +118,14 @@ public class AdminIndicatorService {
      * 树节点携带权重、状态、计分规则与版本信息，可按 status 过滤（0=禁用 1=启用）。
      *
      * @param userId     当前登录用户 ID
-     * @param schoolId   学校 ID
      * @param semesterId 学期 ID（可选，不传取当前学期）
      * @param status     0=禁用 1=启用，不传返回全部
      * @param draft      true=强制返回当前草稿树；false/null=优先返回已发布版本的权威快照
      */
     @Transactional(readOnly = true)
-    public AdminIndicatorTreeResponse getTree(Long userId, Long schoolId, Long semesterId, Integer status, Boolean draft) {
+    public AdminIndicatorTreeResponse getTree(Long userId, Long semesterId, Integer status, Boolean draft) {
         adminAuthService.requireAdminOrPermission(userId, "indicator:manage");
+        Long schoolId = adminAuthService.getOperatorSchoolId(userId);
         validateSchoolAndSemester(schoolId, semesterId);
 
         // 解析查询学期：参数优先，未传则取该校当前学期；仍无则按学校维度查询
@@ -203,7 +203,7 @@ public class AdminIndicatorService {
     @Transactional
     public IndicatorCreateResponse createIndicator(Long userId, IndicatorCreateRequest request) {
         adminAuthService.requireAdminOrPermission(userId, "indicator:manage");
-        Long schoolId = request.getSchoolId();
+        Long schoolId = adminAuthService.getOperatorSchoolId(userId);
 
         EvaluationIndicator parent = null;
         int level;
@@ -570,7 +570,7 @@ public class AdminIndicatorService {
     @Transactional
     public IndicatorPublishResponse publish(Long userId, IndicatorPublishRequest request) {
         adminAuthService.requireAdminOrPermission(userId, "indicator:manage");
-        Long schoolId = request.getSchoolId();
+        Long schoolId = adminAuthService.getOperatorSchoolId(userId);
 
         // 发布版本归属学期：不传则取该校当前学期，仍无则版本不限定学期
         Long semesterId = request.getSemesterId();
@@ -671,14 +671,14 @@ public class AdminIndicatorService {
     // ==================== 1.6 指标规则版本列表 ====================
 
     /**
-     * 查询学校下历史发布的指标规则版本（GET /admin/indicators/rule-versions）
+     * 查询当前登录用户所属学校下历史发布的指标规则版本（GET /admin/indicators/rule-versions）
      * <p>
      * semesterId 非空时仅返回该学期的发布版本，否则返回全校全部版本。
      */
     @Transactional(readOnly = true)
-    public PageResult<IndicatorRuleVersionItem> listRuleVersions(Long userId, Long schoolId,
-                                                                 Long semesterId, PageParam pageParam) {
+    public PageResult<IndicatorRuleVersionItem> listRuleVersions(Long userId, Long semesterId, PageParam pageParam) {
         adminAuthService.requireAdminOrPermission(userId, "indicator:manage");
+        Long schoolId = adminAuthService.getOperatorSchoolId(userId);
         validateSchoolAndSemester(schoolId, semesterId);
 
         Pageable pageable = PageRequest.of(pageParam.getPage() - 1, pageParam.getPerPage());
@@ -722,14 +722,14 @@ public class AdminIndicatorService {
      * 但已产生的评分记录（score_calculation_details / portrait_evaluation_scores）保持原样，不受影响。
      *
      * @param userId    当前登录用户 ID
-     * @param schoolId  学校 ID
      * @param versionId 规则版本 ID
      * @param request   修补请求
      */
     @Transactional
-    public void patchRuleVersionSnapshot(Long userId, Long schoolId, Long versionId,
+    public void patchRuleVersionSnapshot(Long userId, Long versionId,
                                          IndicatorRuleVersionSnapshotPatchRequest request) {
         adminAuthService.requireAdminOrPermission(userId, "indicator:manage");
+        Long schoolId = adminAuthService.getOperatorSchoolId(userId);
         validateSchoolAndSemester(schoolId, null);
 
         IndicatorRuleVersion version = indicatorRuleVersionRepository.findById(versionId)

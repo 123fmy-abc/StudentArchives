@@ -19,6 +19,7 @@ public enum AttachmentBizTypeEnum {
     CAREER_ACTION("career_action", "职业规划行动"),
     CAREER_MILESTONE("career_milestone", "职业规划行动里程碑"),
     CAREER_PLAN_EXPORT("career_plan_export", "职业规划导出文件"),
+    CAREER_PLAN_EXPORT_EXTERNAL("career_plan_export_external", "职业规划外部投递导出文件"),
     STUDENT_ARCHIVE_EXPORT("student_archive", "学生成长档案导出"),
     RESUME_EXPORT("resume_export", "个人简历导出"),
     ANNOUNCEMENT("announcement", "公告"),
