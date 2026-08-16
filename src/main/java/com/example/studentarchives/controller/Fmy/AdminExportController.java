@@ -94,7 +94,9 @@ public class AdminExportController {
      * @param jobId  导出任务 ID
      * @return 任务状态、进度与下载链接
      */
-    @GetMapping("/{jobId}")
+    // jobId 限定为纯数字：避免 /archives、/research 等路径段被 {jobId} 捕获，
+    // 否则方法/路径误配时会把 "archives" 当 jobId 转 Long 失败，报误导性的「参数 jobId 格式错误」
+    @GetMapping("/{jobId:[0-9]+}")
     public ApiResult<ExportJobResponse> getExportJob(
             @AuthenticationPrincipal Long userId,
             @PathVariable Long jobId) {
