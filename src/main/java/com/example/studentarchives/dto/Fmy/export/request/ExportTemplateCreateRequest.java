@@ -32,14 +32,13 @@ public class ExportTemplateCreateRequest {
     /** 范围类型：1=学校 2=学院 3=专业 4=班级 5=课程 6=年级，默认 1 */
     private Integer scopeType = 1;
 
-    /** 字段配置 JSON（字段列表模式时必填） */
-    @NotNull(message = "fieldsConfig 不能为空")
+    /** 字段配置 JSON（templateMode=1 字段列表模式时必填；templateMode=2 自由模板模式可不传） */
     private Object fieldsConfig;
 
     /** 默认筛选条件 JSON */
     private Object filterConditions;
 
-    /** HTML 模板内容（自由模板模式时必填） */
+    /** HTML 模板内容（templateMode=2 自由模板模式时必填） */
     private String templateContent;
 
     /** 模板渲染模式：1=字段列表模式 2=自由模板模式，默认 1 */
@@ -71,9 +70,6 @@ public class ExportTemplateCreateRequest {
 
     /** 字体配置 JSON */
     private Object fontConfig;
-
-    /** 预览图 URL */
-    private String previewImage;
 
     /** 0=禁用 1=启用，默认 1 */
     private Integer status = 1;

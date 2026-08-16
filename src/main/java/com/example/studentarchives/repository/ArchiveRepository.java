@@ -7,6 +7,7 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
+import java.util.Collection;
 import java.util.List;
 
 /**
@@ -19,6 +20,11 @@ public interface ArchiveRepository extends JpaRepository<Archive, Long> {
      * 查询学生全部档案记录（用于申报统计与快捷入口 recent 判断）
      */
     List<Archive> findByUserId(Long userId);
+
+    /**
+     * 批量查询多个学生的全部档案记录（管理端一键导出档案列表用，避免逐学生查询）
+     */
+    List<Archive> findByUserIdIn(Collection<Long> userIds);
 
     /**
      * 查询学生最近提交的档案记录（按 submitted_at 倒序），用于首页最近动态

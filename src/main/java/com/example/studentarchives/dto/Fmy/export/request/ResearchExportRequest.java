@@ -34,7 +34,7 @@ public class ResearchExportRequest {
     @NotEmpty(message = "dataTypes 不能为空")
     private List<String> dataTypes;
 
-    /** 各数据类型可选字段映射（仅入审计快照，本次导出输出各类型标准字段） */
+    /** 各数据类型可选字段映射：命中时导出 JSON 仅保留列表内字段（meta.fieldDescription 随之生成），并随审计快照记录 */
     private Map<String, Object> fields;
 
     /** 是否匿名化，默认 true（用匿名编号替代姓名和学号） */

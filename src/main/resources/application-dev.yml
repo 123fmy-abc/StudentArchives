@@ -19,6 +19,9 @@ spring:
   # ===== Flyway（开发环境允许补跑漏掉的迁移）=====
   flyway:
     out-of-order: true
+    # 共享 dev DB 的 schema_history 中遗留了队友已删除的 V27（本地无对应文件），
+    # 忽略 missing 迁移避免校验失败阻塞启动。
+    ignore-migration-patterns: "*:missing"
 
   # ===== 数据源（远程共享 MySQL，全体队员使用同一数据库）=====
   datasource:

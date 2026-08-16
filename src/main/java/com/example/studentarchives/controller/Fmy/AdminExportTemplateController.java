@@ -5,12 +5,15 @@ import com.example.studentarchives.common.ApiResult;
 import com.example.studentarchives.common.PageParam;
 import com.example.studentarchives.common.PageResult;
 import com.example.studentarchives.dto.Fmy.export.request.ExportTemplateCreateRequest;
+import com.example.studentarchives.dto.Fmy.export.request.ExportTemplateStatusRequest;
 import com.example.studentarchives.dto.Fmy.export.request.ExportTemplateUpdateRequest;
 import com.example.studentarchives.dto.Fmy.export.response.ExportTemplateCreateResponse;
 import com.example.studentarchives.dto.Fmy.export.response.ExportTemplateDefaultResponse;
 import com.example.studentarchives.dto.Fmy.export.response.ExportTemplateDeleteResponse;
 import com.example.studentarchives.dto.Fmy.export.response.ExportTemplateDetailResponse;
 import com.example.studentarchives.dto.Fmy.export.response.ExportTemplateItem;
+import com.example.studentarchives.dto.Fmy.export.response.ExportTemplatePreviewImageResponse;
+import com.example.studentarchives.dto.Fmy.export.response.ExportTemplateStatusResponse;
 import com.example.studentarchives.dto.Fmy.export.response.ExportTemplateUpdateResponse;
 import com.example.studentarchives.service.Fmy.AdminExportTemplateService;
 import jakarta.validation.Valid;
@@ -19,6 +22,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
@@ -26,13 +30,14 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.multipart.MultipartFile;
 
 /**
  * 管理端导出模板控制器
  * <p>
- * 对应《管理端接口文档》五、数据导出模块（5.3~5.8），统一前缀 /admin/export-templates。
+ * 对应《管理端接口文档》五、数据导出模块（5.3~5.10），统一前缀 /admin/export-templates。
  * 所有接口需校验 admin 角色或 export:template:manage 权限码，越权返回 20005 无访问权限。
- * 写操作（创建/更新/删除/设置默认）写入 audit_log 审计日志（module=export-template）。
+ * 写操作（创建/更新/修改状态/删除/设置默认）写入 audit_log 审计日志（module=export-template）。
  */
 @Slf4j
 @RestController
@@ -177,5 +182,54 @@ public class AdminExportTemplateController {
             @PathVariable Long templateId) {
         ExportTemplateDefaultResponse response = adminExportTemplateService.setDefaultTemplate(userId, templateId);
         return ApiResult.success("设置成功", response);
+    }
+
+    // ==================== 5.9 修改导出模板状态 ====================
+
+    /**
+     * 修改导出模板状态（PATCH /admin/export-templates/{templateId}/status，文档 5.9）
+     * <p>
+     * 仅变更启用/禁用状态，不触发 version 自增；禁用默认模板（is_default=1）不允许。
+     *
+     * @param userId     当前登录用户 ID
+     * @param templateId 模板 ID
+     * @param request    状态请求（仅 status 字段）
+     * @return 修改后的状态
+     */
+    @AuditLog(module = "export-template", action = "update-status",
+            description = "修改导出模板状态: #templateId -> #request.status", logResult = true)
+    @PatchMapping("/{templateId}/status")
+    public ApiResult<ExportTemplateStatusResponse> updateTemplateStatus(
+            @AuthenticationPrincipal Long userId,
+            @PathVariable Long templateId,
+            @Valid @RequestBody ExportTemplateStatusRequest request) {
+        ExportTemplateStatusResponse response =
+                adminExportTemplateService.updateTemplateStatus(userId, templateId, request.getStatus());
+        return ApiResult.success("状态修改成功", response);
+    }
+
+    // ==================== 5.10 上传导出模板预览图 ====================
+
+    /**
+     * 上传导出模板预览图（POST /admin/export-templates/{templateId}/preview-image，文档 5.10）
+     * <p>
+     * 上传图片并回写模板 preview_image 字段；再次调用即覆盖原预览图（upsert），
+     * 不触发 version 自增（预览图仅供管理端展示，导出任务渲染不消费）。
+     *
+     * @param userId     当前登录用户 ID
+     * @param templateId 模板 ID
+     * @param file       预览图文件（jpg/jpeg/png/gif/webp/bmp，≤2MB）
+     * @return 上传结果
+     */
+    @AuditLog(module = "export-template", action = "upload-preview",
+            description = "上传导出模板预览图: #templateId", logResult = true)
+    @PostMapping("/{templateId}/preview-image")
+    public ApiResult<ExportTemplatePreviewImageResponse> uploadPreviewImage(
+            @AuthenticationPrincipal Long userId,
+            @PathVariable Long templateId,
+            @RequestParam("file") MultipartFile file) {
+        ExportTemplatePreviewImageResponse response =
+                adminExportTemplateService.uploadPreviewImage(userId, templateId, file);
+        return ApiResult.success("上传成功", response);
     }
 }

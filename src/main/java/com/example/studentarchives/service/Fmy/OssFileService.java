@@ -108,6 +108,21 @@ public class OssFileService {
     }
 
     /**
+     * 上传导出模板预览图（直接存正式目录，不走 temp 临时目录）
+     * <p>
+     * 路径格式：export-template-preview/{uuid}.{ext}
+     *
+     * @param file 上传的预览图文件
+     * @return OSS 对象路径
+     */
+    public String uploadTemplatePreview(MultipartFile file) {
+        String ext = extractExtension(file.getOriginalFilename());
+        String objectKey = "export-template-preview/" + UUID.randomUUID().toString().replace("-", "")
+                + (ext != null ? "." + ext : "");
+        return doUpload(file, objectKey);
+    }
+
+    /**
      * 上传临时文件（temp 目录）
      * <p>
      * 临时文件可通过 {@link #moveToPermanent} 迁移到正式目录。

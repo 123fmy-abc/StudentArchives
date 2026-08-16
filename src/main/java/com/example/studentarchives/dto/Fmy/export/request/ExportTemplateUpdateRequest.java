@@ -60,9 +60,11 @@ public class ExportTemplateUpdateRequest {
     /** 字体配置 JSON */
     private Object fontConfig;
 
-    /** 预览图 URL */
-    private String previewImage;
-
-    /** 0=禁用 1=启用 */
+    /**
+     * 0=禁用 1=启用
+     * <p>
+     * 已废弃：状态变更已拆分为独立接口（PATCH /admin/export-templates/{templateId}/status，文档 5.9），
+     * 本接口传 status 返回 10001 参数错误，避免状态开关触发 version 自增。
+     */
     private Integer status;
 }

@@ -15,6 +15,7 @@ import com.example.studentarchives.dto.Fmy.common.response.IndicatorTreeResponse
 import com.example.studentarchives.dto.Fmy.common.response.SemesterItemResponse;
 import com.example.studentarchives.dto.Fmy.common.response.AvatarUploadResponse;
 import com.example.studentarchives.dto.Fmy.indicator.response.AdminIndicatorTreeResponse;
+import com.example.studentarchives.entity.export.ExportOperationLog;
 import com.example.studentarchives.entity.file.AttachmentLimit;
 import com.example.studentarchives.entity.file.AttachmentRelation;
 import com.example.studentarchives.entity.foundation.AbilityDimension;
@@ -34,6 +35,7 @@ import com.example.studentarchives.repository.AttachmentLimitRepository;
 import com.example.studentarchives.repository.AttachmentRelationRepository;
 import com.example.studentarchives.repository.ClazzRepository;
 import com.example.studentarchives.repository.DictionaryRepository;
+import com.example.studentarchives.repository.ExportOperationLogRepository;
 import com.example.studentarchives.repository.AbilityDimensionRepository;
 import com.example.studentarchives.repository.EvaluationIndicatorRepository;
 import com.example.studentarchives.repository.IndicatorRuleVersionRepository;
@@ -96,6 +98,7 @@ public class CommonService {
     private final ClazzRepository clazzRepository;
     private final MajorRepository majorRepository;
     private final RoleScopeRepository roleScopeRepository;
+    private final ExportOperationLogRepository exportOperationLogRepository;
     private final ObjectMapper objectMapper;
 
     /**
@@ -272,12 +275,13 @@ public class CommonService {
      * 生成文件下载 URL
      * <p>
      * 权限校验：文件所有者、管理员、或其授权范围覆盖该学生的教师可下载。
+     * 研究数据导出文件（biz_type=research_export）下载时补写 export_operation_logs(action=2) 下载审计。
      *
      * @param fileId 文件 ID
      * @param userId 当前用户 ID
      * @return 下载 URL
      */
-    @Transactional(readOnly = true)
+    @Transactional
     public String downloadFile(Long fileId, Long userId) {
         AttachmentRelation relation = attachmentRelationRepository.findById(fileId)
                 .orElseThrow(() -> new BusinessException(ResultCode.DATA_NOT_EXIST, "文件不存在"));
@@ -293,12 +297,49 @@ public class CommonService {
             throw new BusinessException(ResultCode.DATA_LOCKED, "文件下载链接已过期");
         }
 
+        // 生成 OSS 签名 URL：对象不存在（已物理清理/缺失）时返回 null，与有效期过期区分报错
         String fileUrl = ossFileService.getFileUrl(relation.getFilePath(), relation.getOriginalName());
         if (fileUrl == null) {
-            throw new BusinessException(ResultCode.DATA_LOCKED, "文件下载链接已过期");
+            throw new BusinessException(ResultCode.FILE_NOT_FOUND, "文件不存在或已失效");
         }
 
+        // 研究数据导出下载审计（export_operation_logs action=2），以创建记录（action=1）为模板
+        recordExportDownloadAudit(relation, userId);
+
         return fileUrl;
+    }
+
+    /**
+     * 记录导出文件的下载审计（export_operation_logs action=2）。
+     * <p>
+     * 仅对 biz_type=research_export（研究数据导出）与 student_archive（学生档案导出，
+     * 含管理端一键导出与学生端个人导出）的文件生效；以该文件创建时的审计记录（action=1）为模板
+     * 复制范围、筛选条件、记录数、匿名化、数据版本与字段说明快照，operator 记为下载者。
+     */
+    private void recordExportDownloadAudit(AttachmentRelation relation, Long userId) {
+        String bizType = relation.getBizType();
+        if (!AdminExportService.FILE_BIZ_TYPE.equals(bizType)
+                && !AdminExportService.FILE_BIZ_TYPE_ARCHIVE.equals(bizType)) {
+            return;
+        }
+        exportOperationLogRepository.findTopByFileIdAndActionOrderByCreatedAtDesc(relation.getId(), 1)
+                .ifPresent(created -> {
+                    ExportOperationLog opLog = new ExportOperationLog();
+                    opLog.setSchoolId(created.getSchoolId());
+                    opLog.setOperatorId(userId);
+                    opLog.setExportType(created.getExportType());
+                    opLog.setAction(2);
+                    opLog.setScopeType(created.getScopeType());
+                    opLog.setScopeId(created.getScopeId());
+                    opLog.setFilterConditions(created.getFilterConditions());
+                    opLog.setRecordCount(created.getRecordCount());
+                    opLog.setIsAnonymized(created.getIsAnonymized());
+                    opLog.setDataVersion(created.getDataVersion());
+                    opLog.setFieldDescription(created.getFieldDescription());
+                    opLog.setFileId(relation.getId());
+                    opLog.setStatus(1);
+                    exportOperationLogRepository.save(opLog);
+                });
     }
 
     // ==================== 删除文件 ====================

@@ -31,7 +31,8 @@ public class ExportTemplate extends BaseEntity {
     @Column(name = "scope_type")
     private Integer scopeType;
 
-    @Column(name = "fields_config", columnDefinition = "JSON", nullable = false)
+    /** 字段列表模式（template_mode=1）下的列配置；自由模板模式（template_mode=2）可为空 */
+    @Column(name = "fields_config", columnDefinition = "JSON")
     private String fieldsConfig;
 
     @Column(name = "filter_conditions", columnDefinition = "JSON")

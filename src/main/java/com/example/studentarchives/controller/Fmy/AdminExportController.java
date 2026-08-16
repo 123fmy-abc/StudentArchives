@@ -2,7 +2,9 @@ package com.example.studentarchives.controller.Fmy;
 
 import com.example.studentarchives.annotation.AuditLog;
 import com.example.studentarchives.common.ApiResult;
+import com.example.studentarchives.dto.Fmy.export.request.ArchiveExportRequest;
 import com.example.studentarchives.dto.Fmy.export.request.ResearchExportRequest;
+import com.example.studentarchives.dto.Fmy.export.response.ArchiveExportResponse;
 import com.example.studentarchives.dto.Fmy.export.response.ExportJobResponse;
 import com.example.studentarchives.dto.Fmy.export.response.ResearchExportResponse;
 import com.example.studentarchives.service.Fmy.AdminExportService;
@@ -20,14 +22,15 @@ import org.springframework.web.bind.annotation.RestController;
 /**
  * 管理端数据导出控制器
  * <p>
- * 对应《管理端接口文档》五、数据导出模块（5.1~5.2），统一前缀 /admin/exports：
+ * 对应《管理端接口文档》五、数据导出模块（5.1~5.2、5.11），统一前缀 /admin/exports：
  * <ul>
  *   <li>5.1 POST /admin/exports/research：研究数据导出（任务异步执行，接口立即返回任务 ID）；</li>
  *   <li>5.2 GET /admin/exports/{jobId}：查询导出任务进度及下载链接。</li>
+ *   <li>5.11 POST /admin/exports/archives：一键导出学生档案（管理端），按组织范围批量导出
+ *       pdf（逐学生模板渲染后合并）/ xlsx（学生基本信息与档案列表）；</li>
  * </ul>
- * 5.9（一键导出学生档案）文档标注「规划中（本版本未实现，接口契约保留）」，本控制器不实现。
- * 权限校验（export:research / export:manage）在 Service 层完成，越权返回 20005 无访问权限。
- * 研究数据导出的创建审计写入 export_operation_logs（action=1），本接口写操作同时写入 audit_log。
+ * 权限校验（export:research / export:manage / archive:export）在 Service 层完成，越权返回 20005 无访问权限。
+ * 研究导出与学生档案导出的创建审计写入 export_operation_logs（action=1），本接口写操作同时写入 audit_log。
  */
 @Slf4j
 @RestController
@@ -57,6 +60,29 @@ public class AdminExportController {
             @Valid @RequestBody ResearchExportRequest request) {
         ResearchExportResponse response = adminExportService.submitResearchExport(userId, request);
         return ApiResult.success("研究数据导出任务已创建", response);
+    }
+
+    // ==================== 5.11 一键导出学生档案 ====================
+
+    /**
+     * 一键导出学生档案（POST /admin/exports/archives，文档 5.11）
+     * <p>
+     * 按组织范围（学校/学院/专业/班级/年级）批量导出学生的基本信息与成长档案。
+     * 仅拥有 archive:export 权限的用户可调用。任务进入 export_jobs 异步执行，
+     * 接口立即返回任务 ID，完成后通过 5.2 查询下载链接。
+     *
+     * @param userId  当前登录用户 ID
+     * @param request 导出请求
+     * @return 任务 ID、导出类型与初始状态（待处理，预计耗时 60s）
+     */
+    @AuditLog(module = "export", action = "create-archives",
+            description = "一键导出学生档案: scopeType=#request.scopeType, scopeId=#request.scopeId, fileType=#request.fileType, templateId=#request.templateId")
+    @PostMapping("/archives")
+    public ApiResult<ArchiveExportResponse> submitArchiveExport(
+            @AuthenticationPrincipal Long userId,
+            @Valid @RequestBody ArchiveExportRequest request) {
+        ArchiveExportResponse response = adminExportService.submitArchiveExport(userId, request);
+        return ApiResult.success("一键导出学生档案任务已创建", response);
     }
 
     // ==================== 5.2 查询导出任务 ====================

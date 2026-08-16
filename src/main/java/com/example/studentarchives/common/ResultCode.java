@@ -65,6 +65,7 @@ public enum ResultCode {
     DATA_RELATION_EXISTS(30006, "数据关联存在", 409),
     DATA_VALIDATION_FAILED(30007, "数据校验失败", 400),
     DATA_VERSION_CONFLICT(30008, "数据版本冲突", 409),
+    FILE_NOT_FOUND(30009, "文件不存在或已失效", 404),
 
     // ========== 业务相关（40000-49999） ==========
     BIZ_OPERATION_FAILED(40001, "操作失败", 400),
