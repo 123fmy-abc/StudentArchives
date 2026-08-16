@@ -313,6 +313,8 @@ public class AdminLogService {
                 .action(l.getAction())
                 .module(l.getModule())
                 .description(l.getDescription())
+                .relatedType(l.getRelatedType())
+                .relatedId(l.getRelatedId())
                 .beforeData(parseJson(l.getBeforeData()))
                 .afterData(parseJson(l.getAfterData()))
                 .ipAddress(l.getIpAddress())
@@ -453,6 +455,8 @@ public class AdminLogService {
         private String action;
         private String module;
         private String description;
+        private String relatedType;
+        private Long relatedId;
         private Object beforeData;
         private Object afterData;
         private String ipAddress;
