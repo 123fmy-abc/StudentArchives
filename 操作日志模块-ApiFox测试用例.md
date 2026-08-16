@@ -37,6 +37,8 @@
 | `update-roles` | `PUT /admin/users/{userId}/roles` |
 | `update-scopes` | `PUT /admin/users/{userId}/scopes` |
 
+> 关联字段：除 `create` 外，上述写操作的日志均带 `relatedType=user`、`relatedId=被操作用户id`；`create` 因关联对象在创建后才生成，`relatedId` 为空。
+
 ---
 
 ## 2. 用例：4.1 查询系统操作日志
@@ -51,13 +53,14 @@
 | 按操作类型 | `action=create` | 所有 `action=create` |
 | 按模块 | `module=user` | 所有 `module=user`（用户管理操作） |
 | 按级别 | `logLevel=3` | 所有 `logLevel=3`（审计） |
-| 按关联类型/ID | `relatedType=...&relatedId=...` | 匹配的记录 |
+| 按关联类型 | `relatedType=user` | 所有 `relatedType=user`（用户管理操作） |
+| 按关联ID | `relatedId=7` | 所有 `relatedId=7`（被操作对象为 userId=7） |
 | 时间范围 | `startTime=2026-07-01T00:00:00+08:00&endTime=2026-08-15T23:59:59+08:00` | `createdAt` 落在区间内 |
 | 组织维度-年级 | `grade=2024级` | 仅被操作学生属该年级的日志 |
 | 组织维度-学院 | `collegeId=1` | 仅被操作学生属该学院的日志 |
 | 组织维度-班级 | `classId=1` | 仅被操作学生属该班级的日志 |
 | 组织维度组合 | `majorId=1&classId=1` | 两者交集 |
-| 字段校验 | 任意 | `operatorName` 有值；`afterData` 为 JSON 对象（非字符串）；`createdAt` 带时区 |
+| 字段校验 | 任意 | `operatorName` 有值；`afterData` 为 JSON 对象（非字符串）；`createdAt` 带时区；用户管理日志 `relatedType=user`、`relatedId` 为被操作用户 id（`create` 除外） |
 | 越权 | 无 `log:view` 账号 | code=20005（HTTP 403） |
 | 空结果 | `action=not-exist` | code=0，`list=[]`，`total=0` |
 
@@ -109,3 +112,4 @@
 
 - 触发一次 `PUT /admin/users/{userId}/status`（禁用用户）后，立即查 `GET /admin/logs/system?module=user&action=update-status`，应能查到 `statusLabel=成功`、`description` 含目标 `userId` 的记录。
 - 触发 `PUT /admin/users/{userId}/password/reset` 后，`beforeData` 应为 `null`（`logParams=false`，避免密码落库）。
+- 触发 `PUT /admin/users/{userId}/status` 后，查 `GET /admin/logs/system?action=update-status`，该条日志 `relatedType=user`、`relatedId` 为被操作用户 id，且 `relatedId=<id>` 过滤能命中它。
