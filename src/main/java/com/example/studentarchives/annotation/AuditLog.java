@@ -24,4 +24,10 @@ public @interface AuditLog {
 
     /** 是否记录返回结果 */
     boolean logResult() default false;
+
+    /** 关联模型类型（如 user、archive、award），写入 system_logs.related_type */
+    String relatedType() default "";
+
+    /** 关联记录 ID 的 SpEL 表达式（如 #userId），解析后写入 system_logs.related_id */
+    String relatedId() default "";
 }
