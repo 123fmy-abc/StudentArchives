@@ -32,4 +32,7 @@ public class Dictionary extends BaseEntity {
 
     @Column(name = "status", nullable = false)
     private Integer status = 1;
+
+    @Column(name = "remark", length = 255)
+    private String remark;
 }
