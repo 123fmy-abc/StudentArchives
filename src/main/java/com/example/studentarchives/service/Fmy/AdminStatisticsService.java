@@ -8,6 +8,7 @@ import com.example.studentarchives.dto.Fmy.statistics.response.HeatmapRow;
 import com.example.studentarchives.dto.Fmy.statistics.response.HeatmapSemesterItem;
 import com.example.studentarchives.dto.Fmy.statistics.response.OrgOverviewResponse;
 import com.example.studentarchives.dto.Fmy.statistics.response.OrgOverviewRow;
+import com.example.studentarchives.dto.Fmy.statistics.response.SnapshotRefreshResponse;
 import com.example.studentarchives.dto.Fmy.statistics.response.StatisticsParentOrg;
 import com.example.studentarchives.dto.Fmy.statistics.response.StatisticsTypeCountItem;
 import com.example.studentarchives.dto.Fmy.statistics.response.TopInterestItem;
@@ -42,6 +43,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Collection;
@@ -106,6 +108,7 @@ public class AdminStatisticsService {
     private final AdminCollegeRepository adminCollegeRepository;
     private final SemesterRepository semesterRepository;
     private final SchoolRepository schoolRepository;
+    private final StatisticsSnapshotService statisticsSnapshotService;
     private final ObjectMapper objectMapper;
 
     // ==================== 16.1 学校整体档案汇总（统计看板） ====================
@@ -208,27 +211,45 @@ public class AdminStatisticsService {
         List<OrgScope> scopes = resolveOverviewScopes(schoolId, scopeType, scopeId, grade, index);
 
         String cacheKey = "overview:" + schoolId + ":" + rowScopeType + ":" + (scopeId == null ? 0 : scopeId)
-                + ":" + (effSemesterId == null ? "latest" : effSemesterId);
+                + ":" + (effSemesterId == null ? "latest" : effSemesterId)
+                + ":" + (grade == null || grade.isBlank() ? "all" : grade);
         Optional<StatsResult<OrgOverviewResponse>> cached = readCache(cacheKey, schoolId, OrgOverviewResponse.class);
         if (cached.isPresent()) {
             return cached.get();
         }
 
-        Map<Long, OrgArchiveSummary> snapshotByOrg = orgArchiveSummaryRepository
-                .findLatestByLevel(rowScopeType, schoolId, effSemesterId).stream()
-                .collect(Collectors.toMap(OrgArchiveSummary::getOrgId, s -> s, (a, b) -> a));
+        boolean gradeFiltered = grade != null && !grade.isBlank();
+        Map<Long, OrgArchiveSummary> snapshotByOrg = null;
+        Map<Long, OrgArchiveSummary> classSnapshotById = null;
+        if (gradeFiltered && rowScopeType != ORG_CLASS) {
+            // 带年级筛选且按学院/专业/年级下钻时，学院/专业快照未按年级拆分，
+            // 需从班级快照按年级重新聚合，避免“年级无学生却仍返回全院数据”。
+            classSnapshotById = orgArchiveSummaryRepository
+                    .findLatestByLevel(ORG_CLASS, schoolId, effSemesterId).stream()
+                    .collect(Collectors.toMap(OrgArchiveSummary::getOrgId, s -> s, (a, b) -> a));
+        } else {
+            snapshotByOrg = orgArchiveSummaryRepository
+                    .findLatestByLevel(rowScopeType, schoolId, effSemesterId).stream()
+                    .collect(Collectors.toMap(OrgArchiveSummary::getOrgId, s -> s, (a, b) -> a));
+        }
 
         List<OrgOverviewRow> rows = new ArrayList<>();
         for (OrgScope scope : scopes) {
-            OrgArchiveSummary snap = snapshotByOrg.get(scope.orgId());
-            if (snap != null) {
-                rows.add(fromSnapshot(scope, snap));
-            } else if (rowScopeType == ORG_CLASS) {
-                // 单班级实时降级直接查询
-                rows.add(aggregateClassRealtime(scope, effSemesterId, index));
+            OrgOverviewRow row;
+            if (gradeFiltered && rowScopeType != ORG_CLASS) {
+                row = aggregateFromClassSnapshots(scope, classSnapshotById);
             } else {
-                rows.add(zeroRow(scope));
+                OrgArchiveSummary snap = snapshotByOrg.get(scope.orgId());
+                if (snap != null) {
+                    row = fromSnapshot(scope, snap);
+                } else if (rowScopeType == ORG_CLASS) {
+                    // 单班级实时降级直接查询
+                    row = aggregateClassRealtime(scope, effSemesterId, index);
+                } else {
+                    row = zeroRow(scope);
+                }
             }
+            rows.add(row);
         }
         boolean cacheHit = rows.stream().anyMatch(r -> r.getArchiveCount() != null && r.getArchiveCount() > 0);
 
@@ -343,6 +364,21 @@ public class AdminStatisticsService {
         return new StatsResult<>(data, "MISS");
     }
 
+    // ==================== 16.4 手动刷新统计快照 ====================
+
+    /**
+     * 手动刷新学校级档案汇总快照（POST /admin/statistics/refresh）
+     *
+     * @param userId     当前登录用户 ID
+     * @param semesterId 学期 ID（可选，不传取当前学期）
+     * @return 刷新结果
+     */
+    public SnapshotRefreshResponse refreshSnapshot(Long userId, Long semesterId) {
+        adminAuthService.requireAdminOrPermission(userId, STATS_PERMISSION);
+        Long schoolId = adminAuthService.getOperatorSchoolId(userId);
+        return statisticsSnapshotService.refresh(schoolId, semesterId);
+    }
+
     // ==================== 快照行映射 ====================
 
     /** 由组织快照构建汇总行 */
@@ -428,6 +464,96 @@ public class AdminStatisticsService {
                 .topInterests(List.of())
                 .dimensionAvgScores(List.of())
                 .archiveTypeDistribution(List.of())
+                .build();
+    }
+
+    /**
+     * 按年级筛选时，从班级快照聚合出学院/专业/年级行。
+     * <p>
+     * 班级快照的 grade 字段已记录所属年级，因此把 scope 下所有符合年级的班级快照
+     * 加权汇总，即可得到该年级在目标组织下的真实数据，而不是误用全院快照。
+     */
+    private OrgOverviewRow aggregateFromClassSnapshots(OrgScope scope,
+                                                       Map<Long, OrgArchiveSummary> classSnapshotById) {
+        int studentCount = 0;
+        int archiveCount = 0;
+        int awardCount = 0;
+        BigDecimal weightedGpaSum = BigDecimal.ZERO;
+        int gpaWeight = 0;
+        Map<String, Integer> typeCount = new HashMap<>();
+        Map<String, Integer> interestCount = new HashMap<>();
+        Map<String, WeightedDimension> dimensionMap = new HashMap<>();
+
+        for (Long classId : scope.classIds()) {
+            OrgArchiveSummary s = classSnapshotById.get(classId);
+            if (s == null) {
+                continue;
+            }
+            studentCount += s.getTotalStudents();
+            archiveCount += s.getTotalArchives();
+            awardCount += s.getTotalAwards();
+            if (s.getAvgGpa() != null && s.getTotalStudents() > 0) {
+                weightedGpaSum = weightedGpaSum.add(
+                        s.getAvgGpa().multiply(BigDecimal.valueOf(s.getTotalStudents())));
+                gpaWeight += s.getTotalStudents();
+            }
+            for (StatisticsTypeCountItem t : parseTypeDistribution(s.getArchiveTypeDistribution())) {
+                typeCount.merge(t.getArchiveType(), t.getCount() == null ? 0 : t.getCount(), Integer::sum);
+            }
+            for (TopInterestItem i : parseHotTags(s.getHotTags())) {
+                interestCount.merge(i.getInterest(), i.getCount() == null ? 0 : i.getCount(), Integer::sum);
+            }
+            int classStudentCount = s.getTotalStudents();
+            for (DimensionAvgScoreItem d : parseTopDimensions(s.getTopDimensions())) {
+                if (d.getDimensionCode() == null || d.getAvgScore() == null) {
+                    continue;
+                }
+                WeightedDimension wd = dimensionMap.computeIfAbsent(d.getDimensionCode(),
+                        k -> new WeightedDimension(d.getDimensionName(), 0.0, 0));
+                wd.weightedScore += d.getAvgScore() * classStudentCount;
+                wd.weight += classStudentCount;
+            }
+        }
+
+        Double avgGpa = gpaWeight > 0
+                ? weightedGpaSum.divide(BigDecimal.valueOf(gpaWeight), 2, RoundingMode.HALF_UP).doubleValue()
+                : null;
+        List<DimensionAvgScoreItem> dimensions = dimensionMap.entrySet().stream()
+                .map(e -> new DimensionAvgScoreItem(e.getKey(), e.getValue().name,
+                        e.getValue().weight > 0
+                                ? BigDecimal.valueOf(e.getValue().weightedScore / e.getValue().weight)
+                                .setScale(2, RoundingMode.HALF_UP).doubleValue()
+                                : null))
+                .sorted(Comparator.comparing(DimensionAvgScoreItem::getAvgScore,
+                        Comparator.nullsLast(Comparator.reverseOrder())))
+                .limit(5)
+                .collect(Collectors.toList());
+        List<String> topInterests = interestCount.entrySet().stream()
+                .sorted(Map.Entry.<String, Integer>comparingByValue(Comparator.reverseOrder()))
+                .limit(5)
+                .map(Map.Entry::getKey)
+                .collect(Collectors.toList());
+        List<StatisticsTypeCountItem> distribution = typeCount.entrySet().stream()
+                .map(e -> StatisticsTypeCountItem.builder().archiveType(e.getKey()).count(e.getValue()).build())
+                .sorted(Comparator.comparing(StatisticsTypeCountItem::getCount, Comparator.reverseOrder()))
+                .collect(Collectors.toList());
+        int practiceCount = typeCount.entrySet().stream()
+                .filter(e -> PRACTICE_TYPES.contains(e.getKey()))
+                .mapToInt(Map.Entry::getValue)
+                .sum();
+
+        return OrgOverviewRow.builder()
+                .orgId(scope.orgId())
+                .orgName(scope.orgName())
+                .studentCount(studentCount)
+                .archiveCount(archiveCount)
+                .awardCount(awardCount)
+                .avgGpa(avgGpa)
+                .avgScore(null)
+                .practiceCount(practiceCount)
+                .topInterests(topInterests)
+                .dimensionAvgScores(dimensions)
+                .archiveTypeDistribution(distribution)
                 .build();
     }
 
@@ -739,8 +865,13 @@ public class AdminStatisticsService {
         List<OrgScope> scopes = new ArrayList<>();
         int row = resolveRowScopeType(scopeType, scopeId);
         switch (row) {
-            case ORG_SCHOOL -> scopes.add(new OrgScope(schoolId, schoolName(schoolId),
-                    new ArrayList<>(index.userIdsByClassId().keySet())));
+            case ORG_SCHOOL -> {
+                List<Long> schoolClassIds = new ArrayList<>(index.userIdsByClassId().keySet());
+                if (grade != null && !grade.isBlank()) {
+                    schoolClassIds.removeIf(cid -> !grade.equals(index.classIdToGrade().get(cid)));
+                }
+                scopes.add(new OrgScope(schoolId, schoolName(schoolId), schoolClassIds));
+            }
             case ORG_COLLEGE -> index.collegeIdToName().forEach((cid, name) ->
                     scopes.add(new OrgScope(cid, name, classIdsOfCollege(cid, grade, index))));
             case ORG_MAJOR -> index.majorIdToName().forEach((mid, name) -> {
@@ -886,5 +1017,18 @@ public class AdminStatisticsService {
 
     /** 汇总行组织范围 */
     private record OrgScope(Long orgId, String orgName, List<Long> classIds) {
+    }
+
+    /** 维度加权平均中间对象 */
+    private static class WeightedDimension {
+        String name;
+        double weightedScore;
+        int weight;
+
+        WeightedDimension(String name, double weightedScore, int weight) {
+            this.name = name;
+            this.weightedScore = weightedScore;
+            this.weight = weight;
+        }
     }
 }

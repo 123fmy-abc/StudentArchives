@@ -357,7 +357,14 @@ public class AdminArchiveService {
         List<OrgScope> scopes = new ArrayList<>();
         if (orgType == null) {
             String schoolName = schoolRepository.findById(schoolId).map(School::getName).orElse("全校");
-            scopes.add(new OrgScope(schoolId, schoolName, new ArrayList<>(index.userIdsByClassId().keySet())));
+            List<Long> classIds = new ArrayList<>();
+            for (Long classId : index.userIdsByClassId().keySet()) {
+                if (grade != null && !grade.isBlank() && !grade.equals(index.classIdToGrade().get(classId))) {
+                    continue;
+                }
+                classIds.add(classId);
+            }
+            scopes.add(new OrgScope(schoolId, schoolName, classIds));
             return scopes;
         }
         if (orgType == ORG_GRADE) {

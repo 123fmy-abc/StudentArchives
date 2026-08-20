@@ -8,6 +8,7 @@ import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
 import java.time.LocalDateTime;
+import java.util.Collection;
 import java.util.List;
 
 /**
@@ -37,4 +38,21 @@ public interface PortraitEvaluationScoreRepository extends JpaRepository<Portrai
     int softDeleteByUserIdAndSemesterId(@Param("userId") Long userId,
                                         @Param("semesterId") Long semesterId,
                                         @Param("deletedAt") LocalDateTime deletedAt);
+
+    /**
+     * 按学校、学期聚合各维度平均得分（返回 [dimension_code, avg_score]）
+     */
+    @Query("SELECT s.dimensionCode, AVG(s.score) FROM PortraitEvaluationScore s " +
+            "WHERE s.semesterId = :semesterId " +
+            "AND s.userId IN (SELECT u.id FROM User u WHERE u.schoolId = :schoolId) " +
+            "GROUP BY s.dimensionCode")
+    List<Object[]> avgScoreGroupByDimension(@Param("schoolId") Long schoolId,
+                                             @Param("semesterId") Long semesterId);
+
+    /**
+     * 批量查询多个学生某学期的画像评估得分
+     */
+    @Query("SELECT s FROM PortraitEvaluationScore s WHERE s.userId IN :userIds AND s.semesterId = :semesterId")
+    List<PortraitEvaluationScore> findByUserIdInAndSemesterId(@Param("userIds") Collection<Long> userIds,
+                                                               @Param("semesterId") Long semesterId);
 }

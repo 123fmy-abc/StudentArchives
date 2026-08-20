@@ -4,11 +4,13 @@ import com.example.studentarchives.common.ApiResult;
 import com.example.studentarchives.dto.Fmy.statistics.response.DashboardResponse;
 import com.example.studentarchives.dto.Fmy.statistics.response.HeatmapResponse;
 import com.example.studentarchives.dto.Fmy.statistics.response.OrgOverviewResponse;
+import com.example.studentarchives.dto.Fmy.statistics.response.SnapshotRefreshResponse;
 import com.example.studentarchives.service.Fmy.AdminStatisticsService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -116,5 +118,22 @@ public class AdminStatisticsController {
         return ResponseEntity.ok()
                 .header(CACHE_HIT_HEADER, result.cacheHit())
                 .body(ApiResult.success(result.data()));
+    }
+
+    // ==================== 16.4 手动刷新统计快照 ====================
+
+    /**
+     * 手动刷新学校级档案汇总快照（POST /admin/statistics/refresh，文档 16.4）
+     *
+     * @param userId     当前登录用户 ID
+     * @param semesterId 学期 ID（可选，不传取当前学期）
+     * @return 刷新结果
+     */
+    @PostMapping("/refresh")
+    public ResponseEntity<ApiResult<SnapshotRefreshResponse>> refreshSnapshot(
+            @AuthenticationPrincipal Long userId,
+            @RequestParam(value = "semesterId", required = false) Long semesterId) {
+        SnapshotRefreshResponse response = adminStatisticsService.refreshSnapshot(userId, semesterId);
+        return ResponseEntity.ok(ApiResult.success(response));
     }
 }

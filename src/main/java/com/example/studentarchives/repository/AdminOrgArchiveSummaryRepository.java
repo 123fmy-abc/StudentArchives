@@ -2,10 +2,12 @@ package com.example.studentarchives.repository;
 
 import com.example.studentarchives.entity.evaluation.OrgArchiveSummary;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
+import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
 
@@ -43,4 +45,32 @@ public interface AdminOrgArchiveSummaryRepository extends JpaRepository<OrgArchi
     List<OrgArchiveSummary> findLatestByLevel(@Param("orgType") Integer orgType,
                                               @Param("schoolId") Long schoolId,
                                               @Param("semesterId") Long semesterId);
+
+    /**
+     * 按业务键删除历史快照（刷新前幂等清理）
+     */
+    @Modifying
+    @Query("DELETE FROM OrgArchiveSummary o " +
+            "WHERE o.schoolId = :schoolId " +
+            "AND (:semesterId IS NULL OR o.semesterId = :semesterId) " +
+            "AND o.orgType = :orgType " +
+            "AND o.orgId = :orgId " +
+            "AND o.statDate = :statDate")
+    int deleteByBusinessKey(@Param("schoolId") Long schoolId,
+                            @Param("semesterId") Long semesterId,
+                            @Param("orgType") Integer orgType,
+                            @Param("orgId") Long orgId,
+                            @Param("statDate") LocalDate statDate);
+
+    /**
+     * 删除某学校某学期某统计日的全部快照（刷新前幂等清理，含学校级与行级维度）
+     */
+    @Modifying
+    @Query("DELETE FROM OrgArchiveSummary o " +
+            "WHERE o.schoolId = :schoolId " +
+            "AND (:semesterId IS NULL OR o.semesterId = :semesterId) " +
+            "AND o.statDate = :statDate")
+    int deleteBySchoolIdAndSemesterIdAndStatDate(@Param("schoolId") Long schoolId,
+                                                  @Param("semesterId") Long semesterId,
+                                                  @Param("statDate") LocalDate statDate);
 }

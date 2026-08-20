@@ -47,4 +47,24 @@ public interface ArchiveRepository extends JpaRepository<Archive, Long> {
     @Modifying
     @Query(value = "UPDATE archives SET deleted_at = :deletedAt WHERE id = :id", nativeQuery = true)
     int softDeleteById(@Param("id") Long id, @Param("deletedAt") java.time.LocalDateTime deletedAt);
+
+    /**
+     * 统计某学校某学期有效档案总数
+     */
+    @Query("SELECT COUNT(a) FROM Archive a WHERE a.schoolId = :schoolId AND a.semesterId = :semesterId")
+    Long countBySchoolIdAndSemesterId(@Param("schoolId") Long schoolId, @Param("semesterId") Long semesterId);
+
+    /**
+     * 统计某学校某学期有档案的学生去重数
+     */
+    @Query("SELECT COUNT(DISTINCT a.userId) FROM Archive a WHERE a.schoolId = :schoolId AND a.semesterId = :semesterId")
+    Long countDistinctUserIdBySchoolIdAndSemesterId(@Param("schoolId") Long schoolId, @Param("semesterId") Long semesterId);
+
+    /**
+     * 按档案类型分组统计某学校某学期数量（返回 [archive_type, count]）
+     */
+    @Query(value = "SELECT archive_type, COUNT(*) " +
+            "FROM archives WHERE school_id = :schoolId AND semester_id = :semesterId AND deleted_at IS NULL " +
+            "GROUP BY archive_type", nativeQuery = true)
+    List<Object[]> countGroupByArchiveType(@Param("schoolId") Long schoolId, @Param("semesterId") Long semesterId);
 }

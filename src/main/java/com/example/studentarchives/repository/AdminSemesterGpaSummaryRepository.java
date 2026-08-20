@@ -2,6 +2,8 @@ package com.example.studentarchives.repository;
 
 import com.example.studentarchives.entity.grade.SemesterGpaSummary;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
 import java.util.Collection;
@@ -23,4 +25,13 @@ public interface AdminSemesterGpaSummaryRepository extends JpaRepository<Semeste
 
     /** 批量查询多个学生某学期的成绩汇总（统计模块平均绩点） */
     List<SemesterGpaSummary> findBySemesterIdAndUserIdIn(Long semesterId, Collection<Long> userIds);
+
+    /**
+     * 计算某学校某学期平均加权绩点
+     */
+    @Query("SELECT AVG(s.weightedGpa) FROM SemesterGpaSummary s " +
+            "WHERE s.semesterId = :semesterId " +
+            "AND s.userId IN (SELECT u.id FROM User u WHERE u.schoolId = :schoolId)")
+    Double avgWeightedGpaBySchoolIdAndSemesterId(@Param("schoolId") Long schoolId,
+                                                  @Param("semesterId") Long semesterId);
 }
