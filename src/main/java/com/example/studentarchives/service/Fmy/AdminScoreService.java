@@ -113,6 +113,9 @@ public class AdminScoreService {
     private static final int TRIGGER_MANUAL = 1;
     private static final int TRIGGER_AUTO = 2;
 
+    /** 班级范围类型（role_scopes.scope_type，教师端范围校验用） */
+    private static final int SCOPE_CLASS = 4;
+
     private static final BigDecimal BD_100 = new BigDecimal("100");
     private static final BigDecimal ZERO = BigDecimal.ZERO;
 
@@ -120,6 +123,7 @@ public class AdminScoreService {
             DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ssXXX");
 
     private final AdminAuthService adminAuthService;
+    private final TeacherScopeValidator scopeValidator;
     private final ScoreRecalculationTaskRepository taskRepository;
     private final UserRepository userRepository;
     private final SemesterRepository semesterRepository;
@@ -161,7 +165,20 @@ public class AdminScoreService {
      */
     public ScoreRecalculateResponse triggerRecalculate(Long userId, ScoreRecalculateRequest request) {
         adminAuthService.requireAdminOrPermission(userId, RECALC_PERMISSION);
+        return doTriggerRecalculate(userId, request);
+    }
 
+    /**
+     * 触发评分重算核心逻辑（鉴权/范围校验完成后共用）：校验学期与范围 → 创建任务 → 提交异步执行。
+     * <p>
+     * 管理端 2.1 与教师端 11.4 共用同一执行路径（任务进入 score_recalculation_tasks
+     * 独立事务异步执行）。
+     *
+     * @param userId  当前登录用户 ID
+     * @param request 触发请求
+     * @return 任务 ID 与初始状态
+     */
+    private ScoreRecalculateResponse doTriggerRecalculate(Long userId, ScoreRecalculateRequest request) {
         User operator = userRepository.findById(userId)
                 .orElseThrow(() -> new BusinessException(ResultCode.DATA_NOT_EXIST, "用户不存在"));
 
@@ -294,6 +311,72 @@ public class AdminScoreService {
         adminAuthService.requireAdminOrPermission(userId, RECALC_PERMISSION);
         ScoreRecalculationTask task = taskRepository.findById(taskId)
                 .orElseThrow(() -> new BusinessException(ResultCode.DATA_NOT_EXIST, "评分重算任务不存在"));
+        return toTaskResponse(task);
+    }
+
+    /**
+     * 教师端触发评分重算（POST /teacher/scores/recalculate，教师端文档 11.4）
+     * <p>
+     * 复用 2.1 异步引擎（{@link #doTriggerRecalculate}），仅替换鉴权与范围策略：
+     * 管理员放行或持有 {@code score:recalculate} 权限码，且 targetType 仅支持
+     * 1=指定学生 2=指定班级 3=指定学期（4=全量 / 5=指定专业仅限管理端）。
+     * 目标范围必须落在教师 {@code role_scopes} 授权范围内：学生按归属组织链匹配、
+     * 班级按同类型 scopeId 匹配、学期重算覆盖全校需学校级授权，越权返回 20005。
+     *
+     * @param userId  当前登录用户 ID
+     * @param request 触发请求（targetType 仅 1/2/3）
+     * @return 任务 ID 与初始状态
+     */
+    public ScoreRecalculateResponse triggerRecalculateByTeacher(Long userId, ScoreRecalculateRequest request) {
+        adminAuthService.requireAdminOrPermission(userId, RECALC_PERMISSION);
+        Integer targetType = request.getTargetType();
+        if (targetType == null || targetType < TARGET_STUDENT || targetType > TARGET_SEMESTER) {
+            throw new BusinessException(ResultCode.ACCESS_DENIED, "无访问权限");
+        }
+        Long schoolId = adminAuthService.getOperatorSchoolId(userId);
+        switch (targetType) {
+            case TARGET_STUDENT:
+                if (request.getTargetId() == null) {
+                    throw new BusinessException(ResultCode.PARAM_ERROR, "targetType=1 时 targetId 必填");
+                }
+                scopeValidator.ensureStudentInScope(userId, request.getTargetId(), schoolId);
+                break;
+            case TARGET_CLASS:
+                if (request.getTargetId() == null) {
+                    throw new BusinessException(ResultCode.PARAM_ERROR, "targetType=2 时 targetId 必填");
+                }
+                scopeValidator.ensureOrgInScope(userId, SCOPE_CLASS, request.getTargetId(), schoolId);
+                break;
+            case TARGET_SEMESTER:
+                // 学期重算覆盖全校学生，需学校级授权（或 admin）
+                scopeValidator.ensureSchoolScope(userId, schoolId);
+                break;
+            default:
+                break;
+        }
+        return doTriggerRecalculate(userId, request);
+    }
+
+    /**
+     * 教师端查询评分重算任务进度（GET /teacher/scores/recalculation-tasks/{taskId}，教师端文档 11.5）
+     * <p>
+     * 复用 2.2 查询逻辑（{@link #toTaskResponse}），教师侧补充任务归属校验：
+     * 仅本人触发的任务（triggered_by）可查，管理员可查任意任务，非本人且非管理员返回 20005。
+     *
+     * @param userId 当前登录用户 ID
+     * @param taskId 评分重算任务 ID
+     * @return 任务状态、进度与结果摘要
+     */
+    public ScoreRecalculationTaskResponse getRecalculationTaskByTeacher(Long userId, Long taskId) {
+        adminAuthService.requireAdminOrPermission(userId, RECALC_PERMISSION);
+        ScoreRecalculationTask task = taskRepository.findById(taskId)
+                .orElseThrow(() -> new BusinessException(ResultCode.DATA_NOT_EXIST, "评分重算任务不存在"));
+        if (!Objects.equals(task.getTriggeredBy(), userId)) {
+            AdminAuthService.OperatorRole role = adminAuthService.resolveOperatorRole(userId);
+            if (role == null || !role.isAdmin()) {
+                throw new BusinessException(ResultCode.ACCESS_DENIED, "无访问权限");
+            }
+        }
         return toTaskResponse(task);
     }
 

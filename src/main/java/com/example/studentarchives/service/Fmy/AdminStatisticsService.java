@@ -95,7 +95,11 @@ public class AdminStatisticsService {
     /** 热力图支持的指标 */
     private static final Set<String> HEATMAP_METRICS = Set.of("gpa", "award", "practice", "interest", "archive");
 
+    /** 教师端热力图支持的指标（《教师端接口文档》11.3：gpa/award/practice/archive 子集） */
+    private static final Set<String> TEACHER_HEATMAP_METRICS = Set.of("gpa", "award", "practice", "archive");
+
     private final AdminAuthService adminAuthService;
+    private final TeacherScopeValidator scopeValidator;
     private final AdminOrgArchiveSummaryRepository orgArchiveSummaryRepository;
     private final AdminStatisticsCacheRepository statisticsCacheRepository;
     private final AdminDataCompletenessRepository dataCompletenessRepository;
@@ -282,7 +286,25 @@ public class AdminStatisticsService {
                                                 String metric, String grade) {
         adminAuthService.requireAdminOrPermission(userId, STATS_PERMISSION);
         Long schoolId = adminAuthService.getOperatorSchoolId(userId);
+        return doHeatmap(schoolId, semesterId, orgType, orgId, metric, grade);
+    }
 
+    /**
+     * 成果热力图核心计算（鉴权/范围校验完成后共用）。
+     * <p>
+     * 以组织单位为行、指标/学期为列；数值按全校该指标最大值归一化到 0-100。
+     * 每个 (组织, 学期) 取 org_archive_summaries 最新快照对应指标原始值。
+     *
+     * @param schoolId   学校 ID
+     * @param semesterId 学期 ID（可选，不传按全校启用学期展开列）
+     * @param orgType    行维度：2=学院 3=专业 4=班级
+     * @param orgId      上级组织 ID（可选，返回其下各组织行）
+     * @param metric     指标：gpa/award/practice/interest/archive
+     * @param grade      年级筛选（可选）
+     * @return 热力图矩阵
+     */
+    private StatsResult<HeatmapResponse> doHeatmap(Long schoolId, Long semesterId, Integer orgType, Long orgId,
+                                                   String metric, String grade) {
         if (orgType == null || metric == null || metric.isBlank()) {
             throw new BusinessException(ResultCode.PARAM_ERROR, "orgType 与 metric 为必填参数");
         }
@@ -362,6 +384,55 @@ public class AdminStatisticsService {
                 .cacheHit(cacheHit)
                 .build();
         return new StatsResult<>(data, "MISS");
+    }
+
+    /**
+     * 教师端成果热力图（GET /teacher/statistics/heatmap，教师端文档 11.3）
+     * <p>
+     * 复用 16.3 热力图引擎（{@link #doHeatmap}），仅替换鉴权与范围策略：
+     * 管理员放行或持有 {@code statistics:view} 权限码，且 orgId 必须落在当前教师
+     * {@code role_scopes} 授权范围内（学院/专业/班级按同类型匹配，学校级授权覆盖校内全部），
+     * 越权返回 20005。orgId 为空时返回教师授权范围内全部组织行（行维度过滤）。
+     *
+     * @param userId     当前登录用户 ID
+     * @param semesterId 学期 ID（可选，不传按全校启用学期展开列）
+     * @param orgType    行维度：2=学院 3=专业 4=班级（必填）
+     * @param orgId      上级组织 ID（可选，返回其下各组织行）
+     * @param metric     指标：gpa/award/practice/archive（必填）
+     * @param grade      年级筛选（可选）
+     * @return 热力图矩阵
+     */
+    public StatsResult<HeatmapResponse> heatmapByTeacher(Long userId, Long semesterId, Integer orgType, Long orgId,
+                                                         String metric, String grade) {
+        adminAuthService.requireAdminOrPermission(userId, STATS_PERMISSION);
+        Long schoolId = adminAuthService.getOperatorSchoolId(userId);
+
+        if (orgType == null || orgType < ORG_COLLEGE || orgType > ORG_CLASS) {
+            throw new BusinessException(ResultCode.PARAM_ERROR, "orgType 仅支持 2=学院 3=专业 4=班级");
+        }
+        if (metric == null || metric.isBlank() || !TEACHER_HEATMAP_METRICS.contains(metric)) {
+            throw new BusinessException(ResultCode.PARAM_ERROR,
+                    "metric 仅支持 gpa/award/practice/archive");
+        }
+
+        // 指定 orgId：必须在教师授权范围内（学校级授权覆盖）
+        if (orgId != null) {
+            scopeValidator.ensureOrgInScope(userId, orgType, orgId, schoolId);
+            return doHeatmap(schoolId, semesterId, orgType, orgId, metric, grade);
+        }
+
+        // orgId 为空：返回教师授权范围内全部组织行；学校级授权直接返回全校行
+        StatsResult<HeatmapResponse> result = doHeatmap(schoolId, semesterId, orgType, null, metric, grade);
+        Set<Long> authorized = scopeValidator.authorizedOrgIds(userId, orgType, schoolId);
+        if (authorized == null || result.data() == null) {
+            return result;
+        }
+        List<HeatmapRow> rows = result.data().getRows() == null ? List.of()
+                : result.data().getRows().stream()
+                        .filter(r -> r.getOrgId() != null && authorized.contains(r.getOrgId()))
+                        .collect(Collectors.toList());
+        result.data().setRows(rows);
+        return result;
     }
 
     // ==================== 16.4 手动刷新统计快照 ====================
@@ -617,7 +688,7 @@ public class AdminStatisticsService {
     // ==================== JSON 解析 ====================
 
     /** 解析档案类型分布 JSON（兼容数组与对象两种存储格式） */
-    private List<StatisticsTypeCountItem> parseTypeDistribution(String json) {
+    List<StatisticsTypeCountItem> parseTypeDistribution(String json) {
         List<StatisticsTypeCountItem> out = new ArrayList<>();
         JsonNode node = readJson(json);
         if (node == null) {
@@ -673,7 +744,7 @@ public class AdminStatisticsService {
     }
 
     /** 解析画像维度平均分 JSON（快照 top_dimensions） */
-    private List<DimensionAvgScoreItem> parseTopDimensions(String json) {
+    List<DimensionAvgScoreItem> parseTopDimensions(String json) {
         List<DimensionAvgScoreItem> out = new ArrayList<>();
         JsonNode node = readJson(json);
         if (node == null) {

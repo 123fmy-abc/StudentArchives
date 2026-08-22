@@ -20,6 +20,9 @@ public interface AwardApplicationRepository extends JpaRepository<AwardApplicati
     /** 查询学生全部奖项记录（用于活动列表聚合 + Java 侧筛选） */
     List<AwardApplication> findByUserId(Long userId);
 
+    /** 批量查询多个学生的全部奖项记录（教师端统计看板审批状态计数用） */
+    List<AwardApplication> findByUserIdIn(Collection<Long> userIds);
+
     /** 软删除（通过 native query 绕过 updatable=false 限制） */
     @Modifying
     @Query(value = "UPDATE award_applications SET deleted_at = :deletedAt WHERE id = :id", nativeQuery = true)

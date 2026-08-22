@@ -22,6 +22,7 @@ import com.example.studentarchives.entity.org.College;
 import com.example.studentarchives.entity.org.Major;
 import com.example.studentarchives.entity.org.School;
 import com.example.studentarchives.entity.org.Semester;
+import com.example.studentarchives.entity.user.RoleScope;
 import com.example.studentarchives.entity.user.StudentProfile;
 import com.example.studentarchives.entity.user.User;
 import com.example.studentarchives.entity.user.UserContactInfo;
@@ -46,6 +47,7 @@ import com.example.studentarchives.repository.ExportTemplateRepository;
 import com.example.studentarchives.repository.IndicatorRuleVersionRepository;
 import com.example.studentarchives.repository.MajorRepository;
 import com.example.studentarchives.repository.PortraitEvaluationScoreRepository;
+import com.example.studentarchives.repository.RoleScopeRepository;
 import com.example.studentarchives.repository.SchoolRepository;
 import com.example.studentarchives.repository.SemesterRepository;
 import com.example.studentarchives.repository.StudentProfileRepository;
@@ -142,6 +144,9 @@ public class AdminExportService {
     /** 一键导出学生档案权限码（《管理端接口文档》关键权限码） */
     private static final String PERMISSION_ARCHIVE_EXPORT = "archive:export";
 
+    /** 教师端数据导出权限码（《教师端接口文档》关键权限码，对应 /teacher/exports/*） */
+    private static final String PERMISSION_EXPORT_EXECUTE = "export:execute";
+
     /** 导出类型：一键导出学生档案（管理端） */
     private static final String EXPORT_TYPE_ARCHIVE = "student_archive";
 
@@ -163,6 +168,7 @@ public class AdminExportService {
             DateTimeFormatter.ofPattern("yyyyMMdd");
 
     private final AdminAuthService adminAuthService;
+    private final RoleScopeRepository roleScopeRepository;
     private final ExportJobRepository exportJobRepository;
     private final ExportOperationLogRepository exportOperationLogRepository;
     private final AnonymizationMapRepository anonymizationMapRepository;
@@ -283,10 +289,35 @@ public class AdminExportService {
      */
     public ArchiveExportResponse submitArchiveExport(Long userId, ArchiveExportRequest request) {
         adminAuthService.requireAdminOrPermission(userId, PERMISSION_ARCHIVE_EXPORT);
-
-        User operator = userRepository.findById(userId)
-                .orElseThrow(() -> new BusinessException(ResultCode.DATA_NOT_EXIST, "用户不存在"));
         Long schoolId = adminAuthService.getOperatorSchoolId(userId);
+        return doSubmitArchiveExport(userId, schoolId, request);
+    }
+
+    /**
+     * 教师端一键导出学生档案（POST /teacher/exports，教师端文档 12.2）
+     * <p>
+     * 复用 5.11 一键导出学生档案引擎（{@link #doSubmitArchiveExport}），仅替换鉴权策略：
+     * 管理员放行或持有 {@code export:execute} 权限码（{@code AdminAuthService#requireAdminOrPermission} 语义），
+     * 且请求范围（scopeType/scopeId）必须落在当前教师 {@code role_scopes} 授权范围内，越权返回 20005 无访问权限。
+     *
+     * @param userId  当前登录用户 ID
+     * @param request 导出请求（契约同管理端 5.11 {@link ArchiveExportRequest}）
+     * @return 任务 ID、导出类型与初始状态（status=0 待处理，预计耗时 60s）
+     */
+    public ArchiveExportResponse submitArchiveExportByTeacher(Long userId, ArchiveExportRequest request) {
+        adminAuthService.requireAdminOrPermission(userId, PERMISSION_EXPORT_EXECUTE);
+        Long schoolId = adminAuthService.getOperatorSchoolId(userId);
+        validateTeacherExportScope(userId, request.getScopeType(), request.getScopeId(), schoolId);
+        return doSubmitArchiveExport(userId, schoolId, request);
+    }
+
+    /**
+     * 一键导出学生档案核心逻辑（鉴权完成后共用的提交流程）。
+     * <p>
+     * 校验导出参数（范围、fileType、purpose、学期归属、栏目）→ 解析 PDF 模板 → 创建
+     * export_jobs 任务 → 提交异步执行 → 立即返回任务 ID。学校存在性在校验内完成。
+     */
+    private ArchiveExportResponse doSubmitArchiveExport(Long userId, Long schoolId, ArchiveExportRequest request) {
         schoolRepository.findById(schoolId)
                 .orElseThrow(() -> new BusinessException(ResultCode.DATA_NOT_EXIST, "学校不存在"));
 
@@ -327,6 +358,65 @@ public class AdminExportService {
                 .statusLabel("待处理")
                 .estimatedSeconds(60L)
                 .build();
+    }
+
+    /**
+     * 校验教师端导出的请求范围在教师 {@code role_scopes} 授权范围内，越权返回 20005 无访问权限。
+     * <p>
+     * 范围匹配口径复用 {@code CommonService#canAccessFile}：仅启用状态 + 生效期内
+     * （valid_from/valid_until）的 role_scopes。规则：
+     * <ul>
+     *   <li>学校级授权（scopeType=1，scopeId=学校）：覆盖校内全部范围；</li>
+     *   <li>学院(2)/专业(3)/班级(4)：按同类型 scopeId 严格匹配；</li>
+     *   <li>年级(6)：粗粒度校验——持有生效中的年级级授权即放行（与系统既有年级范围处理口径一致）。</li>
+     * </ul>
+     * 学期维度（semester_id）不在导出范围校验中强制匹配——导出是跨学期聚合操作，
+     * 学期作为筛选条件而非授权维度。
+     */
+    private void validateTeacherExportScope(Long userId, Integer scopeType, Long scopeId, Long schoolId) {
+        List<RoleScope> scopes = roleScopeRepository.findByUserIdAndStatus(userId, 1);
+        LocalDate today = LocalDate.now();
+        for (RoleScope scope : scopes) {
+            if (scope.getScopeType() == null || scope.getScopeId() == null) {
+                continue;
+            }
+            if (!isScopeInEffect(scope, today)) {
+                continue;
+            }
+            // 学校级授权：scopeId 匹配学校即覆盖校内全部范围
+            if (Objects.equals(scope.getScopeType(), SCOPE_SCHOOL)
+                    && Objects.equals(scope.getScopeId(), schoolId)) {
+                return;
+            }
+            // 学院/专业/班级：按同类型 scopeId 严格匹配
+            if ((Objects.equals(scope.getScopeType(), SCOPE_COLLEGE)
+                    || Objects.equals(scope.getScopeType(), SCOPE_MAJOR)
+                    || Objects.equals(scope.getScopeType(), SCOPE_CLASS))
+                    && Objects.equals(scope.getScopeType(), scopeType)
+                    && Objects.equals(scope.getScopeId(), scopeId)) {
+                return;
+            }
+        }
+        // 年级（6）：粗粒度校验（存在生效中的年级级授权即放行）
+        if (Objects.equals(scopeType, SCOPE_GRADE)) {
+            boolean hasGradeScope = scopes.stream().anyMatch(s ->
+                    Objects.equals(s.getScopeType(), SCOPE_GRADE) && isScopeInEffect(s, today));
+            if (hasGradeScope) {
+                return;
+            }
+        }
+        throw new BusinessException(ResultCode.ACCESS_DENIED, "无访问权限");
+    }
+
+    /** 授权生效期校验：valid_from/valid_until 未设置视为永久有效 */
+    private boolean isScopeInEffect(RoleScope scope, LocalDate today) {
+        if (scope.getValidFrom() != null && today.isBefore(scope.getValidFrom())) {
+            return false;
+        }
+        if (scope.getValidUntil() != null && today.isAfter(scope.getValidUntil())) {
+            return false;
+        }
+        return true;
     }
 
     /**
@@ -1546,7 +1636,13 @@ public class AdminExportService {
      * 文件访问权限与 7 天下载有效期（download_expire_at 与任务过期对齐），并在
      * {@code bizType=research_export} 时补写 export_operation_logs(action=2) 下载审计。
      */
-    private String buildDownloadUrl(Long fileId) {
+    /**
+     * 生成导出文件的后端下载地址（绝对 URL，基于当前请求的上下文路径）。
+     * <p>
+     * 指向通用文件下载端点 {@code GET /common/files/{fileId}/download}；包可见，
+     * 供同包 {@link TeacherExportService}（教师端 12.3 任务列表）复用。
+     */
+    String buildDownloadUrl(Long fileId) {
         return ServletUriComponentsBuilder.fromCurrentContextPath()
                 .path("/common/files/{fileId}/download")
                 .buildAndExpand(fileId)

@@ -21,6 +21,9 @@ import com.example.studentarchives.entity.file.AttachmentRelation;
 import com.example.studentarchives.entity.foundation.AbilityDimension;
 import com.example.studentarchives.entity.foundation.EvaluationIndicator;
 import com.example.studentarchives.entity.foundation.IndicatorRuleVersion;
+import com.example.studentarchives.entity.career.CareerAction;
+import com.example.studentarchives.entity.career.CareerGoal;
+import com.example.studentarchives.entity.career.CareerMilestone;
 import com.example.studentarchives.entity.org.Clazz;
 import com.example.studentarchives.entity.org.Major;
 import com.example.studentarchives.entity.user.Role;
@@ -30,7 +33,13 @@ import com.example.studentarchives.entity.user.User;
 import com.example.studentarchives.entity.user.UserContactInfo;
 import com.example.studentarchives.entity.user.UserRole;
 import com.example.studentarchives.exception.BusinessException;
+import com.example.studentarchives.repository.ArchiveRepository;
 import com.example.studentarchives.repository.ArchiveTypeConfigRepository;
+import com.example.studentarchives.repository.AwardApplicationRepository;
+import com.example.studentarchives.repository.CareerActionRepository;
+import com.example.studentarchives.repository.CareerGoalRepository;
+import com.example.studentarchives.repository.CareerMilestoneRepository;
+import com.example.studentarchives.repository.CareerPlanRepository;
 import com.example.studentarchives.repository.AttachmentLimitRepository;
 import com.example.studentarchives.repository.AttachmentRelationRepository;
 import com.example.studentarchives.repository.ClazzRepository;
@@ -57,6 +66,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.Arrays;
 import java.util.Collections;
@@ -90,6 +100,12 @@ public class CommonService {
     private final AttachmentLimitRepository attachmentLimitRepository;
     private final UserContactInfoRepository userContactInfoRepository;
     private final ArchiveTypeConfigRepository archiveTypeConfigRepository;
+    private final ArchiveRepository archiveRepository;
+    private final AwardApplicationRepository awardApplicationRepository;
+    private final CareerActionRepository careerActionRepository;
+    private final CareerGoalRepository careerGoalRepository;
+    private final CareerMilestoneRepository careerMilestoneRepository;
+    private final CareerPlanRepository careerPlanRepository;
     private final AbilityDimensionRepository abilityDimensionRepository;
     private final RoleRepository roleRepository;
     private final UserRoleRepository userRoleRepository;
@@ -250,7 +266,7 @@ public class CommonService {
                 .orElseThrow(() -> new BusinessException(ResultCode.DATA_NOT_EXIST, "文件不存在"));
 
         // 权限校验：文件所有者、管理员、或其授权范围覆盖该学生的教师可预览
-        if (!canAccessFile(userId, relation.getUserId())) {
+        if (!canAccessFile(userId, relation)) {
             throw new BusinessException(ResultCode.ACCESS_DENIED, "无访问权限");
         }
 
@@ -287,7 +303,7 @@ public class CommonService {
                 .orElseThrow(() -> new BusinessException(ResultCode.DATA_NOT_EXIST, "文件不存在"));
 
         // 权限校验：文件所有者、管理员、或其授权范围覆盖该学生的教师可下载
-        if (!canAccessFile(userId, relation.getUserId())) {
+        if (!canAccessFile(userId, relation)) {
             throw new BusinessException(ResultCode.ACCESS_DENIED, "无访问权限");
         }
 
@@ -688,36 +704,56 @@ public class CommonService {
      * 判断当前用户是否有权访问附件
      * <p>
      * 权限规则（满足任一即可）：
-     * 1. 当前用户是附件所有者（学生本人）；
+     * 1. 当前用户是附件上传者本人；
      * 2. 当前用户是管理员（admin 角色）；
-     * 3. 当前用户是教师/辅导员等，且其 {@code role_scopes} 授权范围覆盖附件所有者：
-     *    学校(1)/学院(2)/专业(3)/班级(4) 范围与所有者的组织归属逐级匹配。
+     * 3. 附件归属学生（业务记录属主，兜底上传者）为当前用户本人；
+     * 4. 当前用户是教师/辅导员等，且其 {@code role_scopes} 授权范围覆盖归属学生：
+     *    学校(1)/学院(2)/专业(3)/班级(4) 范围与学生的组织归属逐级匹配，
+     *    且范围在生效期内（valid_from/valid_until）且学期维度（semester_id）一致。
      *    课程(5)/年级(6) 等范围暂无可直接映射的组织归属，不据此放行。
+     * <p>
+     * 归属学生解析（见 {@link #resolveFileOwner}）：优先按附件绑定的业务记录
+     * （archive/award/career_plan 及行动/里程碑链）解析属主学生与记录学期；
+     * 未绑定记录或记录无学生属主（如管理端批量导出）时，上传者为学生本人则以上传者
+     * 为属主，否则视为非学生个人数据——仅上传者本人与管理员可访问。
      *
      * @param operatorId 当前操作者用户 ID
-     * @param ownerId    附件所有者用户 ID（学生）
+     * @param relation   附件关系记录
      * @return 有权访问返回 true
      */
-    private boolean canAccessFile(Long operatorId, Long ownerId) {
-        // 1. 附件所有者（学生本人）
-        if (Objects.equals(operatorId, ownerId)) {
+    private boolean canAccessFile(Long operatorId, AttachmentRelation relation) {
+        Long uploaderId = relation.getUserId();
+        // 1. 上传者本人
+        if (Objects.equals(operatorId, uploaderId)) {
             return true;
         }
         // 2. 管理员
         if (isAdmin(operatorId)) {
             return true;
         }
-        if (operatorId == null || ownerId == null) {
+        if (operatorId == null || uploaderId == null) {
             return false;
         }
 
-        // 解析附件所有者的组织归属：users.school_id → student_profiles.class_id
-        // → classes.major_id → majors.college_id（school_id 取 users 表即可）
-        User owner = userRepository.findById(ownerId).orElse(null);
-        if (owner == null) {
+        // 3. 解析附件归属学生（业务记录属主优先，兜底上传者；非学生数据返回 null）
+        FileOwnerContext owner = resolveFileOwner(relation);
+        if (owner == null || owner.studentId() == null) {
+            // 非学生个人数据（如管理端批量导出）：仅上传者本人与管理员可访问
             return false;
         }
-        Long schoolId = owner.getSchoolId();
+        Long ownerId = owner.studentId();
+        // 4. 归属学生本人（含教师/辅导员代传后学生查看自身数据）
+        if (Objects.equals(operatorId, ownerId)) {
+            return true;
+        }
+
+        // 5. 解析归属学生的组织归属：users.school_id → student_profiles.class_id
+        //    → classes.major_id → majors.college_id（school_id 取 users 表即可）
+        User ownerUser = userRepository.findById(ownerId).orElse(null);
+        if (ownerUser == null) {
+            return false;
+        }
+        Long schoolId = ownerUser.getSchoolId();
         Long classId = null;
         Long majorId = null;
         Long collegeId = null;
@@ -734,9 +770,16 @@ public class CommonService {
             }
         }
 
-        // 3. 授权范围匹配（仅启用状态的 role_scopes）
+        // 6. 授权范围匹配：仅启用状态 + 生效期内 + 学期维度一致的 role_scopes
+        LocalDate today = LocalDate.now();
         List<RoleScope> scopes = roleScopeRepository.findByUserIdAndStatus(operatorId, 1);
         for (RoleScope scope : scopes) {
+            if (!isScopeInEffect(scope, today)) {
+                continue;
+            }
+            if (!isScopeSemesterMatched(scope, owner.semesterId())) {
+                continue;
+            }
             Long scopeId = scope.getScopeId();
             Integer scopeType = scope.getScopeType();
             if (scopeId == null || scopeType == null) {
@@ -760,6 +803,108 @@ public class CommonService {
             }
         }
         return false;
+    }
+
+    /** 附件归属学生上下文：数据所有者学生 + 所属记录学期（用于教师范围学期维度匹配） */
+    private record FileOwnerContext(Long studentId, Long semesterId) {}
+
+    /**
+     * 解析附件归属学生：优先按业务记录（biz_type+biz_id）解析属主学生与记录学期；
+     * 未绑定记录或记录无学生属主（如管理端批量导出）时，上传者为学生本人则以上传者
+     * 为属主，否则返回 null（非学生个人数据，不适用教师范围放行）。
+     */
+    private FileOwnerContext resolveFileOwner(AttachmentRelation relation) {
+        String bizType = relation.getBizType();
+        Long bizId = relation.getBizId();
+        if (bizType != null && bizId != null) {
+            FileOwnerContext recordOwner = resolveRecordOwner(bizType, bizId);
+            if (recordOwner != null) {
+                return recordOwner;
+            }
+        }
+        // 兜底：上传者本人（仅当其为学生）
+        Long uploaderId = relation.getUserId();
+        if (uploaderId != null && studentProfileRepository.findByUserId(uploaderId).isPresent()) {
+            return new FileOwnerContext(uploaderId, null);
+        }
+        return null;
+    }
+
+    /**
+     * 按业务记录解析归属学生与学期（archive/award/career_plan 及其行动/里程碑链）。
+     * 返回 null 表示该业务类型无学生属主（如管理端导出、公告等）。
+     */
+    private FileOwnerContext resolveRecordOwner(String bizType, Long bizId) {
+        switch (bizType) {
+            case "archive" -> {
+                return archiveRepository.findById(bizId)
+                        .map(a -> new FileOwnerContext(a.getUserId(), a.getSemesterId()))
+                        .orElse(null);
+            }
+            case "award" -> {
+                return awardApplicationRepository.findById(bizId)
+                        .map(a -> new FileOwnerContext(a.getUserId(), a.getSemesterId()))
+                        .orElse(null);
+            }
+            case "career_plan", "career_plan_export", "career_plan_export_external" -> {
+                return careerPlanRepository.findById(bizId)
+                        .map(p -> new FileOwnerContext(p.getUserId(), p.getSemesterId()))
+                        .orElse(null);
+            }
+            case "career_action" -> {
+                return resolveCareerActionOwner(bizId);
+            }
+            case "career_milestone" -> {
+                return resolveCareerMilestoneOwner(bizId);
+            }
+            default -> {
+                return null;
+            }
+        }
+    }
+
+    /** 职业规划行动归属：action → goal → plan，解析属主学生与学期 */
+    private FileOwnerContext resolveCareerActionOwner(Long actionId) {
+        CareerAction action = careerActionRepository.findById(actionId).orElse(null);
+        if (action == null || action.getGoalId() == null) {
+            return null;
+        }
+        CareerGoal goal = careerGoalRepository.findById(action.getGoalId()).orElse(null);
+        if (goal == null || goal.getCareerPlanId() == null) {
+            return null;
+        }
+        return careerPlanRepository.findById(goal.getCareerPlanId())
+                .map(p -> new FileOwnerContext(p.getUserId(), p.getSemesterId()))
+                .orElse(null);
+    }
+
+    /** 职业规划里程碑归属：milestone → action → goal → plan，解析属主学生与学期 */
+    private FileOwnerContext resolveCareerMilestoneOwner(Long milestoneId) {
+        CareerMilestone milestone = careerMilestoneRepository.findById(milestoneId).orElse(null);
+        if (milestone == null || milestone.getActionId() == null) {
+            return null;
+        }
+        return resolveCareerActionOwner(milestone.getActionId());
+    }
+
+    /** 授权生效期校验：valid_from/valid_until 未设置视为永久有效 */
+    private boolean isScopeInEffect(RoleScope scope, LocalDate today) {
+        if (scope.getValidFrom() != null && today.isBefore(scope.getValidFrom())) {
+            return false;
+        }
+        if (scope.getValidUntil() != null && today.isAfter(scope.getValidUntil())) {
+            return false;
+        }
+        return true;
+    }
+
+    /** 学期维度校验：范围未限定学期，或与附件归属记录学期一致 */
+    private boolean isScopeSemesterMatched(RoleScope scope, Long recordSemesterId) {
+        Long scopeSemesterId = scope.getSemesterId();
+        if (scopeSemesterId == null) {
+            return true;
+        }
+        return scopeSemesterId.equals(recordSemesterId);
     }
 
     /**

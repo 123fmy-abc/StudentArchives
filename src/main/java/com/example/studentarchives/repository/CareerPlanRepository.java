@@ -8,6 +8,7 @@ import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import java.time.LocalDateTime;
@@ -23,6 +24,9 @@ public interface CareerPlanRepository extends JpaRepository<CareerPlan, Long> {
 
     /** 查询用户全部规划（导出等场景使用） */
     List<CareerPlan> findByUserId(Long userId);
+
+    /** 批量查询多个学生的全部规划（教师端统计看板审批状态计数用） */
+    List<CareerPlan> findByUserIdIn(Collection<Long> userIds);
 
     /** 分页查询用户全部规划（按创建时间倒序） */
     List<CareerPlan> findByUserId(Long userId, Pageable pageable);
