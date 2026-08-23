@@ -131,6 +131,15 @@ public class ProfileInfoResponse {
         private String phone;
 
         private String avatar;
+
+        private String address;
+
+        private String emergencyName;
+
+        private String emergencyRelation;
+
+        @Sensitive(SensitiveType.PHONE)
+        private String emergencyPhone;
     }
 
     /**

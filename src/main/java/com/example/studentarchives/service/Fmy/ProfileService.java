@@ -227,6 +227,10 @@ public class ProfileService {
                         .email(c.getEmail())
                         .phone(c.getPhone())
                         .avatar(c.getAvatar())
+                        .address(c.getAddress())
+                        .emergencyName(c.getEmergencyName())
+                        .emergencyRelation(c.getEmergencyRelation())
+                        .emergencyPhone(c.getEmergencyPhone())
                         .build())
                 .orElse(null);
 
@@ -291,8 +295,8 @@ public class ProfileService {
      * 更新个人联系信息（PUT /profile/contact）
      * <p>
      * 数据写入 user_contact_infos（唯一可写来源），users 表不再作为修改入口。
-     * 全量更新语义：请求体三字段均必填（@NotNull 校验，缺失返回 PARAM_ERROR），
-     * 空字符串表示清空对应字段。
+     * 全量更新语义：请求体六字段均必填（@NotNull 校验，缺失返回 PARAM_ERROR），
+     * 空字符串表示清空对应字段。学生/教师/管理员共用（按 user_id 区分，无角色特有逻辑）。
      *
      * @param userId  当前登录用户 ID
      * @param request 联系信息更新请求
@@ -306,6 +310,9 @@ public class ProfileService {
         contact.setEmail(request.getEmail());
         contact.setPhone(request.getPhone());
         contact.setAddress(request.getAddress());
+        contact.setEmergencyName(request.getEmergencyName());
+        contact.setEmergencyRelation(request.getEmergencyRelation());
+        contact.setEmergencyPhone(request.getEmergencyPhone());
         contact.setUpdatedBy(userId);
         userContactInfoRepository.save(contact);
 
@@ -313,6 +320,10 @@ public class ProfileService {
                 .email(contact.getEmail())
                 .phone(contact.getPhone())
                 .avatar(contact.getAvatar())
+                .address(contact.getAddress())
+                .emergencyName(contact.getEmergencyName())
+                .emergencyRelation(contact.getEmergencyRelation())
+                .emergencyPhone(contact.getEmergencyPhone())
                 .build();
     }
 
