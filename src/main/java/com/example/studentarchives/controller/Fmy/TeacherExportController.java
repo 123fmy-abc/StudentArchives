@@ -23,8 +23,6 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
-import java.util.List;
-
 /**
  * 教师端数据导出控制器
  * <p>
@@ -51,13 +49,25 @@ public class TeacherExportController {
 
     /**
      * 获取可导出模板列表（GET /teacher/exports/templates，文档 12.1）
+     * <p>
+     * 查询当前登录用户所属学校的启用模板（status=1），按更新时间倒序分页返回；
+     * 复用 {@code export_templates} 表，仅映射教师导出可用的精简字段。
      *
-     * @param userId 当前登录用户 ID
-     * @return 可导出模板列表
+     * @param userId  当前登录用户 ID
+     * @param page    页码，默认 1
+     * @param perPage 每页条数，默认 20，最大 100
+     * @return 分页的可导出模板列表
      */
     @GetMapping("/templates")
-    public ApiResult<List<TeacherExportTemplateResponse>> listTemplates(@AuthenticationPrincipal Long userId) {
-        return ApiResult.success(teacherExportService.listTemplates(userId));
+    public ApiResult<PageResult<TeacherExportTemplateResponse>> listTemplates(
+            @AuthenticationPrincipal Long userId,
+            @RequestParam(value = "page", required = false, defaultValue = "1") int page,
+            @RequestParam(value = "per_page", required = false, defaultValue = "20") int perPage) {
+        PageParam pageParam = PageParam.builder()
+                .page(Math.max(page, 1))
+                .perPage(Math.min(Math.max(perPage, 1), 100))
+                .build();
+        return ApiResult.success(teacherExportService.listTemplates(userId, pageParam));
     }
 
     // ==================== 12.2 提交导出任务 ====================

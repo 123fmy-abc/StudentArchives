@@ -4,6 +4,7 @@ import com.example.studentarchives.common.ApiResult;
 import com.example.studentarchives.dto.Fmy.profile.response.CareerPlanDetailResponse;
 import com.example.studentarchives.dto.Fmy.profile.response.GrowthTimelineResponse;
 import com.example.studentarchives.dto.Fmy.profile.response.TeacherStudentProfileResponse;
+import com.example.studentarchives.dto.Fmy.profile.response.TeacherWeaknessItemResponse;
 import com.example.studentarchives.service.Fmy.TeacherStudentService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -13,6 +14,8 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+
+import java.util.List;
 
 /**
  * 教师端学生管理控制器
@@ -83,5 +86,19 @@ public class TeacherStudentController {
             @PathVariable Long studentId,
             @PathVariable Long planId) {
         return ApiResult.success(teacherStudentService.getCareerPlanDetail(userId, studentId, planId));
+    }
+
+    /**
+     * 获取学生短板分析列表（GET /teacher/students/{studentId}/weaknesses）
+     *
+     * @param userId    当前登录用户 ID（由 JWT 过滤器注入）
+     * @param studentId 目标学生用户 ID
+     * @return 短板分析列表（文档 12.6.1）
+     */
+    @GetMapping("/{studentId:[0-9]+}/weaknesses")
+    public ApiResult<List<TeacherWeaknessItemResponse>> getWeaknesses(
+            @AuthenticationPrincipal Long userId,
+            @PathVariable Long studentId) {
+        return ApiResult.success(teacherStudentService.getWeaknesses(userId, studentId));
     }
 }

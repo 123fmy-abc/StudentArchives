@@ -83,17 +83,18 @@ public class TeacherExportService {
     /**
      * 获取可导出模板列表（GET /teacher/exports/templates，教师端文档 12.1）。
      * <p>
-     * 返回当前登录用户所属学校的全部启用模板（status=1），按更新时间倒序；
+     * 返回当前登录用户所属学校的全部启用模板（status=1），按更新时间倒序分页；
      * 复用 {@code export_templates} 数据，仅映射教师导出可用的精简字段。
      *
-     * @param userId 当前登录用户 ID
-     * @return 可导出模板列表
+     * @param userId    当前登录用户 ID
+     * @param pageParam 分页参数
+     * @return 分页的可导出模板列表
      */
     @Transactional(readOnly = true)
-    public List<TeacherExportTemplateResponse> listTemplates(Long userId) {
+    public PageResult<TeacherExportTemplateResponse> listTemplates(Long userId, PageParam pageParam) {
         adminAuthService.requireAdminOrPermission(userId, PERMISSION_EXPORT_EXECUTE);
         Long schoolId = adminAuthService.getOperatorSchoolId(userId);
-        return exportTemplateRepository.findAll().stream()
+        List<ExportTemplate> all = exportTemplateRepository.findAll().stream()
                 .filter(t -> Objects.equals(t.getSchoolId(), schoolId))
                 .filter(t -> Objects.equals(t.getStatus(), 1))
                 .sorted((a, b) -> {
@@ -102,8 +103,18 @@ public class TeacherExportService {
                     if (b.getUpdatedAt() == null) return -1;
                     return b.getUpdatedAt().compareTo(a.getUpdatedAt());
                 })
+                .collect(Collectors.toList());
+
+        long total = all.size();
+        int offset = pageParam.getOffset();
+        List<ExportTemplate> pageItems = offset >= all.size()
+                ? List.of()
+                : all.subList(offset, Math.min(offset + pageParam.getPerPage(), all.size()));
+
+        List<TeacherExportTemplateResponse> list = pageItems.stream()
                 .map(this::toTemplateResponse)
                 .collect(Collectors.toList());
+        return PageResult.of(list, total, pageParam);
     }
 
     // ==================== 12.2 提交导出任务 ====================

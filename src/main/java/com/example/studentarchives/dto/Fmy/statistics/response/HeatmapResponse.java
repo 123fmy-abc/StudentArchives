@@ -22,6 +22,9 @@ public class HeatmapResponse {
     /** 指标：gpa / award / practice / interest / archive */
     private String metric;
 
+    /** 年级（如 {@code 2024级}；grade 未传时由服务端推导回显，未推导为 null） */
+    private String grade;
+
     /** 学期列 */
     private List<HeatmapSemesterItem> semesters;
 
