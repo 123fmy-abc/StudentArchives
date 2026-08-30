@@ -20,6 +20,7 @@ import com.example.studentarchives.entity.org.College;
 import com.example.studentarchives.entity.org.Major;
 import com.example.studentarchives.entity.org.School;
 import com.example.studentarchives.entity.org.Semester;
+import com.example.studentarchives.entity.user.RoleScope;
 import com.example.studentarchives.entity.user.StudentProfile;
 import com.example.studentarchives.entity.user.UserInterest;
 import com.example.studentarchives.exception.BusinessException;
@@ -328,13 +329,14 @@ public class AdminStatisticsService {
         List<Long> semesterIds = semesters.stream().map(HeatmapSemesterItem::getSemesterId).toList();
         if (semesterIds.isEmpty()) {
             HeatmapResponse empty = HeatmapResponse.builder()
-                    .metric(metric).semesters(List.of()).rows(List.of())
+                    .metric(metric).grade(grade).semesters(List.of()).rows(List.of())
                     .maxValue(0).minValue(0).cacheHit(false).build();
             return new StatsResult<>(empty, "MISS");
         }
 
         String cacheKey = "heatmap:" + schoolId + ":" + orgType + ":" + (orgId == null ? 0 : orgId)
-                + ":" + (semesterId == null ? "latest" : semesterId) + ":" + metric;
+                + ":" + (semesterId == null ? "latest" : semesterId) + ":" + metric
+                + ":" + (grade == null ? "" : grade);
         Optional<StatsResult<HeatmapResponse>> cached = readCache(cacheKey, schoolId, HeatmapResponse.class);
         if (cached.isPresent()) {
             return cached.get();
@@ -377,6 +379,7 @@ public class AdminStatisticsService {
 
         HeatmapResponse data = HeatmapResponse.builder()
                 .metric(metric)
+                .grade(grade)
                 .semesters(semesters)
                 .rows(rows)
                 .maxValue(maxRaw)
@@ -390,27 +393,40 @@ public class AdminStatisticsService {
      * 教师端成果热力图（GET /teacher/statistics/heatmap，教师端文档 11.3）
      * <p>
      * 复用 16.3 热力图引擎（{@link #doHeatmap}），仅替换鉴权与范围策略：
-     * 管理员放行或持有 {@code statistics:view} 权限码，且 orgId 必须落在当前教师
-     * {@code role_scopes} 授权范围内（学院/专业/班级按同类型匹配，学校级授权覆盖校内全部），
-     * 越权返回 20005。orgId 为空时返回教师授权范围内全部组织行（行维度过滤）。
+     * 教师登录即可，orgId 必须落在当前教师 {@code role_scopes} 授权范围内
+     * （学院/专业/班级按同类型匹配，学校级授权覆盖校内全部，admin 由
+     * {@link TeacherScopeValidator} 放行），越权返回 20005。
+     * orgId 为空时返回教师授权范围内全部组织行（行维度过滤）。
      *
      * @param userId     当前登录用户 ID
      * @param semesterId 学期 ID（可选，不传按全校启用学期展开列）
-     * @param orgType    行维度：2=学院 3=专业 4=班级（必填）
-     * @param orgId      上级组织 ID（可选，返回其下各组织行）
-     * @param metric     指标：gpa/award/practice/archive（必填）
-     * @param grade      年级筛选（可选）
+     * @param orgType    行维度：2=学院 3=专业 4=班级（不传默认班级维度）
+     * @param orgId      上级组织 ID（可选，返回其下各组织行；不传返回授权范围内全部组织行）
+     * @param metric     指标：gpa/award/practice/archive（不传默认 award）
+     * @param grade      年级筛选（可选，不传取教师主职授权范围内主要年级）
      * @return 热力图矩阵
      */
     public StatsResult<HeatmapResponse> heatmapByTeacher(Long userId, Long semesterId, Integer orgType, Long orgId,
                                                          String metric, String grade) {
-        adminAuthService.requireAdminOrPermission(userId, STATS_PERMISSION);
+        // 教师端统计不校验管理端权限码：登录即可，数据范围由 ensureOrgInScope / authorizedOrgIds 按 role_scopes 兜底
         Long schoolId = adminAuthService.getOperatorSchoolId(userId);
 
-        if (orgType == null || orgType < ORG_COLLEGE || orgType > ORG_CLASS) {
+        // 参数默认值（《教师端接口文档》11.3/12.5.4）：metric 不传默认 award，orgType 不传默认班级维度，
+        // grade 不传取教师主职授权范围内主要年级
+        if (metric == null || metric.isBlank()) {
+            metric = "award";
+        }
+        if (orgType == null) {
+            orgType = ORG_CLASS;
+        }
+        if (grade == null || grade.isBlank()) {
+            grade = resolvePrimaryGrade(userId, schoolId);
+        }
+
+        if (orgType < ORG_COLLEGE || orgType > ORG_CLASS) {
             throw new BusinessException(ResultCode.PARAM_ERROR, "orgType 仅支持 2=学院 3=专业 4=班级");
         }
-        if (metric == null || metric.isBlank() || !TEACHER_HEATMAP_METRICS.contains(metric)) {
+        if (!TEACHER_HEATMAP_METRICS.contains(metric)) {
             throw new BusinessException(ResultCode.PARAM_ERROR,
                     "metric 仅支持 gpa/award/practice/archive");
         }
@@ -433,6 +449,77 @@ public class AdminStatisticsService {
                         .collect(Collectors.toList());
         result.data().setRows(rows);
         return result;
+    }
+
+    // ==================== 教师端默认年级推导 ====================
+
+    /**
+     * 教师主职授权范围内主要年级（《教师端接口文档》11.3/12.5.4：grade 不传时的默认值）。
+     * <p>
+     * 取主职授权（is_primary=1，否则首个生效授权）推导：
+     * 班级(4) → 该班 grade；年级(6) → scopeId + "级"；
+     * 专业(3)/学院(2)/学校(1) → 其下班级数量最多的年级，并列取年级较大者。
+     * 无生效授权或无法推导返回 {@code null}（不按年级筛选）。
+     */
+    private String resolvePrimaryGrade(Long userId, Long schoolId) {
+        List<RoleScope> scopes = scopeValidator.effectiveScopes(userId);
+        if (scopes.isEmpty()) {
+            return null;
+        }
+        RoleScope primary = scopes.stream()
+                .filter(s -> s.getScopeType() != null && Objects.equals(s.getIsPrimary(), 1))
+                .findFirst()
+                .orElseGet(() -> scopes.stream().filter(s -> s.getScopeType() != null).findFirst().orElse(null));
+        if (primary == null || primary.getScopeType() == null || primary.getScopeId() == null) {
+            return null;
+        }
+        switch (primary.getScopeType()) {
+            case ORG_GRADE:
+                return primary.getScopeId() + "级";
+            case ORG_CLASS:
+                return clazzRepository.findById(primary.getScopeId()).map(Clazz::getGrade).orElse(null);
+            case ORG_MAJOR:
+                return dominantGrade(clazzRepository.findByMajorId(primary.getScopeId()));
+            case ORG_COLLEGE:
+                return dominantGrade(classesOfMajors(majorRepository.findByCollegeIdIn(Set.of(primary.getScopeId()))));
+            case ORG_SCHOOL:
+                return dominantGrade(classesOfSchool(schoolId));
+            default:
+                return null;
+        }
+    }
+
+    /** 专业列表 → 其下班级列表 */
+    private List<Clazz> classesOfMajors(List<Major> majors) {
+        List<Long> majorIds = majors.stream().map(Major::getId).toList();
+        return majorIds.isEmpty() ? List.of() : clazzRepository.findByMajorIdIn(majorIds);
+    }
+
+    /** 学校全部班级 */
+    private List<Clazz> classesOfSchool(Long schoolId) {
+        List<Long> collegeIds = adminCollegeRepository.findBySchoolId(schoolId).stream()
+                .map(College::getId).toList();
+        List<Long> majorIds = collegeIds.isEmpty() ? List.of()
+                : majorRepository.findByCollegeIdIn(collegeIds).stream().map(Major::getId).toList();
+        return majorIds.isEmpty() ? List.of() : clazzRepository.findByMajorIdIn(majorIds);
+    }
+
+    /** 班级列表中数量最多的年级；并列取年级较大者（按 "N级" 数字比较） */
+    private String dominantGrade(List<Clazz> classes) {
+        Map<String, Long> byGrade = classes.stream()
+                .filter(c -> c.getGrade() != null && !c.getGrade().isBlank())
+                .collect(Collectors.groupingBy(Clazz::getGrade, Collectors.counting()));
+        return byGrade.entrySet().stream()
+                .max(Comparator.<Map.Entry<String, Long>>comparingLong(e -> e.getValue())
+                        .thenComparingLong(e -> gradeNumber(e.getKey())))
+                .map(Map.Entry::getKey)
+                .orElse(null);
+    }
+
+    /** 年级字符串转数字用于比较（"2024级" → 2024；无法解析返回 0） */
+    private long gradeNumber(String grade) {
+        String digits = grade.replaceAll("[^0-9]", "");
+        return digits.isEmpty() ? 0L : Long.parseLong(digits);
     }
 
     // ==================== 16.4 手动刷新统计快照 ====================

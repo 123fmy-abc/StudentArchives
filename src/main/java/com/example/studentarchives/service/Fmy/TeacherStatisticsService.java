@@ -2,6 +2,7 @@ package com.example.studentarchives.service.Fmy;
 
 import com.example.studentarchives.common.ResultCode;
 import com.example.studentarchives.dto.Fmy.statistics.response.HeatmapResponse;
+import com.example.studentarchives.dto.Fmy.statistics.response.SnapshotRefreshResponse;
 import com.example.studentarchives.dto.Fmy.statistics.response.TeacherDashboardResponse;
 import com.example.studentarchives.entity.archive.Archive;
 import com.example.studentarchives.entity.award.AwardApplication;
@@ -48,15 +49,13 @@ import java.util.stream.Collectors;
  *   <li>11.3 成果热力图：复用 {@link AdminStatisticsService#heatmapByTeacher}（管理端 16.3 引擎，
  *       教师侧限定组织行与指标子集）。</li>
  * </ul>
- * 权限码 {@code statistics:view}，越权返回 20005 无访问权限。
+ * 教师登录即可访问，数据范围按 {@code role_scopes} 授权校验（学校/学院/专业/班级/年级
+ * 严格匹配，admin 由 {@link TeacherScopeValidator} 放行），越权返回 20005 无访问权限。
  */
 @Slf4j
 @Service
 @RequiredArgsConstructor
 public class TeacherStatisticsService {
-
-    /** 教师端统计看板权限码（《教师端接口文档》关键权限码） */
-    private static final String STATS_PERMISSION = "statistics:view";
 
     /** 范围类型：1=学校 2=学院 3=专业 4=班级 6=年级 */
     private static final int SCOPE_SCHOOL = 1;
@@ -73,6 +72,7 @@ public class TeacherStatisticsService {
     private final AdminAuthService adminAuthService;
     private final TeacherScopeValidator scopeValidator;
     private final AdminStatisticsService adminStatisticsService;
+    private final StatisticsSnapshotService statisticsSnapshotService;
     private final AdminOrgArchiveSummaryRepository orgArchiveSummaryRepository;
     private final SemesterRepository semesterRepository;
     private final SchoolRepository schoolRepository;
@@ -93,14 +93,16 @@ public class TeacherStatisticsService {
      *
      * @param userId     当前教师用户 ID
      * @param scopeType  范围类型：1/2/3/4/6
-     * @param scopeId    范围 ID
+     * @param scopeId    范围 ID（scopeType=2/3/4 时必填；scopeType=6 时可不填，用 grade 定位年级）
      * @param semesterId 学期 ID（不传取当前学期）
+     * @param grade      年级（scopeType=6 时必填，如 {@code 2024级}；与 7.1/12.4.2 的 grade 口径一致。
+     *                   未传时按 role_scopes 推导，scopeId 视为年级数字拼 {@code N级}）
      * @return 看板数据（cacheHit 标记快照来源，响应头 X-Cache-Hit 使用）
      */
     @Transactional(readOnly = true)
     public AdminStatisticsService.StatsResult<TeacherDashboardResponse> getDashboard(
-            Long userId, Integer scopeType, Long scopeId, Long semesterId) {
-        adminAuthService.requireAdminOrPermission(userId, STATS_PERMISSION);
+            Long userId, Integer scopeType, Long scopeId, Long semesterId, String grade) {
+        // 教师端统计不校验管理端权限码：登录即可，数据范围由 resolveDefaultScope / ensureOrgInScope 按 role_scopes 兜底
         Long schoolId = adminAuthService.getOperatorSchoolId(userId);
 
         // 默认范围：未传时取教师首个生效授权范围
@@ -114,12 +116,24 @@ public class TeacherStatisticsService {
         }
         scopeValidator.ensureOrgInScope(userId, scopeType, scopeId, schoolId);
 
+        // 年级范围：grade 字符串优先（与 7.1/12.4.2 一致，精确匹配 classes.grade 如 "2024级"）；
+        // 未传时按 role_scopes 推导，scopeId 视为年级数字拼 "N级"。
+        if (scopeType == SCOPE_GRADE) {
+            if (grade == null || grade.isBlank()) {
+                grade = scopeId != null ? scopeId + "级" : null;
+            }
+            if (grade == null || grade.isBlank()) {
+                throw new BusinessException(ResultCode.PARAM_MISSING, "scopeType=6(年级) 时 grade 必填");
+            }
+        }
+
         Long effSemesterId = semesterId;
         if (effSemesterId == null) {
             effSemesterId = semesterRepository.findCurrentBySchoolId(schoolId).map(Semester::getId).orElse(null);
         }
 
         // 快照：studentCount / averageGpa / dimensionAvgScores / archiveTypeDistribution
+        // 注：年级级快照（org_type=6）引擎暂不产出，故年级范围快照字段恒为空，计数走实时
         OrgArchiveSummary snapshot = null;
         if (!(scopeType == SCOPE_GRADE && scopeId == null)) {
             snapshot = orgArchiveSummaryRepository.findLatestByOrg(scopeType, scopeId, effSemesterId).orElse(null);
@@ -127,10 +141,10 @@ public class TeacherStatisticsService {
         boolean cacheHit = snapshot != null;
 
         // 审批状态计数（archives / award_applications / career_plans）
-        List<Long> studentIds = resolveStudentIds(schoolId, scopeType, scopeId);
+        List<Long> studentIds = resolveStudentIds(schoolId, scopeType, scopeId, grade);
         ApprovalCounts counts = countApprovals(studentIds, effSemesterId);
 
-        String scopeName = resolveScopeName(scopeType, scopeId);
+        String scopeName = resolveScopeName(scopeType, scopeId, grade);
         TeacherDashboardResponse data = TeacherDashboardResponse.builder()
                 .semesterId(effSemesterId)
                 .scopeName(scopeName)
@@ -170,6 +184,28 @@ public class TeacherStatisticsService {
         return adminStatisticsService.heatmapByTeacher(userId, semesterId, orgType, orgId, metric, grade);
     }
 
+    /**
+     * 手动刷新学校级统计快照（POST /teacher/statistics/refresh，教师端文档 12.5.5）
+     * <p>
+     * 复用管理端 16.4 刷新引擎（{@link StatisticsSnapshotService#refresh}）：重新聚合
+     * 学校级与学院/专业/班级行级快照，按 学校+学期+统计日 先清理再写入（幂等覆盖当日
+     * 快照）。教师登录即可访问，需存在生效的授权范围（role_scopes），否则返回 20005；
+     * schoolId 由当前登录用户推导，不接收前端传入。
+     *
+     * @param userId     当前教师用户 ID
+     * @param semesterId 学期 ID（不传取当前学期）
+     * @return 刷新结果（学校级汇总）
+     */
+    @Transactional
+    public SnapshotRefreshResponse refreshSnapshot(Long userId, Long semesterId) {
+        Long schoolId = adminAuthService.getOperatorSchoolId(userId);
+        // 教师端统计快照刷新：登录即可，但需存在生效授权范围（role_scopes），否则 20005
+        if (scopeValidator.effectiveScopes(userId).isEmpty()) {
+            throw new BusinessException(ResultCode.ACCESS_DENIED, "无访问权限");
+        }
+        return statisticsSnapshotService.refresh(schoolId, semesterId);
+    }
+
     // ==================== 私有辅助方法 ====================
 
     /** 默认范围：优先教师 is_primary 授权，否则取首个生效授权；学校级 → 学校整体看板 */
@@ -192,7 +228,7 @@ public class TeacherStatisticsService {
     }
 
     /** 解析范围内学生 userId 列表（学校/学院/专业/班级/年级） */
-    private List<Long> resolveStudentIds(Long schoolId, Integer scopeType, Long scopeId) {
+    private List<Long> resolveStudentIds(Long schoolId, Integer scopeType, Long scopeId, String grade) {
         List<Long> classIds;
         switch (scopeType == null ? -1 : scopeType) {
             case SCOPE_SCHOOL:
@@ -212,8 +248,9 @@ public class TeacherStatisticsService {
                                 .map(Clazz::getId).collect(Collectors.toList());
                 break;
             case SCOPE_GRADE:
-                classIds = scopeId == null ? List.of()
-                        : clazzRepository.findByGrade(String.valueOf(scopeId)).stream()
+                // 年级：按班级 grade 精确匹配（如 "2024级"），多个班级共享同一年级
+                classIds = (grade == null || grade.isBlank()) ? List.of()
+                        : clazzRepository.findByGrade(grade).stream()
                                 .map(Clazz::getId).collect(Collectors.toList());
                 break;
             case SCOPE_CLASS:
@@ -265,8 +302,8 @@ public class TeacherStatisticsService {
         return status != null && status == target ? 1 : 0;
     }
 
-    /** 范围名称解析（学校/学院/专业/班级名称；年级拼接 "N级"） */
-    private String resolveScopeName(Integer scopeType, Long scopeId) {
+    /** 范围名称解析（学校/学院/专业/班级名称；年级返回 grade 原文或 "N级"） */
+    private String resolveScopeName(Integer scopeType, Long scopeId, String grade) {
         if (scopeType == null) {
             return null;
         }
@@ -280,7 +317,8 @@ public class TeacherStatisticsService {
             case SCOPE_CLASS:
                 return scopeId != null ? clazzRepository.findById(scopeId).map(Clazz::getName).orElse(null) : null;
             case SCOPE_GRADE:
-                return scopeId != null ? scopeId + "级" : "年级";
+                return grade != null && !grade.isBlank() ? grade
+                        : scopeId != null ? scopeId + "级" : "年级";
             default:
                 return null;
         }

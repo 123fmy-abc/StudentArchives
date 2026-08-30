@@ -4,11 +4,21 @@ import com.example.studentarchives.dto.Fmy.profile.response.CareerPlanDetailResp
 import com.example.studentarchives.dto.Fmy.profile.response.GrowthTimelineResponse;
 import com.example.studentarchives.dto.Fmy.profile.response.ProfileInfoResponse;
 import com.example.studentarchives.dto.Fmy.profile.response.TeacherStudentProfileResponse;
+import com.example.studentarchives.dto.Fmy.profile.response.TeacherWeaknessItemResponse;
+import com.example.studentarchives.entity.weakness.WeaknessAnalysis;
+import com.example.studentarchives.enums.AISuggestionSourceEnum;
+import com.example.studentarchives.repository.WeaknessAnalysisRepository;
 import com.example.studentarchives.service.common.AdminAuthService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+
+import java.time.LocalDateTime;
+import java.time.ZoneId;
+import java.time.format.DateTimeFormatter;
+import java.util.List;
+import java.util.stream.Collectors;
 
 /**
  * 教师端学生管理服务（《教师端接口文档》十六、学生管理模块）
@@ -30,6 +40,11 @@ public class TeacherStudentService {
     private final TeacherScopeValidator scopeValidator;
     private final ProfileService profileService;
     private final ProfileCareerPlanService profileCareerPlanService;
+    private final WeaknessAnalysisRepository weaknessAnalysisRepository;
+
+    /** LocalDateTime → ISO 8601 带时区格式化器 */
+    private static final DateTimeFormatter ISO_WITH_ZONE =
+            DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ssXXX");
 
     /**
      * 获取学生档案详情（GET /teacher/students/{studentId}/profile）
@@ -86,5 +101,50 @@ public class TeacherStudentService {
     public CareerPlanDetailResponse getCareerPlanDetail(Long teacherId, Long studentId, Long planId) {
         scopeValidator.ensureStudentInScope(teacherId, studentId, adminAuthService.getOperatorSchoolId(teacherId));
         return profileCareerPlanService.getPlanDetail(studentId, planId);
+    }
+
+    /**
+     * 获取学生短板分析列表（GET /teacher/students/{studentId}/weaknesses）
+     * <p>
+     * 范围校验通过后，复用 {@link WeaknessAnalysisRepository#findByUserIdOrderByCreatedAtDesc}
+     * 查询目标学生的短板分析（与学生端 4.1 个人档案短板分析同源），
+     * 按创建时间倒序返回，并补充 {@code source} / {@code sourceLabel}。
+     *
+     * @param teacherId 当前教师用户 ID
+     * @param studentId 目标学生用户 ID
+     * @return 短板分析列表（文档 12.6.1）
+     */
+    @Transactional(readOnly = true)
+    public List<TeacherWeaknessItemResponse> getWeaknesses(Long teacherId, Long studentId) {
+        scopeValidator.ensureStudentInScope(teacherId, studentId, adminAuthService.getOperatorSchoolId(teacherId));
+        return weaknessAnalysisRepository.findByUserIdOrderByCreatedAtDesc(studentId)
+                .stream()
+                .map(this::toWeaknessItem)
+                .collect(Collectors.toList());
+    }
+
+    /**
+     * 短板分析实体 → 教师端响应项
+     */
+    private TeacherWeaknessItemResponse toWeaknessItem(WeaknessAnalysis weakness) {
+        return TeacherWeaknessItemResponse.builder()
+                .id(weakness.getId())
+                .weaknessType(weakness.getWeaknessType())
+                .weaknessDesc(weakness.getWeaknessDesc())
+                .severityLevel(weakness.getSeverityLevel())
+                .source(weakness.getSource())
+                .sourceLabel(AISuggestionSourceEnum.of(weakness.getSource()).getLabel())
+                .isRead(weakness.getIsRead())
+                .createdAt(toIso(weakness.getCreatedAt()))
+                .build();
+    }
+
+    /**
+     * LocalDateTime → ISO 8601 带时区字符串
+     */
+    private String toIso(LocalDateTime dateTime) {
+        return dateTime != null
+                ? dateTime.atZone(ZoneId.systemDefault()).format(ISO_WITH_ZONE)
+                : null;
     }
 }

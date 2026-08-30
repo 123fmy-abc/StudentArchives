@@ -10,7 +10,8 @@ import java.util.Optional;
 /**
  * 待审核任务 Repository（对应表 pending_approvals）
  * <p>
- * 供教师端「待审核任务模块」（《教师端接口文档》四）查询待办与已处理任务。
+ * 供教师端「待审核任务模块」（《教师端接口文档》四）查询待办与已处理任务，
+ * 以及教师首页数据概览按 {@code auditor_id} 聚合当前教师待办（状态=1 待审批）。
  * 实体上的 {@code @SQLRestriction(BaseEntity.DELETED_AT_IS_NULL)} 生效，
  * 查询结果自动过滤已软删除记录。
  */
@@ -26,4 +27,7 @@ public interface PendingApprovalRepository extends JpaRepository<PendingApproval
     /** 按模型类型 + 模型 ID + 状态查询待办（幂等/去重校验用） */
     Optional<PendingApproval> findTopByApprovableTypeAndApprovableIdAndStatusOrderByIdDesc(
             String approvableType, Long approvableId, Integer status);
+
+    /** 查询审批人当前待审批任务（status=1 待审批），按提交时间正序（先提交先审） */
+    List<PendingApproval> findByAuditorIdAndStatusOrderBySubmittedAtAsc(Long auditorId, Integer status);
 }
