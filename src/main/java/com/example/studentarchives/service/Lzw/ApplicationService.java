@@ -69,6 +69,7 @@ public class ApplicationService {
     private final ArchiveBookReviewRepository bookReviewRepository;
 
     private final ObjectMapper objectMapper;
+    private final ApprovalSubmitService approvalSubmitService;
 
     // ==================== 1. 学科竞赛 ====================
 
@@ -93,6 +94,7 @@ public class ApplicationService {
 
         bindFiles(req.getEvidenceFileIds(), userId, archive.getId());
         writeArchiveVersion(archive, userId);
+        generatePendingApprovalIfSubmitted(archive);
 
         return buildResponse(archive);
     }
@@ -119,6 +121,7 @@ public class ApplicationService {
 
         bindFiles(req.getEvidenceFileIds(), userId, archive.getId());
         writeArchiveVersion(archive, userId);
+        generatePendingApprovalIfSubmitted(archive);
 
         return buildResponse(archive);
     }
@@ -147,6 +150,7 @@ public class ApplicationService {
 
         bindFiles(req.getEvidenceFileIds(), userId, archive.getId());
         writeArchiveVersion(archive, userId);
+        generatePendingApprovalIfSubmitted(archive);
 
         return buildResponse(archive);
     }
@@ -176,6 +180,7 @@ public class ApplicationService {
 
         bindFiles(req.getEvidenceFileIds(), userId, archive.getId());
         writeArchiveVersion(archive, userId);
+        generatePendingApprovalIfSubmitted(archive);
 
         return buildResponse(archive);
     }
@@ -204,6 +209,7 @@ public class ApplicationService {
 
         bindFiles(req.getEvidenceFileIds(), userId, archive.getId());
         writeArchiveVersion(archive, userId);
+        generatePendingApprovalIfSubmitted(archive);
 
         return buildResponse(archive);
     }
@@ -232,6 +238,7 @@ public class ApplicationService {
 
         bindFiles(req.getEvidenceFileIds(), userId, archive.getId());
         writeArchiveVersion(archive, userId);
+        generatePendingApprovalIfSubmitted(archive);
 
         return buildResponse(archive);
     }
@@ -260,6 +267,7 @@ public class ApplicationService {
 
         bindFiles(req.getEvidenceFileIds(), userId, archive.getId());
         writeArchiveVersion(archive, userId);
+        generatePendingApprovalIfSubmitted(archive);
 
         return buildResponse(archive);
     }
@@ -287,6 +295,7 @@ public class ApplicationService {
 
         bindFiles(req.getEvidenceFileIds(), userId, archive.getId());
         writeArchiveVersion(archive, userId);
+        generatePendingApprovalIfSubmitted(archive);
 
         return buildResponse(archive);
     }
@@ -317,6 +326,7 @@ public class ApplicationService {
 
         bindFiles(req.getEvidenceFileIds(), userId, archive.getId());
         writeArchiveVersion(archive, userId);
+        generatePendingApprovalIfSubmitted(archive);
 
         return buildResponse(archive);
     }
@@ -343,6 +353,7 @@ public class ApplicationService {
 
         bindFiles(req.getEvidenceFileIds(), userId, archive.getId());
         writeArchiveVersion(archive, userId);
+        generatePendingApprovalIfSubmitted(archive);
 
         return buildResponse(archive);
     }
@@ -386,6 +397,7 @@ public class ApplicationService {
             audit.setCurrentVersion(audit.getCurrentVersion() != null ? audit.getCurrentVersion() + 1 : 1);
             audit.setSubmitCount(audit.getSubmitCount() != null ? audit.getSubmitCount() + 1 : 1);
             archive = archiveRepository.save(archive);
+            generatePendingApprovalIfSubmitted(archive);
             return AutosaveResponse.builder()
                     .archiveId(archive.getId())
                     .status(archive.getStatus())
@@ -579,6 +591,7 @@ public class ApplicationService {
                 ? toLongList(body.get("evidenceFileIds"))
                 : Collections.emptyList(), userId, archive.getId());
         writeArchiveVersion(archive, userId);
+        generatePendingApprovalIfSubmitted(archive);
 
         return buildResponse(archive);
     }
@@ -681,6 +694,28 @@ public class ApplicationService {
         mv.setStatus(archive.getStatus());
         mv.setCreatedBy(userId);
         modelVersionRepository.save(mv);
+    }
+
+    /**
+     * 提交后生成教师端待审核任务（纯内部联动，失败不阻塞提交）。
+     * 仅当申报状态为待审批(1)时触发；草稿(0)不触发。
+     */
+    private void generatePendingApprovalIfSubmitted(Archive archive) {
+        if (archive.getStatus() == null || archive.getStatus() != ApplyStatusEnum.PENDING.getValue()) {
+            return;
+        }
+        try {
+            User user = loadUser(archive.getUserId());
+            ArchiveTypeEnum typeEnum = ArchiveTypeEnum.of(archive.getArchiveType());
+            String categoryLabel = typeEnum != null ? typeEnum.getLabel() : archive.getArchiveType();
+            LocalDateTime submittedAt = archive.getAuditInfo() != null ? archive.getAuditInfo().getSubmittedAt() : null;
+            approvalSubmitService.createOnSubmit(
+                    archive.getSchoolId(), "Archive", archive.getArchiveType(), archive.getId(),
+                    archive.getUserId(), user.getName(), user.getUserNo(), archive.getTitle(),
+                    categoryLabel, submittedAt);
+        } catch (Exception e) {
+            log.warn("生成待审核任务失败（不阻塞提交）: archiveId={}, err={}", archive.getId(), e.getMessage());
+        }
     }
 
     @SuppressWarnings("unchecked")
