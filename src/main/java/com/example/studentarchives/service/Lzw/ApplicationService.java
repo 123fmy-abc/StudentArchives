@@ -80,6 +80,10 @@ public class ApplicationService {
         boolean draft = isDraft(req.getIsDraft());
         LocalDateTime now = LocalDateTime.now();
 
+        requireOnSubmit(draft, req.getCompetitionName(), "竞赛名称");
+        requireOnSubmit(draft, req.getCompetitionType(), "竞赛类型");
+        requireOnSubmit(draft, req.getAwardLevel(), "获奖等级");
+
         Archive archive = createArchiveBase(schoolId, userId, ArchiveTypeEnum.ACADEMIC_COMPETITION.getValue(),
                 req.getCompetitionName(), req.getSemesterId(), req.getObtainTime(), draft, now);
         archive = archiveRepository.save(archive);
@@ -108,6 +112,10 @@ public class ApplicationService {
         boolean draft = isDraft(req.getIsDraft());
         LocalDateTime now = LocalDateTime.now();
 
+        requireOnSubmit(draft, req.getScholarshipName(), "奖学金名称");
+        requireOnSubmit(draft, req.getScholarshipCategory(), "奖学金类别");
+        requireOnSubmit(draft, req.getAwardLevel(), "获奖等级");
+
         Archive archive = createArchiveBase(schoolId, userId, ArchiveTypeEnum.SCHOLARSHIP.getValue(),
                 req.getScholarshipName(), req.getSemesterId(), req.getObtainTime(), draft, now);
         archive = archiveRepository.save(archive);
@@ -134,6 +142,10 @@ public class ApplicationService {
         Long schoolId = schoolId(user);
         boolean draft = isDraft(req.getIsDraft());
         LocalDateTime now = LocalDateTime.now();
+
+        requireOnSubmit(draft, req.getCompanyName(), "公司名称");
+        requireOnSubmit(draft, req.getIndustryType(), "行业类型");
+        requireOnSubmit(draft, req.getProjectType(), "项目类型");
 
         Archive archive = createArchiveBase(schoolId, userId, ArchiveTypeEnum.INNOVATION_ENTREPRENEURSHIP.getValue(),
                 req.getCompanyName(), req.getSemesterId(), req.getRegisteredTime(), draft, now);
@@ -163,6 +175,10 @@ public class ApplicationService {
         Long schoolId = schoolId(user);
         boolean draft = isDraft(req.getIsDraft());
         LocalDateTime now = LocalDateTime.now();
+
+        requireOnSubmit(draft, req.getProjectName(), "项目名称");
+        requireOnSubmit(draft, req.getProjectLevel(), "项目级别");
+        requireOnSubmit(draft, req.getProjectType(), "项目类型");
 
         Archive archive = createArchiveBase(schoolId, userId, ArchiveTypeEnum.ACADEMIC_RESEARCH.getValue(),
                 req.getProjectName(), req.getSemesterId(), req.getStartDate(), draft, now);
@@ -194,6 +210,9 @@ public class ApplicationService {
         boolean draft = isDraft(req.getIsDraft());
         LocalDateTime now = LocalDateTime.now();
 
+        requireOnSubmit(draft, req.getCertificateName(), "证书名称");
+        requireOnSubmit(draft, req.getCertificateType(), "证书类型");
+
         Archive archive = createArchiveBase(schoolId, userId, ArchiveTypeEnum.HONOR_CERTIFICATE.getValue(),
                 req.getCertificateName(), req.getSemesterId(), req.getObtainTime(), draft, now);
         archive = archiveRepository.save(archive);
@@ -222,6 +241,8 @@ public class ApplicationService {
         Long schoolId = schoolId(user);
         boolean draft = isDraft(req.getIsDraft());
         LocalDateTime now = LocalDateTime.now();
+
+        requireOnSubmit(draft, req.getCompanyName(), "公司名称");
 
         Archive archive = createArchiveBase(schoolId, userId, ArchiveTypeEnum.INTERNSHIP.getValue(),
                 req.getCompanyName(), req.getSemesterId(), req.getStartDate(), draft, now);
@@ -252,6 +273,8 @@ public class ApplicationService {
         boolean draft = isDraft(req.getIsDraft());
         LocalDateTime now = LocalDateTime.now();
 
+        requireOnSubmit(draft, req.getPositionTitle(), "职位名称");
+
         Archive archive = createArchiveBase(schoolId, userId, ArchiveTypeEnum.ORGANIZATION.getValue(),
                 req.getPositionTitle(), req.getSemesterId(), req.getStartDate(), draft, now);
         archive = archiveRepository.save(archive);
@@ -281,6 +304,8 @@ public class ApplicationService {
         boolean draft = isDraft(req.getIsDraft());
         LocalDateTime now = LocalDateTime.now();
 
+        requireOnSubmit(draft, req.getProjectName(), "项目名称");
+
         Archive archive = createArchiveBase(schoolId, userId, ArchiveTypeEnum.TRAINING_PROJECT.getValue(),
                 req.getProjectName(), req.getSemesterId(), req.getStartDate(), draft, now);
         archive = archiveRepository.save(archive);
@@ -308,6 +333,8 @@ public class ApplicationService {
         Long schoolId = schoolId(user);
         boolean draft = isDraft(req.getIsDraft());
         LocalDateTime now = LocalDateTime.now();
+
+        requireOnSubmit(draft, req.getActivityName(), "活动名称");
 
         Archive archive = createArchiveBase(schoolId, userId, ArchiveTypeEnum.SOCIAL_PRACTICE.getValue(),
                 req.getActivityName(), req.getSemesterId(), req.getStartDate(), draft, now);
@@ -339,6 +366,10 @@ public class ApplicationService {
         Long schoolId = schoolId(user);
         boolean draft = isDraft(req.getIsDraft());
         LocalDateTime now = LocalDateTime.now();
+
+        requireOnSubmit(draft, req.getBookName(), "书名");
+        requireOnSubmit(draft, req.getReadMonth(), "阅读时间");
+        requireOnSubmit(draft, req.getReviewContent(), "心得体会");
 
         Archive archive = createArchiveBase(schoolId, userId, ArchiveTypeEnum.BOOK_REVIEW.getValue(),
                 req.getBookName(), req.getSemesterId(), req.getReadMonth(), draft, now);
@@ -609,6 +640,16 @@ public class ApplicationService {
 
     private boolean isDraft(Integer isDraft) {
         return isDraft != null && isDraft == 1;
+    }
+
+    /** 提交态必填校验：草稿放行；正式提交时字段为空则返回 400（PARAM_MISSING） */
+    private void requireOnSubmit(boolean draft, Object value, String label) {
+        if (draft) return;
+        boolean blank = value == null
+                || (value instanceof String s && s.isBlank());
+        if (blank) {
+            throw new BusinessException(ResultCode.PARAM_MISSING, label + "不能为空");
+        }
     }
 
     private Archive createArchiveBase(Long schoolId, Long userId, String archiveType,

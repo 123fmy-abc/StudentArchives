@@ -21,9 +21,9 @@ public class ArchiveScholarship extends BaseEntity {
     @Column(name = "scholarship_name", nullable = false, length = 255)
     private String scholarshipName;
 
-    @Column(name = "scholarship_category", nullable = false, length = 50)
+    @Column(name = "scholarship_category", length = 50)
     private String scholarshipCategory;
 
-    @Column(name = "award_level", nullable = false, length = 50)
+    @Column(name = "award_level", length = 50)
     private String awardLevel;
 }

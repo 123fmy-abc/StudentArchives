@@ -23,10 +23,10 @@ public class ArchiveInnovation extends BaseEntity {
     @Column(name = "company_name", nullable = false, length = 255)
     private String companyName;
 
-    @Column(name = "industry_type", nullable = false, length = 100)
+    @Column(name = "industry_type", length = 100)
     private String industryType;
 
-    @Column(name = "project_type", nullable = false, length = 100)
+    @Column(name = "project_type", length = 100)
     private String projectType;
 
     @Column(name = "participant_role", length = 50)
