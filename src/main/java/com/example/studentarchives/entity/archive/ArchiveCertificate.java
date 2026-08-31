@@ -20,7 +20,7 @@ public class ArchiveCertificate extends BaseEntity {
     @Column(name = "archive_id", nullable = false)
     private Long archiveId;
 
-    @Column(name = "certificate_type", length = 100)
+    @Column(name = "certificate_type", nullable = false, length = 100)
     private String certificateType;
 
     @Column(name = "certificate_name", nullable = false, length = 255)

@@ -23,10 +23,10 @@ public class ArchiveResearch extends BaseEntity {
     @Column(name = "project_name", nullable = false, length = 255)
     private String projectName;
 
-    @Column(name = "project_level", length = 50)
+    @Column(name = "project_level", nullable = false, length = 50)
     private String projectLevel;
 
-    @Column(name = "project_type", length = 100)
+    @Column(name = "project_type", nullable = false, length = 100)
     private String projectType;
 
     @Column(name = "participant_role", length = 50)

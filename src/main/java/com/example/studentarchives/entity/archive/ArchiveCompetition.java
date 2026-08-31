@@ -21,10 +21,10 @@ public class ArchiveCompetition extends BaseEntity {
     @Column(name = "competition_name", nullable = false, length = 255)
     private String competitionName;
 
-    @Column(name = "competition_type", length = 100)
+    @Column(name = "competition_type", nullable = false, length = 100)
     private String competitionType;
 
-    @Column(name = "award_level", length = 50)
+    @Column(name = "award_level", nullable = false, length = 50)
     private String awardLevel;
 
     @Column(name = "participant_role", length = 50)

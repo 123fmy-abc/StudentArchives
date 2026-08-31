@@ -65,7 +65,6 @@ import com.example.studentarchives.repository.ModelVersionRepository;
 import com.example.studentarchives.repository.SemesterRepository;
 import com.example.studentarchives.repository.UserRepository;
 import com.example.studentarchives.repository.WeaknessAnalysisRepository;
-import com.example.studentarchives.service.Lzw.ApprovalSubmitService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -149,7 +148,6 @@ public class ProfileCareerPlanService {
     private final OssProperties ossProperties;
     private final ObjectMapper objectMapper;
     private final ExportTemplateRenderService exportTemplateRenderService;
-    private final ApprovalSubmitService approvalSubmitService;
 
     // ==================== 列表（4.3） ====================
 
@@ -242,11 +240,6 @@ public class ProfileCareerPlanService {
         // 写入版本记录
         writeModelVersion(plan, userId);
 
-        // 提交（非草稿）后生成待审核任务（教师端「待审核任务模块」4.1）
-        if (!draft) {
-            generatePendingApproval(plan, user);
-        }
-
         return CareerPlanCreateResponse.builder()
                 .planId(plan.getId())
                 .status(plan.getStatus())
@@ -254,19 +247,6 @@ public class ProfileCareerPlanService {
                 .currentVersion(audit.getCurrentVersion())
                 .submitCount(audit.getSubmitCount())
                 .build();
-    }
-
-    /** 提交（非草稿）后生成待审核任务，失败不抛出、不影响提交。 */
-    private void generatePendingApproval(CareerPlan plan, User user) {
-        try {
-            LocalDateTime submittedAt = plan.getAuditInfo() != null ? plan.getAuditInfo().getSubmittedAt() : null;
-            approvalSubmitService.createOnSubmit(
-                    plan.getSchoolId(), "CareerPlan", null, plan.getId(),
-                    plan.getUserId(), user.getName(), user.getUserNo(), plan.getTitle(),
-                    "职业生涯规划", submittedAt);
-        } catch (Exception e) {
-            log.warn("生成待审核任务失败（不阻塞提交）: careerPlanId={}, err={}", plan.getId(), e.getMessage());
-        }
     }
 
     // ==================== 下载（4.5） ====================
