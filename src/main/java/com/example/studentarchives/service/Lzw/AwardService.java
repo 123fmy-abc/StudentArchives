@@ -4,7 +4,6 @@ import com.example.studentarchives.common.ResultCode;
 import com.example.studentarchives.entity.award.*;
 import com.example.studentarchives.entity.embed.ArchiveAuditInfo;
 import com.example.studentarchives.entity.file.AttachmentRelation;
-import com.example.studentarchives.entity.foundation.ArchiveTypeConfig;
 import com.example.studentarchives.entity.user.User;
 import com.example.studentarchives.entity.version.ModelVersion;
 import com.example.studentarchives.enums.*;
@@ -52,7 +51,7 @@ public class AwardService {
     private final UserRepository userRepository;
     private final AttachmentRelationRepository attachmentRelationRepository;
     private final ModelVersionRepository modelVersionRepository;
-    private final ArchiveTypeConfigRepository archiveTypeConfigRepository;
+    private final AwardTypeConfigRepository awardTypeConfigRepository;
     private final ObjectMapper objectMapper;
     private final ApprovalSubmitService approvalSubmitService;
 
@@ -217,8 +216,8 @@ public class AwardService {
         AwardTypeEnum typeEnum = AwardTypeEnum.of(type);
         if (typeEnum == null) throw new BusinessException(ResultCode.PARAM_ERROR, "不支持的奖项类型：" + type);
 
-        ArchiveTypeConfig config = archiveTypeConfigRepository
-                .findByArchiveTypeAndStatus(type, 1)
+        AwardTypeConfig config = awardTypeConfigRepository
+                .findByAwardTypeAndStatus(type, 1)
                 .orElse(null);
 
         List<AwardGuideResponse.Requirement> requirements = new ArrayList<>();
