@@ -21,10 +21,10 @@ public class ArchiveBookReview extends BaseEntity {
     @Column(name = "book_name", nullable = false, length = 255)
     private String bookName;
 
-    @Column(name = "read_month")
+    @Column(name = "read_month", nullable = false)
     private LocalDate readMonth;
 
     @Lob
-    @Column(name = "review_content", columnDefinition = "TEXT")
+    @Column(name = "review_content", nullable = false, columnDefinition = "TEXT")
     private String reviewContent;
 }

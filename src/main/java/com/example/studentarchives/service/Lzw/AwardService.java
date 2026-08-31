@@ -54,7 +54,6 @@ public class AwardService {
     private final ModelVersionRepository modelVersionRepository;
     private final ArchiveTypeConfigRepository archiveTypeConfigRepository;
     private final ObjectMapper objectMapper;
-    private final ApprovalSubmitService approvalSubmitService;
 
     // ==================== 8.1 奖项总览统计 ====================
 
@@ -160,7 +159,6 @@ public class AwardService {
             audit.setCurrentVersion(audit.getCurrentVersion() != null ? audit.getCurrentVersion() + 1 : 1);
             audit.setSubmitCount(audit.getSubmitCount() != null ? audit.getSubmitCount() + 1 : 1);
             app = awardApplicationRepository.save(app);
-            generatePendingApprovalIfSubmitted(app);
             return AwardAutosaveResponse.builder()
                     .applicationId(app.getId()).status(app.getStatus())
                     .statusLabel(ApplyStatusEnum.of(app.getStatus()).getLabel())
@@ -276,7 +274,6 @@ public class AwardService {
 
         bindFiles(req.getEvidenceFileIds(), userId, app.getId());
         writeAwardVersion(app, userId);
-        generatePendingApprovalIfSubmitted(app);
 
         return buildSubmitResponse(app);
     }
@@ -398,7 +395,6 @@ public class AwardService {
         audit.setSubmitCount(audit.getSubmitCount() != null ? audit.getSubmitCount() + 1 : 1);
         app.setStatus(ApplyStatusEnum.PENDING.getValue());
         app = awardApplicationRepository.save(app);
-        generatePendingApprovalIfSubmitted(app);
 
         writeAwardVersion(app, userId);
         return buildSubmitResponse(app);
@@ -432,7 +428,6 @@ public class AwardService {
 
         bindFiles(req.getEvidenceFileIds(), userId, app.getId());
         writeAwardVersion(app, userId);
-        generatePendingApprovalIfSubmitted(app);
 
         return buildSubmitResponse(app);
     }
@@ -464,24 +459,6 @@ public class AwardService {
     }
 
     // ==================== 私有工具方法 ====================
-
-    private void generatePendingApprovalIfSubmitted(AwardApplication app) {
-        if (app.getStatus() == null || app.getStatus() != ApplyStatusEnum.PENDING.getValue()) {
-            return;
-        }
-        try {
-            User user = loadUser(app.getUserId());
-            AwardTypeEnum typeEnum = AwardTypeEnum.of(app.getAwardType());
-            String categoryLabel = typeEnum != null ? typeEnum.getLabel() : app.getAwardType();
-            LocalDateTime submittedAt = app.getAuditInfo() != null ? app.getAuditInfo().getSubmittedAt() : null;
-            approvalSubmitService.createOnSubmit(
-                    app.getSchoolId(), "AwardApplication", app.getAwardType(), app.getId(),
-                    app.getUserId(), user.getName(), user.getUserNo(), app.getTitle(),
-                    categoryLabel, submittedAt);
-        } catch (Exception e) {
-            log.warn("生成待审核任务失败（不阻塞提交）: awardApplicationId={}, err={}", app.getId(), e.getMessage());
-        }
-    }
 
     private User loadUser(Long userId) {
         return userRepository.findById(userId)

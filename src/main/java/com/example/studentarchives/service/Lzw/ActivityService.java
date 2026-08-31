@@ -67,14 +67,6 @@ public class ActivityService {
     private final ArchiveSocialPracticeRepository socialPracticeRepository;
     private final ArchiveBookReviewRepository bookReviewRepository;
 
-    // Award extension repositories
-    private final AwardCompetitionStarRepository awardCompetitionStarRepository;
-    private final AwardResearchStarRepository awardResearchStarRepository;
-    private final AwardResearchProjectRepository awardResearchProjectRepository;
-    private final AwardSoftwareCopyrightRepository awardSoftwareCopyrightRepository;
-    private final AwardPublishedPaperRepository awardPublishedPaperRepository;
-    private final AwardInnovationStarRepository awardInnovationStarRepository;
-
     /** 允许的排序字段白名单 */
     private static final Set<String> ALLOWED_SORT_FIELDS = Set.of("submit_time", "created_at", "updated_at", "id");
 
@@ -228,12 +220,12 @@ public class ActivityService {
                         .orElseThrow(() -> new BusinessException(ResultCode.DATA_NOT_EXIST, "档案记录不存在"));
                 checkOwnership(a.getUserId(), userId);
                 checkWithdrawable(a.getStatus());
-                a.setStatus(ApplyStatusEnum.REVOKED.getValue());
+                a.setStatus(0);
                 a.getAuditInfo().setRevokedAt(LocalDateTime.now());
                 archiveRepository.save(a);
                 yield ActivityStatusResponse.builder()
                         .id(a.getId()).type("archive")
-                        .status(ApplyStatusEnum.REVOKED.getValue()).statusLabel("已撤销")
+                        .status(0).statusLabel("草稿")
                         .currentVersion(a.getAuditInfo().getCurrentVersion())
                         .submitCount(a.getAuditInfo().getSubmitCount()).build();
             }
@@ -242,12 +234,12 @@ public class ActivityService {
                         .orElseThrow(() -> new BusinessException(ResultCode.DATA_NOT_EXIST, "奖项记录不存在"));
                 checkOwnership(a.getUserId(), userId);
                 checkWithdrawable(a.getStatus());
-                a.setStatus(ApplyStatusEnum.REVOKED.getValue());
+                a.setStatus(0);
                 a.getAuditInfo().setRevokedAt(LocalDateTime.now());
                 awardApplicationRepository.save(a);
                 yield ActivityStatusResponse.builder()
                         .id(a.getId()).type("award")
-                        .status(ApplyStatusEnum.REVOKED.getValue()).statusLabel("已撤销")
+                        .status(0).statusLabel("草稿")
                         .currentVersion(a.getAuditInfo().getCurrentVersion())
                         .submitCount(a.getAuditInfo().getSubmitCount()).build();
             }
@@ -256,12 +248,12 @@ public class ActivityService {
                         .orElseThrow(() -> new BusinessException(ResultCode.DATA_NOT_EXIST, "规划记录不存在"));
                 checkOwnership(p.getUserId(), userId);
                 checkWithdrawable(p.getStatus());
-                p.setStatus(ApplyStatusEnum.REVOKED.getValue());
+                p.setStatus(0);
                 p.getAuditInfo().setRevokedAt(LocalDateTime.now());
                 careerPlanRepository.save(p);
                 yield ActivityStatusResponse.builder()
                         .id(p.getId()).type("career_plan")
-                        .status(ApplyStatusEnum.REVOKED.getValue()).statusLabel("已撤销")
+                        .status(0).statusLabel("草稿")
                         .currentVersion(p.getAuditInfo().getCurrentVersion())
                         .submitCount(p.getAuditInfo().getSubmitCount()).build();
             }
@@ -299,7 +291,7 @@ public class ActivityService {
                 .currentVersion(ai.getCurrentVersion())
                 .submitCount(ai.getSubmitCount())
                 .canEdit(s == ApplyStatusEnum.DRAFT || s == ApplyStatusEnum.REJECTED)
-                .canDelete(s == ApplyStatusEnum.DRAFT || s == ApplyStatusEnum.REJECTED || s == ApplyStatusEnum.REVOKED)
+                .canDelete(s == ApplyStatusEnum.DRAFT || s == ApplyStatusEnum.REJECTED)
                 .canWithdraw(s == ApplyStatusEnum.PENDING)
                 .build();
     }
@@ -321,7 +313,7 @@ public class ActivityService {
                 .currentVersion(ai.getCurrentVersion())
                 .submitCount(ai.getSubmitCount())
                 .canEdit(s == ApplyStatusEnum.DRAFT || s == ApplyStatusEnum.REJECTED)
-                .canDelete(s == ApplyStatusEnum.DRAFT || s == ApplyStatusEnum.REJECTED || s == ApplyStatusEnum.REVOKED)
+                .canDelete(s == ApplyStatusEnum.DRAFT || s == ApplyStatusEnum.REJECTED)
                 .canWithdraw(s == ApplyStatusEnum.PENDING)
                 .build();
     }
@@ -340,7 +332,7 @@ public class ActivityService {
                 .currentVersion(ai.getCurrentVersion())
                 .submitCount(ai.getSubmitCount())
                 .canEdit(s == ApplyStatusEnum.DRAFT || s == ApplyStatusEnum.REJECTED)
-                .canDelete(s == ApplyStatusEnum.DRAFT || s == ApplyStatusEnum.REJECTED || s == ApplyStatusEnum.REVOKED)
+                .canDelete(s == ApplyStatusEnum.DRAFT || s == ApplyStatusEnum.REJECTED)
                 .canWithdraw(s == ApplyStatusEnum.PENDING)
                 .build();
     }
@@ -516,8 +508,8 @@ public class ActivityService {
     }
 
     private void checkDeletable(Integer status) {
-        if (status != 0 && status != 3 && status != ApplyStatusEnum.REVOKED.getValue()) {
-            throw new BusinessException(ResultCode.BIZ_STATUS_NOT_OPERABLE, "仅草稿、已退回或已撤销状态的活动可删除");
+        if (status != 0 && status != 3) {
+            throw new BusinessException(ResultCode.BIZ_STATUS_NOT_OPERABLE, "仅草稿或已退回状态的活动可删除");
         }
     }
 
@@ -655,58 +647,6 @@ public class ActivityService {
         if (a.getIssuingUnit() != null) detail.put("issuingUnit", a.getIssuingUnit());
         if (a.getValidUntil() != null) detail.put("validUntil", formatDate(a.getValidUntil()));
         if (a.getParticipantRole() != null) detail.put("participantRole", a.getParticipantRole());
-
-        if (at == null) return detail;
-
-        switch (at) {
-            case COMPETITION_STAR -> awardCompetitionStarRepository.findByApplicationId(a.getId()).ifPresent(ext -> {
-                detail.put("competitionName", ext.getCompetitionName());
-                if (ext.getParticipatedAt() != null) detail.put("participatedAt", formatDate(ext.getParticipatedAt()));
-                detail.put("competitionLevel", ext.getCompetitionLevel());
-                detail.put("awardLevel", ext.getAwardLevel());
-            });
-            case INNOVATION_STAR -> awardInnovationStarRepository.findByApplicationId(a.getId()).ifPresent(ext -> {
-                detail.put("companyName", ext.getCompanyName());
-                detail.put("industryType", ext.getIndustryType());
-                if (ext.getApplicantRank() != null) detail.put("applicantRank", ext.getApplicantRank());
-                if (ext.getRegisteredAt() != null) detail.put("registeredAt", formatDate(ext.getRegisteredAt()));
-            });
-            case RESEARCH_STAR -> awardResearchStarRepository.findByApplicationId(a.getId()).ifPresent(ext -> {
-                if (ext.getPrimaryCategory() != null) detail.put("primaryCategory", ext.getPrimaryCategory());
-                List<Map<String, Object>> projects = awardResearchProjectRepository.findByResearchStarId(ext.getId()).stream()
-                        .map(p -> {
-                            Map<String, Object> m = new LinkedHashMap<>();
-                            m.put("projectName", p.getProjectName());
-                            if (p.getProjectLevel() != null) m.put("projectLevel", p.getProjectLevel());
-                            if (p.getRankTotal() != null) m.put("rankTotal", p.getRankTotal());
-                            if (p.getEstablishedAt() != null) m.put("establishedAt", formatDate(p.getEstablishedAt()));
-                            return m;
-                        })
-                        .collect(Collectors.toList());
-                List<Map<String, Object>> softwares = awardSoftwareCopyrightRepository.findByResearchStarId(ext.getId()).stream()
-                        .map(s -> {
-                            Map<String, Object> m = new LinkedHashMap<>();
-                            m.put("softwareName", s.getSoftwareName());
-                            if (s.getRankTotal() != null) m.put("rankTotal", s.getRankTotal());
-                            if (s.getApprovedAt() != null) m.put("approvedAt", formatDate(s.getApprovedAt()));
-                            return m;
-                        })
-                        .collect(Collectors.toList());
-                List<Map<String, Object>> papers = awardPublishedPaperRepository.findByResearchStarId(ext.getId()).stream()
-                        .map(pp -> {
-                            Map<String, Object> m = new LinkedHashMap<>();
-                            m.put("journalName", pp.getJournalName());
-                            m.put("paperTitle", pp.getPaperTitle());
-                            if (pp.getRankTotal() != null) m.put("rankTotal", pp.getRankTotal());
-                            if (pp.getPublishedAt() != null) m.put("publishedAt", formatDate(pp.getPublishedAt()));
-                            return m;
-                        })
-                        .collect(Collectors.toList());
-                detail.put("researchProjects", projects);
-                detail.put("softwareCopyrights", softwares);
-                detail.put("publishedPapers", papers);
-            });
-        }
         return detail;
     }
 
