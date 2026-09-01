@@ -67,6 +67,14 @@ public class ActivityService {
     private final ArchiveSocialPracticeRepository socialPracticeRepository;
     private final ArchiveBookReviewRepository bookReviewRepository;
 
+    // Award extension repositories
+    private final AwardCompetitionStarRepository competitionStarRepository;
+    private final AwardInnovationStarRepository innovationStarRepository;
+    private final AwardResearchStarRepository researchStarRepository;
+    private final AwardResearchProjectRepository researchProjectRepository;
+    private final AwardSoftwareCopyrightRepository softwareCopyrightRepository;
+    private final AwardPublishedPaperRepository publishedPaperRepository;
+
     /** 允许的排序字段白名单 */
     private static final Set<String> ALLOWED_SORT_FIELDS = Set.of("submit_time", "created_at", "updated_at", "id");
 
@@ -300,10 +308,22 @@ public class ActivityService {
         ApplyStatusEnum s = ApplyStatusEnum.of(a.getStatus());
         var ai = nullSafe(a.getAuditInfo());
         AwardTypeEnum at = AwardTypeEnum.of(a.getAwardType());
+
+        // 科研之星按子表 primary_category 归一到前端子页签过滤别名，
+        // 否则 research_star 无法匹配前端 research_project/software_copyright/published_paper 三个页签。
+        String archiveType = a.getAwardType();
+        String archiveTypeLabel = at != null ? at.getLabel() : null;
+        if (at == AwardTypeEnum.RESEARCH_STAR) {
+            String cat = researchStarRepository.findByApplicationId(a.getId())
+                    .map(r -> r.getPrimaryCategory()).orElse(null);
+            archiveType = researchStarArchiveType(cat);
+            archiveTypeLabel = researchStarLabel(cat);
+        }
+
         return ActivityListItemResponse.builder()
                 .id(a.getId()).type("award")
-                .archiveType(a.getAwardType())
-                .archiveTypeLabel(at != null ? at.getLabel() : null)
+                .archiveType(archiveType)
+                .archiveTypeLabel(archiveTypeLabel)
                 .title(a.getTitle())
                 .content("奖项报名已提交")
                 .status(a.getStatus()).statusLabel(s.getLabel())
@@ -335,6 +355,26 @@ public class ActivityService {
                 .canDelete(s == ApplyStatusEnum.DRAFT || s == ApplyStatusEnum.REJECTED)
                 .canWithdraw(s == ApplyStatusEnum.PENDING)
                 .build();
+    }
+
+    /** 科研之星 primary_category → 前端子页签过滤别名（archiveType） */
+    private static String researchStarArchiveType(String primaryCategory) {
+        return switch (primaryCategory == null ? "" : primaryCategory) {
+            case "project" -> "research_project";
+            case "software_copyright" -> "software_copyright";
+            case "published_paper" -> "published_paper";
+            default -> AwardTypeEnum.RESEARCH_STAR.getValue();
+        };
+    }
+
+    /** 科研之星 primary_category → 显示标签 */
+    private static String researchStarLabel(String primaryCategory) {
+        return switch (primaryCategory == null ? "" : primaryCategory) {
+            case "project" -> "科研项目";
+            case "software_copyright" -> "软件著作权";
+            case "published_paper" -> "发表论文";
+            default -> AwardTypeEnum.RESEARCH_STAR.getLabel();
+        };
     }
 
     // ==================== 私有：实体 → 详情 DTO ====================
@@ -643,10 +683,54 @@ public class ActivityService {
         detail.put("awardType", a.getAwardType());
         AwardTypeEnum at = AwardTypeEnum.of(a.getAwardType());
         if (at != null) detail.put("awardTypeLabel", at.getLabel());
+
+        // 通用字段（证书编号、颁发单位、有效期、角色）
         if (a.getCertificateNo() != null) detail.put("certificateNo", a.getCertificateNo());
         if (a.getIssuingUnit() != null) detail.put("issuingUnit", a.getIssuingUnit());
         if (a.getValidUntil() != null) detail.put("validUntil", formatDate(a.getValidUntil()));
         if (a.getParticipantRole() != null) detail.put("participantRole", a.getParticipantRole());
+
+        // 各星类专属子表字段回填（与提交/编辑契约 body key 一致，round-trip）
+        if (at != null) {
+            switch (at) {
+                case COMPETITION_STAR -> competitionStarRepository.findByApplicationId(a.getId()).ifPresent(ext -> {
+                    if (ext.getCompetitionName() != null) detail.put("competitionName", ext.getCompetitionName());
+                    if (ext.getParticipatedAt() != null) detail.put("participatedTime", formatDate(ext.getParticipatedAt()));
+                    if (ext.getCompetitionLevel() != null) detail.put("competitionLevel", ext.getCompetitionLevel());
+                    if (ext.getAwardLevel() != null) detail.put("awardLevel", ext.getAwardLevel());
+                });
+                case INNOVATION_STAR -> innovationStarRepository.findByApplicationId(a.getId()).ifPresent(ext -> {
+                    if (ext.getCompanyName() != null) detail.put("companyName", ext.getCompanyName());
+                    if (ext.getIndustryType() != null) detail.put("industryType", ext.getIndustryType());
+                    if (ext.getApplicantRank() != null) detail.put("applicantRank", ext.getApplicantRank());
+                    if (ext.getRegisteredAt() != null) detail.put("registeredTime", formatDate(ext.getRegisteredAt()));
+                });
+                case RESEARCH_STAR -> researchStarRepository.findByApplicationId(a.getId()).ifPresent(rs -> {
+                    String cat = rs.getPrimaryCategory();
+                    if ("project".equals(cat)) {
+                        researchProjectRepository.findByResearchStarId(rs.getId()).stream().findFirst().ifPresent(p -> {
+                            if (p.getProjectName() != null) detail.put("projectName", p.getProjectName());
+                            if (p.getProjectLevel() != null) detail.put("projectLevel", p.getProjectLevel());
+                            if (p.getRankTotal() != null) detail.put("rankTotal", p.getRankTotal());
+                            if (p.getEstablishedAt() != null) detail.put("establishedTime", formatDate(p.getEstablishedAt()));
+                        });
+                    } else if ("software_copyright".equals(cat)) {
+                        softwareCopyrightRepository.findByResearchStarId(rs.getId()).stream().findFirst().ifPresent(sw -> {
+                            if (sw.getSoftwareName() != null) detail.put("softwareName", sw.getSoftwareName());
+                            if (sw.getRankTotal() != null) detail.put("rankTotal", sw.getRankTotal());
+                            if (sw.getApprovedAt() != null) detail.put("approvedTime", formatDate(sw.getApprovedAt()));
+                        });
+                    } else if ("published_paper".equals(cat)) {
+                        publishedPaperRepository.findByResearchStarId(rs.getId()).stream().findFirst().ifPresent(pp -> {
+                            if (pp.getJournalName() != null) detail.put("journalName", pp.getJournalName());
+                            if (pp.getPaperTitle() != null) detail.put("paperTitle", pp.getPaperTitle());
+                            if (pp.getRankTotal() != null) detail.put("rankTotal", pp.getRankTotal());
+                            if (pp.getPublishedAt() != null) detail.put("publishedTime", formatDate(pp.getPublishedAt()));
+                        });
+                    }
+                });
+            }
+        }
         return detail;
     }
 
