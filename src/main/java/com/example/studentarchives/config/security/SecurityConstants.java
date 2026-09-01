@@ -9,6 +9,8 @@ public final class SecurityConstants {
             "/auth/captcha",
             "/auth/password/reset",
             "/auth/password/reset/confirm",
-            "/auth/refresh"
+            "/auth/refresh",
+            // 登录页公开统计接口（免鉴权，JwtAuthenticationFilter 按前缀匹配放行 /public/**）
+            "/public"
     };
 }

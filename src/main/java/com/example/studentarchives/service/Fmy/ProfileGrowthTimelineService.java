@@ -34,6 +34,7 @@ import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -50,7 +51,9 @@ import java.util.stream.Collectors;
  * <p>
  * 数据口径（与《学生端接口文档》4.2 一致）：
  * - event_type：1=奖项 2=成绩 3=实践 4=职业规划 5=短板改进 6=能力提升
- * - status：0=草稿 1=待审核 2=已通过 3=已退回 4=已撤销，默认 0
+ * - 不需要审核：新增即直接生效（status 固定为 2=已通过）；任意状态均可直接修改/删除
+ * - 来源记录必填：每条时间轴事件必须关联一条已有来源记录（sourceType + sourceId），
+ *   且该来源记录须真实存在（未软删除）并归属当前用户，否则报错
  * - 条件唯一索引：uk_gt_event_key(user_id, event_key)、uk_gt_source(source_type, source_id)
  * - 数据权限：学生仅可操作本人（user_id）的时间轴节点，越权返回 20005
  */
@@ -66,6 +69,43 @@ public class ProfileGrowthTimelineService {
     /** 日期格式：2005-03-15 */
     private static final DateTimeFormatter DATE_FORMAT =
             DateTimeFormatter.ofPattern("yyyy-MM-dd");
+
+    /**
+     * 来源记录白名单：source_type → 归属校验 SQL（原生查询，表名来自固定白名单，无注入风险）。
+     * <p>
+     * 覆盖《学生档案系统表》H. 成长时间轴事件类型的来源示例，以及《学生端接口文档》4.2 中
+     * archive / award_application 别名。校验规则：来源记录须真实存在（未软删除）且归属当前学生，
+     * 否则报错。子表经各自外键（archive_id / application_id / career_plan_id / weakness_id）
+     * 关联父表校验归属。
+     */
+    private static final Map<String, String> SOURCE_VALIDATION_SQL;
+
+    static {
+        Map<String, String> m = new LinkedHashMap<>();
+        // 直接归属 user_id 的来源表
+        m.put("archives", "SELECT 1 FROM archives WHERE id = :id AND deleted_at IS NULL AND user_id = :userId");
+        m.put("award_applications", "SELECT 1 FROM award_applications WHERE id = :id AND deleted_at IS NULL AND user_id = :userId");
+        m.put("semester_gpa_summaries", "SELECT 1 FROM semester_gpa_summaries WHERE id = :id AND deleted_at IS NULL AND user_id = :userId");
+        m.put("gpa_records", "SELECT 1 FROM gpa_records WHERE id = :id AND deleted_at IS NULL AND user_id = :userId");
+        m.put("career_plans", "SELECT 1 FROM career_plans WHERE id = :id AND deleted_at IS NULL AND user_id = :userId");
+        m.put("weakness_analyses", "SELECT 1 FROM weakness_analyses WHERE id = :id AND deleted_at IS NULL AND user_id = :userId");
+        m.put("portrait_evaluation_scores", "SELECT 1 FROM portrait_evaluation_scores WHERE id = :id AND deleted_at IS NULL AND user_id = :userId");
+        // archive 子表：经 archive_id 关联 archives.user_id 校验归属
+        m.put("archive_competitions", "SELECT 1 FROM archive_competitions s JOIN archives a ON a.id = s.archive_id WHERE s.id = :id AND s.deleted_at IS NULL AND a.deleted_at IS NULL AND a.user_id = :userId");
+        m.put("archive_social_practices", "SELECT 1 FROM archive_social_practices s JOIN archives a ON a.id = s.archive_id WHERE s.id = :id AND s.deleted_at IS NULL AND a.deleted_at IS NULL AND a.user_id = :userId");
+        m.put("archive_internships", "SELECT 1 FROM archive_internships s JOIN archives a ON a.id = s.archive_id WHERE s.id = :id AND s.deleted_at IS NULL AND a.deleted_at IS NULL AND a.user_id = :userId");
+        m.put("archive_organizations", "SELECT 1 FROM archive_organizations s JOIN archives a ON a.id = s.archive_id WHERE s.id = :id AND s.deleted_at IS NULL AND a.deleted_at IS NULL AND a.user_id = :userId");
+        // 奖项子表：经 application_id 关联 award_applications.user_id 校验归属
+        m.put("award_competition_stars", "SELECT 1 FROM award_competition_stars s JOIN award_applications a ON a.id = s.application_id WHERE s.id = :id AND s.deleted_at IS NULL AND a.deleted_at IS NULL AND a.user_id = :userId");
+        // 职业规划反馈：经 career_plan_id 关联 career_plans.user_id 校验归属
+        m.put("career_plan_feedbacks", "SELECT 1 FROM career_plan_feedbacks s JOIN career_plans c ON c.id = s.career_plan_id WHERE s.id = :id AND s.deleted_at IS NULL AND c.deleted_at IS NULL AND c.user_id = :userId");
+        // 短板改进建议：经 weakness_id 关联 weakness_analyses.user_id 校验归属
+        m.put("improvement_suggestions", "SELECT 1 FROM improvement_suggestions s JOIN weakness_analyses w ON w.id = s.weakness_id WHERE s.id = :id AND s.deleted_at IS NULL AND w.deleted_at IS NULL AND w.user_id = :userId");
+        // 《学生端接口文档》4.2 中的来源类型别名
+        m.put("archive", m.get("archives"));
+        m.put("award_application", m.get("award_applications"));
+        SOURCE_VALIDATION_SQL = Collections.unmodifiableMap(m);
+    }
 
     private final UserRepository userRepository;
     private final SemesterRepository semesterRepository;
@@ -91,12 +131,11 @@ public class ProfileGrowthTimelineService {
         if (request.getSemesterId() != null) {
             validateSemester(request.getSemesterId());
         }
-        if (request.getSourceType() != null && !request.getSourceType().isBlank()) {
-            if (request.getSourceId() == null) {
-                throw new BusinessException(ResultCode.PARAM_ERROR, "填写来源类型时必须同时提供来源ID");
-            }
-            checkSourceUnique(userId, request.getSourceType().trim(), request.getSourceId(), null);
-        }
+        // 来源记录必填：必须关联一条已有来源记录，否则报错
+        validateSourceRequired(request.getSourceType(), request.getSourceId());
+        String sourceType = request.getSourceType().trim();
+        validateSourceRecord(userId, sourceType, request.getSourceId());
+        checkSourceUnique(userId, sourceType, request.getSourceId(), null);
         if (request.getEventKey() != null && !request.getEventKey().isBlank()) {
             checkEventKeyUnique(userId, request.getEventKey().trim(), null);
         }
@@ -111,9 +150,10 @@ public class ProfileGrowthTimelineService {
         timeline.setCoverImage(request.getCoverImage());
         timeline.setEventAt(parseEventAt(request.getEventAt()));
         timeline.setSourceId(request.getSourceId());
-        timeline.setSourceType(request.getSourceType() != null ? request.getSourceType().trim() : null);
+        timeline.setSourceType(sourceType);
         timeline.setEventKey(request.getEventKey() != null ? request.getEventKey().trim() : null);
-        timeline.setStatus(request.getStatus() != null ? request.getStatus() : 0);
+        // 不需要审核：新增即直接生效（status 固定为 2=已通过）
+        timeline.setStatus(2);
         growthTimelineRepository.save(timeline);
 
         saveAbilities(timeline.getId(), request.getAbilityData());
@@ -140,7 +180,7 @@ public class ProfileGrowthTimelineService {
      * 修改成长时间轴事件（PUT /profile/growth-timeline/{id}）
      * <p>
      * 全部字段可选，仅更新传入的非空字段；abilityData / tags 传入时整体替换子表数据。
-     * 仅草稿(0)/已退回(3)/已撤销(4)状态可编辑，待审核(1)/已通过(2)返回 40002。
+     * 不需要审核：任意状态（含已通过 2）均可直接修改；来源记录仍须关联已有来源记录。
      *
      * @param userId  当前登录用户 ID
      * @param id      时间轴节点 ID
@@ -150,9 +190,6 @@ public class ProfileGrowthTimelineService {
     @Transactional
     public GrowthTimelineDetailResponse update(Long userId, Long id, GrowthTimelineUpdateRequest request) {
         GrowthTimeline timeline = getOwnedTimeline(userId, id);
-        if (!ApplyStatusEnum.of(timeline.getStatus()).isEditable()) {
-            throw new BusinessException(ResultCode.BIZ_STATUS_NOT_OPERABLE, "当前状态不可修改");
-        }
 
         if (request.getSemesterId() != null) {
             validateSemester(request.getSemesterId());
@@ -182,20 +219,21 @@ public class ProfileGrowthTimelineService {
         }
         if (request.getSourceType() != null) {
             if (request.getSourceType().isBlank()) {
-                timeline.setSourceType(null);
-                timeline.setSourceId(null);
-            } else {
-                if (request.getSourceId() == null) {
-                    throw new BusinessException(ResultCode.PARAM_ERROR, "填写来源类型时必须同时提供来源ID");
-                }
-                checkSourceUnique(userId, request.getSourceType().trim(), request.getSourceId(), id);
-                timeline.setSourceType(request.getSourceType().trim());
-                timeline.setSourceId(request.getSourceId());
+                throw new BusinessException(ResultCode.PARAM_ERROR, "来源记录不能为空，必须关联已有的来源记录");
             }
+            if (request.getSourceId() == null) {
+                throw new BusinessException(ResultCode.PARAM_ERROR, "填写来源类型时必须同时提供来源ID");
+            }
+            String sourceType = request.getSourceType().trim();
+            validateSourceRecord(userId, sourceType, request.getSourceId());
+            checkSourceUnique(userId, sourceType, request.getSourceId(), id);
+            timeline.setSourceType(sourceType);
+            timeline.setSourceId(request.getSourceId());
         } else if (request.getSourceId() != null) {
             if (timeline.getSourceType() == null) {
                 throw new BusinessException(ResultCode.PARAM_ERROR, "填写来源ID时必须同时提供来源类型");
             }
+            validateSourceRecord(userId, timeline.getSourceType(), request.getSourceId());
             checkSourceUnique(userId, timeline.getSourceType(), request.getSourceId(), id);
             timeline.setSourceId(request.getSourceId());
         }
@@ -271,6 +309,30 @@ public class ProfileGrowthTimelineService {
     private void validateSemester(Long semesterId) {
         semesterRepository.findById(semesterId)
                 .orElseThrow(() -> new BusinessException(ResultCode.DATA_NOT_EXIST, "学期不存在"));
+    }
+
+    /** 来源记录必填校验：每条时间轴事件必须关联一条已有来源记录，否则报错 */
+    private void validateSourceRequired(String sourceType, Long sourceId) {
+        if (sourceType == null || sourceType.isBlank() || sourceId == null) {
+            throw new BusinessException(ResultCode.PARAM_ERROR,
+                    "必须关联已有的来源记录，需同时提供来源类型(sourceType)和来源ID(sourceId)");
+        }
+    }
+
+    /** 来源记录真实性校验：须在对应来源表中存在（未软删除）且归属当前用户，否则报错 */
+    private void validateSourceRecord(Long userId, String sourceType, Long sourceId) {
+        String sql = SOURCE_VALIDATION_SQL.get(sourceType);
+        if (sql == null) {
+            throw new BusinessException(ResultCode.PARAM_ILLEGAL, "不支持的来源类型: " + sourceType);
+        }
+        boolean exists = !entityManager.createNativeQuery(sql)
+                .setParameter("id", sourceId)
+                .setParameter("userId", userId)
+                .getResultList()
+                .isEmpty();
+        if (!exists) {
+            throw new BusinessException(ResultCode.DATA_NOT_EXIST, "来源记录不存在或不属于当前用户");
+        }
     }
 
     /** 解析日期字符串，格式 YYYY-MM-DD */

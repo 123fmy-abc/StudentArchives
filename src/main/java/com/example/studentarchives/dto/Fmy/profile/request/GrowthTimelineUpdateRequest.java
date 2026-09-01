@@ -45,15 +45,18 @@ public class GrowthTimelineUpdateRequest {
     @Pattern(regexp = "^\\d{4}-\\d{2}-\\d{2}$", message = "日期格式必须为YYYY-MM-DD")
     private String eventAt;
 
-    /** 审核状态：0=草稿 1=待审核 2=已通过 3=已退回 4=已撤销，不传保留原值 */
+    /** 审核状态：0=草稿 1=待审核 2=已通过 3=已退回 4=已撤销。不需要审核，任意状态均可修改，不传保留原值 */
     @Min(value = 0, message = "状态只能是0-4")
     @Max(value = 4, message = "状态只能是0-4")
     private Integer status;
 
-    /** 来源记录 ID，不传保留原值，与 sourceType 配对 */
+    /** 来源记录 ID，不传保留原值，与 sourceType 配对；须关联已有来源记录，不允许清空 */
     private Long sourceId;
 
-    /** 来源模型类型，不传保留原值，传空字符串清空（同时清空 sourceId） */
+    /**
+     * 来源模型类型，不传保留原值；传空字符串会报错（来源记录必填，不允许清空）。
+     * 支持值见 {@code GrowthTimelineCreateRequest.sourceType}。
+     */
     @Size(max = 100, message = "来源模型类型长度不能超过100")
     private String sourceType;
 

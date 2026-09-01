@@ -49,15 +49,27 @@ public class GrowthTimelineCreateRequest {
     @Pattern(regexp = "^\\d{4}-\\d{2}-\\d{2}$", message = "日期格式必须为YYYY-MM-DD")
     private String eventAt;
 
-    /** 审核状态：0=草稿 1=待审核 2=已通过 3=已退回 4=已撤销，默认 0 */
+    /**
+     * 审核状态：0=草稿 1=待审核 2=已通过 3=已退回 4=已撤销。
+     * 不需要审核，新增时后端强制置为 2=已通过（直接生效），本字段可不传。
+     */
     @Min(value = 0, message = "状态只能是0-4")
     @Max(value = 4, message = "状态只能是0-4")
     private Integer status;
 
-    /** 来源记录 ID（可空，与 sourceType 配对，见条件唯一索引 uk_gt_source） */
+    /**
+     * 来源记录 ID（必填，与 sourceType 配对）。
+     * 必须关联一条已有来源记录（对应来源表中存在且归属当前用户），否则报错。
+     */
     private Long sourceId;
 
-    /** 来源模型类型（可空，如 archive / award_application） */
+    /**
+     * 来源模型类型（必填，与 sourceId 配对）。
+     * 支持值：archives / award_applications / semester_gpa_summaries / gpa_records / career_plans /
+     * weakness_analyses / portrait_evaluation_scores / archive_competitions / archive_social_practices /
+     * archive_internships / archive_organizations / award_competition_stars / career_plan_feedbacks /
+     * improvement_suggestions，及别名 archive / award_application。
+     */
     @Size(max = 100, message = "来源模型类型长度不能超过100")
     private String sourceType;
 
