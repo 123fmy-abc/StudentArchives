@@ -173,6 +173,7 @@ public class ProfileService {
     private final EvaluationIndicatorRepository evaluationIndicatorRepository;
     private final ArchiveRepository archiveRepository;
     private final DictionaryRepository dictionaryRepository;
+    private final DataCompletenessService dataCompletenessService;
     private final ObjectMapper objectMapper;
 
     /**
@@ -315,6 +316,7 @@ public class ProfileService {
         contact.setEmergencyPhone(request.getEmergencyPhone());
         contact.setUpdatedBy(userId);
         userContactInfoRepository.save(contact);
+        refreshCompleteness(userId);
 
         return ContactUpdateResponse.builder()
                 .email(contact.getEmail())
@@ -474,6 +476,17 @@ public class ProfileService {
 
         List<DataCompleteness> list = dataCompletenessRepository
                 .findByUserIdAndSemesterId(userId, semester.getId());
+        // 兜底：data_completeness 尚无该生该学期记录（从未触发评分/档案变更）时现场计算并落库，
+        // 保证首次访问概览页即返回真实完整度，而非恒为 0
+        if (list.isEmpty()) {
+            try {
+                dataCompletenessService.recalculateForStudent(userId, semester.getId());
+                list = dataCompletenessRepository.findByUserIdAndSemesterId(userId, semester.getId());
+            } catch (Exception e) {
+                log.warn("数据完整度兜底计算失败: userId={}, semesterId={}",
+                        userId, semester.getId(), e);
+            }
+        }
         List<AbilityDimension> dimensions = abilityDimensionRepository.findAllActive();
         Map<String, String> dimensionNameMap = dimensions.stream()
                 .collect(Collectors.toMap(AbilityDimension::getDimensionCode,
@@ -568,6 +581,7 @@ public class ProfileService {
         }
         profile.setPoliticalStatus(politicalStatus);
         studentProfileRepository.save(profile);
+        refreshCompleteness(userId);
 
         return BasicInfoUpdateResponse.builder()
                 .politicalStatus(profile.getPoliticalStatus())
@@ -594,6 +608,7 @@ public class ProfileService {
         }
         profile.setStudentStatus(studentStatus);
         studentProfileRepository.save(profile);
+        refreshCompleteness(userId);
 
         return StudentStatusUpdateResponse.builder()
                 .studentStatus(profile.getStudentStatus())
@@ -674,6 +689,7 @@ public class ProfileService {
                 addedCount++;
             }
         }
+        refreshCompleteness(userId);
         return InterestUpdateResponse.builder()
                 .updatedCount(updatedCount)
                 .addedCount(addedCount)
@@ -702,6 +718,7 @@ public class ProfileService {
         if (affected == 0) {
             throw new BusinessException(ResultCode.DATA_NOT_EXIST, "兴趣标签不存在");
         }
+        refreshCompleteness(userId);
     }
 
     // ==================== 自我评价（4.1.6） ====================
@@ -725,9 +742,28 @@ public class ProfileService {
         }
         profile.setSelfEvaluation(request.getSelfEvaluation());
         studentProfileRepository.save(profile);
+        refreshCompleteness(userId);
         return SelfEvaluationResponse.builder()
                 .selfEvaluation(profile.getSelfEvaluation())
                 .build();
+    }
+
+    // ==================== 数据完整度增量刷新 ====================
+
+    /**
+     * 档案信息变更（学籍/联系/兴趣/自我评价）后增量刷新该学生「当前学期」的数据完整度。
+     * <p>
+     * 完整度属可重建的派生数据，计算失败仅记日志、不阻塞主流程；历史学期完整度由「评分重算」
+     * 批量刷新。触发时机与口径见 {@link DataCompletenessService}。
+     *
+     * @param userId 当前登录用户 ID
+     */
+    private void refreshCompleteness(Long userId) {
+        try {
+            dataCompletenessService.recalculateCurrentSemester(userId);
+        } catch (Exception e) {
+            log.warn("数据完整度增量刷新失败: userId={}", userId, e);
+        }
     }
 
     /**

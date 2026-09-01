@@ -144,6 +144,7 @@ public class AdminScoreService {
     private final ScoreCalculationRepository scoreCalculationRepository;
     private final ScoreCalculationDetailRepository scoreCalculationDetailRepository;
     private final PortraitEvaluationScoreRepository portraitEvaluationScoreRepository;
+    private final DataCompletenessService dataCompletenessService;
     private final ObjectMapper objectMapper;
 
     /** 自引用代理（@Lazy 避免循环依赖），用于触发后提交 @Async 异步执行 */
@@ -241,6 +242,13 @@ public class AdminScoreService {
         if (resolved == null) {
             log.warn("无可用指标规则版本，跳过自动评分: schoolId={}, userId={}, semesterId={}",
                     schoolId, userId, semesterId);
+            // 无评分规则版本时仍同步计算数据完整度（档案审核通过/成绩导入等触发场景）
+            try {
+                dataCompletenessService.recalculateForStudent(userId, semesterId);
+            } catch (Exception e) {
+                log.warn("数据完整度计算失败（无规则版本分支），不影响主流程: userId={}, semesterId={}",
+                        userId, semesterId, e);
+            }
             return;
         }
         Map<Long, EvaluationIndicator> indicatorById = toIndicatorMap(resolved.indicators());
@@ -694,6 +702,14 @@ public class AdminScoreService {
         }
         if (!portraitScores.isEmpty()) {
             portraitEvaluationScoreRepository.saveAll(portraitScores);
+        }
+
+        // 7. 同步计算数据完整度并落库（派生数据，失败不影响评分，独立事务）
+        try {
+            dataCompletenessService.recalculateForStudent(userId, semesterId);
+        } catch (Exception e) {
+            log.warn("数据完整度计算失败，不影响评分: userId={}, semesterId={}",
+                    userId, semesterId, e);
         }
     }
 
