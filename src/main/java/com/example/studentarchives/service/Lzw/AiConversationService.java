@@ -138,6 +138,13 @@ public class AiConversationService {
         AiConversation conv = loadOwnedConversation(conversationId, userId);
         List<AiMessage> messages = messageRepository.findByConversationIdOrderByCreatedAtAsc(conversationId);
 
+        // 回显当前用户已提交的消息反馈（切回历史对话时）
+        List<Long> messageIds = messages.stream().map(AiMessage::getId).collect(Collectors.toList());
+        Map<Long, String> feedbackMap = messageIds.isEmpty()
+                ? Collections.emptyMap()
+                : messageFeedbackRepository.findByUserIdAndMessageIdIn(userId, messageIds).stream()
+                        .collect(Collectors.toMap(AiMessageFeedback::getMessageId, AiMessageFeedback::getFeedback));
+
         List<MessageItem> items = messages.stream().map(m -> {
             MessageItem item = new MessageItem();
             item.setId(m.getId());
@@ -146,6 +153,7 @@ public class AiConversationService {
             item.setModelName(m.getModelName());
             item.setTokenUsage(m.getTokenUsage());
             item.setGenerationTimeMs(m.getGenerationTimeMs());
+            item.setFeedback(feedbackMap.get(m.getId()));
             item.setCreatedAt(toIso(m.getCreatedAt()));
             return item;
         }).collect(Collectors.toList());
@@ -584,6 +592,7 @@ public class AiConversationService {
         private String modelName;
         private Integer tokenUsage;
         private Integer generationTimeMs;
+        private String feedback;
         private String createdAt;
     }
 

@@ -4,6 +4,7 @@ import com.example.studentarchives.entity.ai.AiMessageFeedback;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
 
+import java.util.List;
 import java.util.Optional;
 
 /**
@@ -13,4 +14,6 @@ import java.util.Optional;
 public interface AiMessageFeedbackRepository extends JpaRepository<AiMessageFeedback, Long> {
 
     Optional<AiMessageFeedback> findByMessageIdAndUserId(Long messageId, Long userId);
+
+    List<AiMessageFeedback> findByUserIdAndMessageIdIn(Long userId, List<Long> messageIds);
 }
