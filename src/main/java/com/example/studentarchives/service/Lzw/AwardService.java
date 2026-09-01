@@ -386,7 +386,11 @@ public class AwardService {
             case "published_paper" -> "发表论文";
             default -> "科研之星";
         };
-        app.setTitle("科研之星-" + catLabel);
+        // 追加学生在子表填写的名称，便于区分同类多条申报
+        String subName = researchSubName(rs);
+        app.setTitle((subName != null && !subName.isBlank())
+                ? "科研之星-" + catLabel + "-" + subName
+                : "科研之星-" + catLabel);
 
         ArchiveAuditInfo audit = app.getAuditInfo();
         if (audit == null) { audit = new ArchiveAuditInfo(); app.setAuditInfo(audit); }
@@ -398,6 +402,23 @@ public class AwardService {
 
         writeAwardVersion(app, userId);
         return buildSubmitResponse(app);
+    }
+
+    /** 科研之星子表名称：按 primary_category 取对应子记录的首条名称 */
+    private String researchSubName(AwardResearchStar rs) {
+        String cat = rs.getPrimaryCategory();
+        if (cat == null) {
+            return null;
+        }
+        return switch (cat) {
+            case "project" -> researchProjectRepository.findByResearchStarId(rs.getId()).stream()
+                    .findFirst().map(p -> p.getProjectName()).orElse(null);
+            case "software_copyright" -> softwareCopyrightRepository.findByResearchStarId(rs.getId()).stream()
+                    .findFirst().map(p -> p.getSoftwareName()).orElse(null);
+            case "published_paper" -> publishedPaperRepository.findByResearchStarId(rs.getId()).stream()
+                    .findFirst().map(p -> p.getPaperTitle()).orElse(null);
+            default -> null;
+        };
     }
 
     // ==================== 8.4 双创之星报名 ====================

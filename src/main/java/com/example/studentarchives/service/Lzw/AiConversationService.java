@@ -6,6 +6,7 @@ import com.example.studentarchives.common.ResultCode;
 import com.example.studentarchives.entity.ai.AiConversation;
 import com.example.studentarchives.entity.ai.AiGenerationLog;
 import com.example.studentarchives.entity.ai.AiMessage;
+import com.example.studentarchives.entity.ai.AiMessageFeedback;
 import com.example.studentarchives.entity.ai.AiTeacherFeedback;
 import com.example.studentarchives.entity.archive.Archive;
 import com.example.studentarchives.entity.career.CareerPlan;
@@ -18,6 +19,7 @@ import com.example.studentarchives.enums.APICallStatusEnum;
 import com.example.studentarchives.exception.BusinessException;
 import com.example.studentarchives.repository.AiConversationRepository;
 import com.example.studentarchives.repository.AiGenerationLogRepository;
+import com.example.studentarchives.repository.AiMessageFeedbackRepository;
 import com.example.studentarchives.repository.AiMessageRepository;
 import com.example.studentarchives.repository.AiTeacherFeedbackRepository;
 import com.example.studentarchives.repository.ArchiveRepository;
@@ -68,9 +70,13 @@ public class AiConversationService {
     /** 生成记录关联类型：AI 消息 / 改进建议 */
     private static final String RELATED_AI_MESSAGE = "ai_message";
     private static final String RELATED_SUGGESTION = "improvement_suggestion";
+    /** 学生端消息反馈枚举 */
+    private static final String FEEDBACK_USEFUL = "useful";
+    private static final String FEEDBACK_USELESS = "useless";
 
     private final AiConversationRepository conversationRepository;
     private final AiMessageRepository messageRepository;
+    private final AiMessageFeedbackRepository messageFeedbackRepository;
     private final AiGenerationLogRepository generationLogRepository;
     private final AiTeacherFeedbackRepository teacherFeedbackRepository;
     private final ImprovementSuggestionRepository suggestionRepository;
@@ -353,6 +359,37 @@ public class AiConversationService {
         conversationRepository.softDeleteById(conversationId, now);
     }
 
+    // ==================== 9.8 消息反馈 ====================
+
+    @Transactional
+    public MessageFeedbackResponse submitFeedback(Long messageId, MessageFeedbackRequest body, Long userId) {
+        String feedback = body == null ? null : body.getFeedback();
+        if (feedback == null || feedback.isBlank()) {
+            throw new BusinessException(ResultCode.PARAM_MISSING, "反馈内容不能为空");
+        }
+        if (!FEEDBACK_USEFUL.equals(feedback) && !FEEDBACK_USELESS.equals(feedback)) {
+            throw new BusinessException(ResultCode.PARAM_ERROR, "反馈值必须为 useful 或 useless");
+        }
+
+        AiMessage message = messageRepository.findById(messageId)
+                .orElseThrow(() -> new BusinessException(ResultCode.DATA_NOT_EXIST, "消息不存在"));
+        loadOwnedConversation(message.getConversationId(), userId);
+
+        // 幂等：同一条消息重复反馈时覆盖已有记录
+        AiMessageFeedback record = messageFeedbackRepository
+                .findByMessageIdAndUserId(messageId, userId)
+                .orElseGet(AiMessageFeedback::new);
+        record.setUserId(userId);
+        record.setMessageId(messageId);
+        record.setFeedback(feedback);
+        messageFeedbackRepository.save(record);
+
+        MessageFeedbackResponse resp = new MessageFeedbackResponse();
+        resp.setMessageId(messageId);
+        resp.setFeedback(feedback);
+        return resp;
+    }
+
     // ==================== 私有工具方法 ====================
 
     private User loadUser(Long userId) {
@@ -622,6 +659,18 @@ public class AiConversationService {
             this.archiveId = archiveId;
             this.title = title;
         }
+    }
+
+    @Data
+    public static class MessageFeedbackRequest {
+        private String feedback;
+        private Long conversationId;
+    }
+
+    @Data
+    public static class MessageFeedbackResponse {
+        private Long messageId;
+        private String feedback;
     }
 
     // ==================== 内嵌 POJO：AI 回复占位 ====================

@@ -480,16 +480,16 @@ public class ApplicationService {
         }
         ArchiveTypeConfig config = archiveTypeConfigRepository
                 .findByArchiveTypeAndStatus(type, 1)
-                .orElseThrow(() -> new BusinessException(ResultCode.DATA_NOT_EXIST, "该档案类型的配置不存在"));
+                .orElse(null);
 
         return GuideResponse.builder()
-                .archiveType(config.getArchiveType())
-                .typeName(config.getTypeName())
-                .evaluateDesc(config.getEvaluateDesc())
-                .evaluateRequirements(config.getEvaluateRequirements())
-                .evaluateNotes(config.getEvaluateNotes())
-                .applyDesc(config.getApplyDesc())
-                .icon(config.getIcon())
+                .archiveType(typeEnum.getValue())
+                .typeName(typeEnum.getLabel())
+                .evaluateDesc(config != null ? config.getEvaluateDesc() : null)
+                .evaluateRequirements(config != null ? config.getEvaluateRequirements() : null)
+                .evaluateNotes(config != null ? config.getEvaluateNotes() : null)
+                .applyDesc(config != null ? config.getApplyDesc() : null)
+                .icon(config != null ? config.getIcon() : null)
                 .build();
     }
 

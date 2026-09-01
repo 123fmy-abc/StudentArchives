@@ -94,4 +94,14 @@ public class AiConversationController {
         aiConversationService.deleteConversation(conversationId, userId);
         return ApiResult.success("删除成功", null);
     }
+
+    // ==================== 9.8 消息反馈 ====================
+
+    @PostMapping("/messages/{messageId}/feedback")
+    public ApiResult<MessageFeedbackResponse> submitFeedback(
+            @PathVariable Long messageId,
+            @RequestBody(required = false) MessageFeedbackRequest body,
+            @AuthenticationPrincipal Long userId) {
+        return ApiResult.success(aiConversationService.submitFeedback(messageId, body, userId));
+    }
 }
