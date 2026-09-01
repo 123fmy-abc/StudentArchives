@@ -48,6 +48,7 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
@@ -369,6 +370,9 @@ public class UserManageService {
             rs.setScopeType(item.getScopeType());
             rs.setScopeId(item.getScopeId());
             rs.setSemesterId(item.getSemesterId());
+            rs.setIsPrimary(1);
+            rs.setAppointBy(operatorId);
+            rs.setValidFrom(LocalDate.now());
             rs.setStatus(1);
             roleScopeRepository.save(rs);
         }
