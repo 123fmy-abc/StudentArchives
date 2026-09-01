@@ -4,6 +4,7 @@ import com.example.studentarchives.common.ResultCode;
 import com.example.studentarchives.entity.award.*;
 import com.example.studentarchives.entity.embed.ArchiveAuditInfo;
 import com.example.studentarchives.entity.file.AttachmentRelation;
+import com.example.studentarchives.entity.foundation.AwardTypeConfig;
 import com.example.studentarchives.entity.user.User;
 import com.example.studentarchives.entity.version.ModelVersion;
 import com.example.studentarchives.enums.*;

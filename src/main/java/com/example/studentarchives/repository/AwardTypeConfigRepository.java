@@ -1,6 +1,6 @@
 package com.example.studentarchives.repository;
 
-import com.example.studentarchives.entity.award.AwardTypeConfig;
+import com.example.studentarchives.entity.foundation.AwardTypeConfig;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
 
