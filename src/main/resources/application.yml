@@ -83,6 +83,16 @@ oss:
   temp-expire-hours: 24             # 临时文件过期时间（小时）
   url-expire-minutes: 30            # 临时访问 URL 过期时间（分钟）
 
+# ===== DeepSeek 配置（lzw 配置，AI 对话模块） =====
+deepseek:
+  # API Key 通过项目根目录 .env 文件注入（DEEPSEEK_API_KEY=sk-xxx）
+  api-key: ${DEEPSEEK_API_KEY:}
+  base-url: ${DEEPSEEK_BASE_URL:https://api.deepseek.com}
+  model: ${DEEPSEEK_MODEL:deepseek-chat}
+  timeout-ms: ${DEEPSEEK_TIMEOUT_MS:60000}
+  max-tokens: ${DEEPSEEK_MAX_TOKENS:2000}
+  temperature: ${DEEPSEEK_TEMPERATURE:0.7}
+
 # ===== JWT 配置 =====
 jwt:
   # 必须通过环境变量 JWT_SECRET 注入 Base64 编码的 HMAC-SHA256 密钥（至少 256 位）。

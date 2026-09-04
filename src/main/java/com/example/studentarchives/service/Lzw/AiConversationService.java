@@ -3,6 +3,7 @@ package com.example.studentarchives.service.Lzw;
 import com.example.studentarchives.common.PageParam;
 import com.example.studentarchives.common.PageResult;
 import com.example.studentarchives.common.ResultCode;
+import com.example.studentarchives.config.Lzw.DeepSeekProperties;
 import com.example.studentarchives.entity.ai.AiConversation;
 import com.example.studentarchives.entity.ai.AiGenerationLog;
 import com.example.studentarchives.entity.ai.AiMessage;
@@ -52,7 +53,7 @@ import java.util.stream.Collectors;
  * AI 对话模块服务
  * <p>
  * 覆盖 7 个端点：创建会话、会话列表、消息列表、发送消息（含 AI 生成）、重新生成、AI 建议、删除会话。
- * AI 生成为占位实现，真实环境接入大模型服务后替换 {@link #buildAiReply(String)} 即可。
+ * AI 回复由 DeepSeek 大模型生成（见 buildAiReply），调用失败时返回兜底话术。
  */
 @Slf4j
 @Service
@@ -67,6 +68,14 @@ public class AiConversationService {
     /** 消息角色 */
     private static final String ROLE_USER = "user";
     private static final String ROLE_ASSISTANT = "assistant";
+    private static final String ROLE_SYSTEM = "system";
+    /** 多轮对话带入上下文的历史条数上限 */
+    private static final int HISTORY_LIMIT = 10;
+    /** AI 助手系统提示词（学生成长档案助手） */
+    private static final String SYSTEM_PROMPT =
+            "你是「学生成长档案」系统的 AI 助手，为学生提供档案申报、奖项报名、"
+            + "职业规划、短板改进等方面的咨询与建议。请用简洁、友好的中文回答；"
+            + "若问题超出档案系统范围，请礼貌说明并建议学生联系老师。";
     /** 生成记录关联类型：AI 消息 / 改进建议 */
     private static final String RELATED_AI_MESSAGE = "ai_message";
     private static final String RELATED_SUGGESTION = "improvement_suggestion";
@@ -85,6 +94,8 @@ public class AiConversationService {
     private final CareerPlanRepository careerPlanRepository;
     private final UserRepository userRepository;
     private final ObjectMapper objectMapper;
+    private final DeepSeekClient deepSeekClient;
+    private final DeepSeekProperties deepSeekProperties;
 
     // ==================== 9.1 创建对话会话 ====================
 
@@ -186,8 +197,9 @@ public class AiConversationService {
         userMsg.setContent(content);
         messageRepository.save(userMsg);
 
-        // 2. 调用 AI 生成回复
-        AiReply reply = buildAiReply(content);
+        // 2. 调用 AI 生成回复（带上当前会话历史作为上下文）
+        List<AiMessage> history = messageRepository.findByConversationIdOrderByCreatedAtAsc(conversationId);
+        AiReply reply = buildAiReply(history);
 
         // 3. 写入助手消息
         AiMessage assistantMsg = new AiMessage();
@@ -238,12 +250,14 @@ public class AiConversationService {
         AiGenerationLog originalLog = generationLogRepository
                 .findFirstByRelatedTypeAndRelatedIdOrderByIdDesc(RELATED_AI_MESSAGE, messageId).orElse(null);
 
-        // 重新调用 AI（以最近一条用户消息作为上下文）
+        // 重新调用 AI：带上该消息之前的会话历史（排除被替换的旧回复）
+        List<AiMessage> history = messageRepository.findByConversationIdOrderByCreatedAtAsc(conversationId)
+                .stream().filter(m -> m.getId() < original.getId()).collect(Collectors.toList());
         String prompt = findLastUserContent(conversationId);
         if (prompt == null) {
             prompt = original.getContent();
         }
-        AiReply reply = buildAiReply(prompt);
+        AiReply reply = buildAiReply(history);
         LocalDateTime now = LocalDateTime.now();
 
         AiMessage newMsg = new AiMessage();
@@ -415,20 +429,39 @@ public class AiConversationService {
     }
 
     /**
-     * 占位 AI 生成：真实环境接入大模型服务后替换此方法。
+     * 调用 DeepSeek 生成回复：系统提示词 + 最近历史消息作为上下文；失败时返回兜底话术。
      */
-    private AiReply buildAiReply(String prompt) {
-        String content = "根据您的档案信息，我为您提供以下建议：\n"
-                + "1. 请保持档案信息的完整与及时更新；\n"
-                + "2. 如需进一步分析，可以补充更多背景信息。\n\n"
-                + "您刚才提到的问题已收到，我会结合您的档案继续为您解答。";
-        AiReply reply = new AiReply();
-        reply.setContent(content);
-        reply.setModelName("gpt-4");
-        reply.setModelVersion("2024-05");
-        reply.setTokenUsage(Math.max(1, content.length()));
-        reply.setGenerationTimeMs(1200);
-        return reply;
+    private AiReply buildAiReply(List<AiMessage> history) {
+        List<DeepSeekClient.ChatMessage> messages = new ArrayList<>();
+        messages.add(new DeepSeekClient.ChatMessage(ROLE_SYSTEM, SYSTEM_PROMPT));
+        int from = Math.max(0, history.size() - HISTORY_LIMIT);
+        for (int i = from; i < history.size(); i++) {
+            AiMessage m = history.get(i);
+            if (m.getRole() == null || m.getContent() == null || m.getContent().isBlank()) {
+                continue;
+            }
+            messages.add(new DeepSeekClient.ChatMessage(m.getRole(), m.getContent()));
+        }
+
+        try {
+            DeepSeekClient.ChatResult result = deepSeekClient.chat(messages);
+            AiReply reply = new AiReply();
+            reply.setContent(result.content());
+            reply.setModelName(result.model());
+            reply.setModelVersion(null);
+            reply.setTokenUsage(result.totalTokens());
+            reply.setGenerationTimeMs((int) result.generationTimeMs());
+            return reply;
+        } catch (Exception e) {
+            log.error("DeepSeek 调用失败，返回兜底话术", e);
+            AiReply reply = new AiReply();
+            reply.setContent("抱歉，AI 服务暂时不可用，请稍后重试。");
+            reply.setModelName(deepSeekProperties.getModel());
+            reply.setModelVersion(null);
+            reply.setTokenUsage(0);
+            reply.setGenerationTimeMs(0);
+            return reply;
+        }
     }
 
     private void writeGenerationLog(Long userId, Long relatedId, String input, String output,
