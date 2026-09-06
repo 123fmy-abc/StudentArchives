@@ -43,7 +43,7 @@ public class DashboardResponse {
     /** 当前日期，如 "2026年7月7日星期一" */
     private String currentDate;
 
-    /** 申报总数（全部档案记录数） */
+    /** 申报总数（archives + award_applications + career_plans 三表行数之和，含草稿/已撤销，口径同 GET /activities 未筛选 total） */
     private Integer applicationTotal;
 
     /** 已通过数（status=2） */

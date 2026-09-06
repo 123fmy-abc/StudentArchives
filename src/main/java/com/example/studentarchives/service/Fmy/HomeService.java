@@ -9,6 +9,8 @@ import com.example.studentarchives.dto.Fmy.home.response.DashboardResponse.Quick
 import com.example.studentarchives.dto.Fmy.home.response.DashboardResponse.RadarChart;
 import com.example.studentarchives.dto.Fmy.home.response.DashboardResponse.RecentActivity;
 import com.example.studentarchives.entity.archive.Archive;
+import com.example.studentarchives.entity.award.AwardApplication;
+import com.example.studentarchives.entity.career.CareerPlan;
 import com.example.studentarchives.entity.evaluation.DataCompleteness;
 import com.example.studentarchives.entity.evaluation.PortraitEvaluationScore;
 import com.example.studentarchives.entity.foundation.AbilityDimension;
@@ -21,6 +23,8 @@ import com.example.studentarchives.entity.user.User;
 import com.example.studentarchives.exception.BusinessException;
 import com.example.studentarchives.repository.AbilityDimensionRepository;
 import com.example.studentarchives.repository.ArchiveRepository;
+import com.example.studentarchives.repository.AwardApplicationRepository;
+import com.example.studentarchives.repository.CareerPlanRepository;
 import com.example.studentarchives.repository.ClazzRepository;
 import com.example.studentarchives.repository.DataCompletenessRepository;
 import com.example.studentarchives.repository.MajorRepository;
@@ -50,6 +54,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import java.util.function.Function;
 import java.util.stream.Collectors;
 
 /**
@@ -63,7 +68,8 @@ import java.util.stream.Collectors;
  * - currentGpa/totalCredits/rankInClass/rankInMajor → semester_gpa_summaries
  *   （currentGpa/排名取当前学期行；totalCredits 为各学期 total_credit 累计求和）
  * - indicators/radarChart → portrait_evaluation_scores（当前学期 + 上阶段）
- * - applicationTotal/approvedCount/pendingCount/rejectedCount → archives（按 status 聚合）
+ * - applicationTotal/approvedCount/pendingCount/rejectedCount → archives + award_applications
+ *   + career_plans（跨 3 表按 status 聚合，口径与 GET /activities 列表一致）
  * - recentActivities → archives 最近提交
  * - dataCompleteness → data_completeness（按维度，rate 为各维度平均值）
  * - unreadMessageCount → user_messages（is_read=0 且 is_archived=0）
@@ -97,6 +103,8 @@ public class HomeService {
     private final SemesterGpaSummaryRepository semesterGpaSummaryRepository;
     private final PortraitEvaluationScoreRepository portraitEvaluationScoreRepository;
     private final ArchiveRepository archiveRepository;
+    private final AwardApplicationRepository awardApplicationRepository;
+    private final CareerPlanRepository careerPlanRepository;
     private final UserMessageRepository userMessageRepository;
     private final DataCompletenessRepository dataCompletenessRepository;
     private final AbilityDimensionRepository abilityDimensionRepository;
@@ -175,10 +183,22 @@ public class HomeService {
         RadarChart radarChart = buildRadarChart(dimensions, currentScores, previousScores);
 
         // ==================== 申报统计 + 最近动态 ====================
+        // 统计口径与 GET /activities 列表一致：聚合 archives / award_applications / career_plans 三表。
+        // applicationTotal = 三表行数之和（等同 /activities 未筛选时的列表 total）；
+        // 通过/待审批/退回计数 = 三表内 status 为 2/1/3 的行数之和（ApplyStatusEnum：0草稿 1待审批 2通过 3退回 4撤销）。
         List<Archive> archives = archiveRepository.findByUserId(userId);
-        int approvedCount = countByStatus(archives, STATUS_APPROVED);
-        int pendingCount = countByStatus(archives, STATUS_PENDING);
-        int rejectedCount = countByStatus(archives, STATUS_REJECTED);
+        List<AwardApplication> awards = awardApplicationRepository.findByUserId(userId);
+        List<CareerPlan> careerPlans = careerPlanRepository.findByUserId(userId);
+
+        int approvedCount = countByStatus(archives, Archive::getStatus, STATUS_APPROVED)
+                + countByStatus(awards, AwardApplication::getStatus, STATUS_APPROVED)
+                + countByStatus(careerPlans, CareerPlan::getStatus, STATUS_APPROVED);
+        int pendingCount = countByStatus(archives, Archive::getStatus, STATUS_PENDING)
+                + countByStatus(awards, AwardApplication::getStatus, STATUS_PENDING)
+                + countByStatus(careerPlans, CareerPlan::getStatus, STATUS_PENDING);
+        int rejectedCount = countByStatus(archives, Archive::getStatus, STATUS_REJECTED)
+                + countByStatus(awards, AwardApplication::getStatus, STATUS_REJECTED)
+                + countByStatus(careerPlans, CareerPlan::getStatus, STATUS_REJECTED);
 
         List<RecentActivity> recentActivities = archiveRepository
                 .findTop5ByUserIdAndAuditInfo_SubmittedAtIsNotNullOrderByAuditInfo_SubmittedAtDesc(userId)
@@ -198,7 +218,7 @@ public class HomeService {
                 .className(clazz != null ? clazz.getName() : null)
                 .grade(clazz != null ? clazz.getGrade() : null)
                 .currentDate(formatCurrentDate(LocalDate.now()))
-                .applicationTotal(archives.size())
+                .applicationTotal(archives.size() + awards.size() + careerPlans.size())
                 .approvedCount(approvedCount)
                 .pendingCount(pendingCount)
                 .rejectedCount(rejectedCount)
@@ -389,11 +409,13 @@ public class HomeService {
     // ==================== 私有辅助方法 ====================
 
     /**
-     * 统计指定状态的档案数
+     * 统计列表中指定申报状态(target)的条目数
+     * （archives / award_applications / career_plans 三表通用，status 均为 ApplyStatusEnum 值）
      */
-    private int countByStatus(List<Archive> archives, int status) {
-        return (int) archives.stream()
-                .filter(a -> a.getStatus() != null && a.getStatus() == status)
+    private <T> int countByStatus(List<T> items, Function<T, Integer> statusGetter, int target) {
+        return (int) items.stream()
+                .map(statusGetter)
+                .filter(s -> s != null && s == target)
                 .count();
     }
 
