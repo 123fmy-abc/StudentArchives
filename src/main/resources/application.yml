@@ -52,8 +52,7 @@ spring:
       max-request-size: 12MB     # 整个请求最大大小
       resolve-lazily: false      # 是否延迟解析（false=立即解析，可提前捕获异常）
 
-  # ===== Redis 配置（远程共享）=====
-  # 通过 database 索引隔离不同开发者的缓存数据
+  # ===== Redis 配置（连接参数由各 profile / .env 提供；开发默认本地 127.0.0.1）=====
   data:
     redis:
       timeout: 2000ms
