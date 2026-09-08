@@ -10,31 +10,26 @@
 #   - Redis：默认连接各自的本地 Redis（127.0.0.1），各用各的、互不干扰
 #   - QQ 邮箱：每人配置自己的邮箱和 SMTP 授权码
 #
-# 支持启动方式：
-#   - IDEA：自动读取 .env 文件；或在 Run Configuration 中设置环境变量
-#   - CMD：mvnw spring-boot:run（自动读取 .env）
-#   - 直接 java -jar：java -jar app.jar --spring.profiles.active=dev
+
 
 spring:
   # ===== Flyway（开发环境允许补跑漏掉的迁移）=====
   flyway:
-    out-of-order: true
-    # 共享 dev DB 的 schema_history 中遗留了队友已删除的 V27（本地无对应文件），
-    # 忽略 missing 迁移避免校验失败阻塞启动。
-    ignore-migration-patterns: "*:missing"
+    out-of-order: true #允许乱序执行迁移文件
+    ignore-migration-patterns: "*:missing" #忽略缺失的迁移脚本，执行过迁移，但数据库里面没有表
 
   # ===== 数据源（远程共享 MySQL，全体队员使用同一数据库）=====
   datasource:
     url: jdbc:mysql://${DB_HOST:8.137.191.26}:${DB_PORT:3306}/${DB_NAME:student_archives}?useUnicode=true&characterEncoding=utf-8&serverTimezone=Asia/Shanghai&useSSL=true&allowPublicKeyRetrieval=false
     username: ${DB_USERNAME:StuArch}
     password: ${DB_PASSWORD}
-    driver-class-name: com.mysql.cj.jdbc.Driver
-    hikari:
-      maximum-pool-size: 10
-      minimum-idle: 3
-      connection-timeout: 30000
-      idle-timeout: 600000
-      max-lifetime: 1800000
+    driver-class-name: com.mysql.cj.jdbc.Driver #用哪个底层工具包去和 MySQL 数据库进行通信。
+    hikari: #连接池配置
+      maximum-pool-size: 10 #连接池里最多同时存在 10 个数据库连接
+      minimum-idle: 3 #连接池里最少保持 3 个空闲的连接
+      connection-timeout: 30000 #获取连接超时时间
+      idle-timeout: 600000 #空闲连接存活时间，超过就会被回收
+      max-lifetime: 1800000 #存活时间达到 30 分钟，就会被强制关闭并创建新连接
 
   # ===== Redis（各自连接自己的本地 Redis，默认 127.0.0.1:6379）=====
   # 本地 Redis 未设置密码时，在 .env 里把 REDIS_PASSWORD 留空即可。
@@ -49,18 +44,18 @@ spring:
   mail:
     host: ${MAIL_HOST:smtp.qq.com}
     port: ${MAIL_PORT:587}
-    username: ${MAIL_USERNAME}
-    password: ${MAIL_PASSWORD}
+    username: ${MAIL_USERNAME} #qq邮箱
+    password: ${MAIL_PASSWORD} #授权码
     properties:
-      mail.from: ${MAIL_USERNAME}
-      mail.smtp.auth: true
-      mail.smtp.starttls.enable: true
-      mail.smtp.timeout: 5000
-      mail.smtp.connectiontimeout: 5000
+      mail.from: ${MAIL_USERNAME} #设置邮件的默认发件人地址
+      mail.smtp.auth: true #在发送邮件前需要先验证 username 和 password
+      mail.smtp.starttls.enable: true #账号、密码和邮件内容在传输过程中是加密的
+      mail.smtp.timeout: 5000 #SMTP 操作的超时时间，毫秒
+      mail.smtp.connectiontimeout: 5000 #设置建立网络连接的超时时间
 
 # ===== OSS 配置 =====
 # 与 application.yml 一致的 oss 配置通过 .env 注入以下环境变量：
-#   OSS_ENDPOINT, OSS_ACCESS_KEY_ID, OSS_ACCESS_KEY_SECRET, OSS_BUCKET_NAME
+# OSS_ENDPOINT, OSS_ACCESS_KEY_ID, OSS_ACCESS_KEY_SECRET, OSS_BUCKET_NAME
 # 团队所有成员使用 fmy 配置的同一 OSS，只需在 .env 中填入相同密钥即可共享。
 
 # ===== JWT 密钥（开发环境也不提供默认值，必须在 .env 中设置 JWT_SECRET）=====
