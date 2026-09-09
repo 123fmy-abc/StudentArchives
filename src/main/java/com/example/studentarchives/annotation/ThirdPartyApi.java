@@ -14,6 +14,7 @@ public @interface ThirdPartyApi {
     String service() default "";
 
     /** 接口描述 */
+    //具体调用的功能描述
     String description() default "";
 
     /** 超时警告阈值（毫秒），默认 3000ms */

@@ -34,20 +34,21 @@ import java.time.format.DateTimeFormatter;
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor(access = AccessLevel.PRIVATE)
-@JsonPropertyOrder({"code", "message", "data", "trace_id", "timestamp"})
+@JsonPropertyOrder({"code", "message", "data", "trace_id", "timestamp"})//规定了 JSON 字段输出的先后顺序
 public class ApiResult<T> {
 
-    private int code;
+    private int code;// 业务状态码
     private String message;
-    private T data;
+    private T data;// 实际的业务数据（泛型 T，可以是任何对象）
 
-    @JsonProperty("trace_id")
+    @JsonProperty("trace_id")// 链路追踪 ID（将 Java 的驼峰命名转为下划线命名）
     private String traceId;
 
     private String timestamp;
 
     // ==================== 成功 ====================
 
+    //<T> 泛型：表示这个方法可以返回任意类型的数据包装器。
     public static <T> ApiResult<T> success() {
         return result(ResultCode.SUCCESS, null);
     }
@@ -81,6 +82,7 @@ public class ApiResult<T> {
                 .build();
     }
 
+    //返回错误附带数据的方法
     public static <T> ApiResult<T> error(ResultCode resultCode, T data) {
         return ApiResult.<T>builder()
                 .code(resultCode.getCode())
@@ -137,6 +139,7 @@ public class ApiResult<T> {
     }
 
     /** ISO 8601 日期时间格式，带时区：2026-07-04T14:30:25+08:00 */
+    //定义一个全局的、不可变的日期格式化器（线程安全，避免每次调用都重新创建）
     private static final DateTimeFormatter DTF = DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ssXXX");
 
     private static String now() {

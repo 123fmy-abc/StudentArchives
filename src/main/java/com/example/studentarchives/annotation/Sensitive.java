@@ -21,10 +21,10 @@ import java.lang.annotation.*;
  * <p>
  * 通过 {@link SensitiveSerializer} 在 Jackson 序列化时拦截处理。
  */
-@Target(ElementType.FIELD)
+@Target(ElementType.FIELD)//注解只能贴在类的属性（字段）上
 @Retention(RetentionPolicy.RUNTIME)
-@JacksonAnnotationsInside
-@JsonSerialize(using = SensitiveSerializer.class)
+@JacksonAnnotationsInside//告诉 Jackson 框架：“这个自定义注解里面包含了其他 Jackson 的注解，需要解析它”
+@JsonSerialize(using = SensitiveSerializer.class)//字段转换成 JSON 字符串时，不要用默认的方式，而是去调用 SensitiveSerializer 这个类来处理”。
 @Documented
 public @interface Sensitive {
 

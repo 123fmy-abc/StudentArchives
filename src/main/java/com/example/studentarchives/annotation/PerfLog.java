@@ -11,6 +11,7 @@ import java.lang.annotation.*;
 public @interface PerfLog {
 
     /** 业务标签 */
+    //给性能监控起名，[用户导出] 接口执行耗时过长
     String label() default "";
 
     /** 慢查询告警阈值（毫秒），默认 500ms */

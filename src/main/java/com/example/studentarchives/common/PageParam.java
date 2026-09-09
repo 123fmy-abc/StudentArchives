@@ -13,6 +13,7 @@ import java.util.Set;
 /**
  * 通用分页请求参数
  */
+//类级别的 Lombok 注解
 @Data
 @Builder
 @NoArgsConstructor
@@ -20,7 +21,7 @@ import java.util.Set;
 public class PageParam {
 
     @Min(value = 1, message = "页码最小为 1")
-    @Builder.Default
+    @Builder.Default//Builder 构建时会使用你指定的默认值
     private int page = 1;
 
     @Min(value = 1, message = "每页条数最小为 1")
