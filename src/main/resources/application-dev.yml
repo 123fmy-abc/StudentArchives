@@ -38,7 +38,7 @@ spring:
       host: ${REDIS_HOST:127.0.0.1}
       port: ${REDIS_PORT:6380}
       password: ${REDIS_PASSWORD:123456}
-      database: ${REDIS_DATABASE:1}
+      database: ${REDIS_DATABASE:0}
 
   # ===== QQ 邮件（每人独立配置）=====
   mail:
