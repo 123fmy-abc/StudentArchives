@@ -29,6 +29,18 @@ public class CaptchaGenerator {
     private static final int HEIGHT = 48;
     private static final int CODE_LENGTH = 4;
 
+    /** 字符左右留白（像素），保证旋转后的墨迹不会贴到图片边缘被截断 */
+    private static final int MARGIN_X = 10;
+    /** 相邻字符之间允许的最大额外间距（像素） */
+    private static final int MAX_GAP = 8;
+    /** 单侧最大旋转弧度 */
+    private static final double MAX_ANGLE = 0.3;
+    /** 基准字号范围 */
+    private static final int BASE_FONT_MIN = 26;
+    private static final int BASE_FONT_MAX = 33;
+    /** 字号下限（基准字号放不下时逐级下调，不会低于此值） */
+    private static final int MIN_FONT_SIZE = 22;
+
     private static final SecureRandom RANDOM = new SecureRandom();
 
     /**
@@ -132,18 +144,38 @@ public class CaptchaGenerator {
         }
     }
 
-    /** 绘制验证码字符（带随机旋转和颜色，确保与背景色有足够对比度） */
+    /**
+     * 绘制验证码字符（带随机旋转和颜色，确保与背景色有足够对比度）
+     * <p>
+     * 按实际字体度量测量每个字符的宽度后再摆放并整体居中，左右各留 {@link #MARGIN_X} 像素，
+     * 字符绕自身中心旋转，避免宽字符超出右边界被图片边缘截断。
+     */
     private void drawCode(Graphics2D g2d, String code) {
-        int charWidth = WIDTH / CODE_LENGTH;
-        int fontSize = 26 + RANDOM.nextInt(8);
-
-        Font font = new Font("Arial", Font.BOLD | Font.ITALIC, fontSize);
+        Font font = pickFont(g2d, code);
         g2d.setFont(font);
-
         FontMetrics metrics = g2d.getFontMetrics();
         int baselineY = (HEIGHT + metrics.getAscent() / 2) / 2;
 
+        // 字符旋转后水平方向会额外外扩 h*sin(θ)，按此预留包围盒宽度
+        int slack = (int) Math.ceil(
+                (metrics.getAscent() + metrics.getDescent()) * Math.sin(MAX_ANGLE));
+        double[] widths = new double[CODE_LENGTH];
+        double totalWidth = 0;
         for (int i = 0; i < CODE_LENGTH; i++) {
+            widths[i] = metrics.stringWidth(String.valueOf(code.charAt(i))) + slack;
+            totalWidth += widths[i];
+        }
+
+        // 剩余空间摊到字符间隙里（不超过 MAX_GAP），再把整组字符水平居中
+        double gap = Math.min(
+                (WIDTH - 2.0 * MARGIN_X - totalWidth) / (CODE_LENGTH - 1), MAX_GAP);
+        double cursor = Math.max(MARGIN_X,
+                (WIDTH - (totalWidth + gap * (CODE_LENGTH - 1))) / 2);
+
+        for (int i = 0; i < CODE_LENGTH; i++) {
+            String ch = String.valueOf(code.charAt(i));
+            int glyphWidth = metrics.stringWidth(ch);
+
             // 随机深色（R/G/B 各 30-120 之间，确保与浅色背景有足够对比度）
             Color charColor = new Color(
                     30 + RANDOM.nextInt(90),
@@ -151,17 +183,49 @@ public class CaptchaGenerator {
                     30 + RANDOM.nextInt(90));
             g2d.setColor(charColor);
 
-            // 随机旋转
-            double angle = (RANDOM.nextDouble() - 0.5) * 0.6;
+            // 轻微抖动，但不超出预留的包围盒
+            double angle = (RANDOM.nextDouble() - 0.5) * 2 * MAX_ANGLE;
+            double centerX = cursor + widths[i] / 2
+                    + (RANDOM.nextDouble() - 0.5) * Math.min(gap, 3);
+            double centerY = baselineY + (RANDOM.nextDouble() - 0.5) * 3;
+
+            // 绕字符中心旋转，避免旋转把墨迹甩出格子的左右边界
             AffineTransform orig = g2d.getTransform();
-
-            int x = 5 + i * charWidth + RANDOM.nextInt(5);
-            g2d.translate(x + 10, baselineY);
+            g2d.translate(centerX, centerY);
             g2d.rotate(angle);
-            g2d.drawString(String.valueOf(code.charAt(i)), 0, 0);
-
+            g2d.drawString(ch, -glyphWidth / 2.0f, 0);
             g2d.setTransform(orig);
+
+            cursor += widths[i] + gap;
         }
+    }
+
+    /**
+     * 选取能完整容纳整个验证码的字号
+     * <p>
+     * 从随机的基准字号开始逐级下调，直到 4 个字符连同旋转外扩和左右留白都能放进图片宽度内，
+     * 避免 W/M 这类宽字符把最后一个字符挤出右边界。
+     */
+    private Font pickFont(Graphics2D g2d, String code) {
+        int target = BASE_FONT_MIN + RANDOM.nextInt(BASE_FONT_MAX - BASE_FONT_MIN + 1);
+        for (int size = target; size > MIN_FONT_SIZE; size--) {
+            Font font = new Font("Arial", Font.BOLD | Font.ITALIC, size);
+            if (fits(g2d.getFontMetrics(font), code)) {
+                return font;
+            }
+        }
+        return new Font("Arial", Font.BOLD | Font.ITALIC, MIN_FONT_SIZE);
+    }
+
+    /** 判断给定字体下整个验证码是否放得进图片宽度（含旋转外扩和左右留白） */
+    private boolean fits(FontMetrics metrics, String code) {
+        int slack = (int) Math.ceil(
+                (metrics.getAscent() + metrics.getDescent()) * Math.sin(MAX_ANGLE));
+        int total = 2 * MARGIN_X + CODE_LENGTH * slack;
+        for (int i = 0; i < code.length(); i++) {
+            total += metrics.stringWidth(String.valueOf(code.charAt(i)));
+        }
+        return total <= WIDTH;
     }
 
     @Data
