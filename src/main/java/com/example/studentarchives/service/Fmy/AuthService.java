@@ -114,6 +114,7 @@ public class AuthService {
         return CaptchaResponse.builder()
                 .key(key)
                 .image(result.getBase64Image())
+                .expiresIn(captchaStore.getTtlSeconds())
                 .build();
     }
 
@@ -133,10 +134,16 @@ public class AuthService {
     @Transactional
     public LoginResponse login(LoginRequest request, String ipAddress, String userAgent) {
         // 1. 校验验证码
-        if (!captchaStore.verify(request.getCaptchaKey(), request.getCaptchaCode())) {
-            log.warn("[登录调试] 步骤1失败: 验证码错误, key={}, code={}", request.getCaptchaKey(), request.getCaptchaCode());
-            recordLoginLog(null, null, LOGIN_STATUS_FAILED, "验证码错误", ipAddress, userAgent);
-            throw new BusinessException(ResultCode.PARAM_ERROR, "验证码错误或已过期");
+        CaptchaStore.VerifyResult captchaResult = captchaStore.verify(request.getCaptchaKey(), request.getCaptchaCode());
+        if (captchaResult != CaptchaStore.VerifyResult.OK) {
+            String captchaMessage = switch (captchaResult) {
+                case EXPIRED -> "验证码已过期，请重新获取";
+                case MISMATCH -> "验证码错误";
+                default -> "验证码无效，请重新获取";
+            };
+            log.warn("[登录调试] 步骤1失败: {}, key={}, code={}", captchaMessage, request.getCaptchaKey(), request.getCaptchaCode());
+            recordLoginLog(null, null, LOGIN_STATUS_FAILED, captchaMessage, ipAddress, userAgent);
+            throw new BusinessException(ResultCode.PARAM_ERROR, captchaMessage);
         }
         log.info("[登录调试] 步骤1通过: 验证码正确");
 

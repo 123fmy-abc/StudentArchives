@@ -19,4 +19,7 @@ public class CaptchaResponse {
 
     /** Base64 编码的 PNG 图片（含 data:image/png;base64, 前缀） */
     private String image;
+
+    /** 本次验证码的有效期，单位：秒 */
+    private Integer expiresIn;
 }
