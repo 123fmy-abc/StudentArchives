@@ -139,6 +139,7 @@ public class AuthService {
             String captchaMessage = switch (captchaResult) {
                 case EXPIRED -> "验证码已过期，请重新获取";
                 case MISMATCH -> "验证码错误";
+                case EXHAUSTED -> "验证码错误次数过多，请重新获取";
                 default -> "验证码无效，请重新获取";
             };
             log.warn("[登录调试] 步骤1失败: {}, key={}, code={}", captchaMessage, request.getCaptchaKey(), request.getCaptchaCode());
