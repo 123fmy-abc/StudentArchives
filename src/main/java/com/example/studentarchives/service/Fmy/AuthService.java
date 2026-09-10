@@ -243,7 +243,7 @@ public class AuthService {
      * @param userId 当前用户 ID
      * @return 用户详细信息（含权限）
      */
-    @Transactional(readOnly = true)
+    @Transactional(readOnly = true)//声明该方法在一个只读事务中执行
     public UserInfoResponse getCurrentUser(Long userId) {
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new BusinessException(ResultCode.TOKEN_INVALID, "用户不存在"));
@@ -375,6 +375,7 @@ public class AuthService {
     @Transactional
     public TokenRefreshResponse refreshToken(RefreshTokenRequest request) {
         Claims claims;
+        //解析并校验 Refresh Token
         try {
             claims = jwtUtil.getClaims(request.getRefreshToken());
         } catch (io.jsonwebtoken.ExpiredJwtException e) {
@@ -386,6 +387,7 @@ public class AuthService {
         Long userId = Long.valueOf(claims.getSubject());
         Integer refreshTokenVersion = claims.get("refreshTokenVersion", Integer.class);
 
+        //查询用户状态并校验
         UserAuthStatus authStatus = userRepository.findAuthStatusById(userId)
                 .orElseThrow(() -> new BusinessException(ResultCode.TOKEN_INVALID, "用户不存在"));
 
@@ -400,13 +402,14 @@ public class AuthService {
             throw new BusinessException(ResultCode.TOKEN_INVALID, "Token已失效，请重新登录");
         }
 
-        // CAS 递增 refreshTokenVersion，使当前 refreshToken 一次性失效，并防止并发刷新冲突
+        // CAS乐观锁 递增 refreshTokenVersion，使当前 refreshToken 一次性失效，并防止并发刷新冲突
         int updated = userRepository.compareAndIncrementRefreshTokenVersion(userId, refreshTokenVersion);
         if (updated == 0) {
             throw new BusinessException(ResultCode.TOO_MANY_REQUESTS, "并发刷新，请使用最新的刷新令牌");
         }
 
-        // 重新读取最新版本
+        // 重新读取最新版本，签发新的 Access Token 和 Refresh Token
+        //旧Access Token还能用
         UserAuthStatus newStatus = userRepository.findAuthStatusById(userId)
                 .orElseThrow(() -> new BusinessException(ResultCode.TOKEN_INVALID, "用户不存在"));
 

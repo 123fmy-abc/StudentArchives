@@ -89,6 +89,7 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class CommonService {
 
+    //依赖注入
     private final OssFileService ossFileService;
     private final OssProperties ossProperties;
 
@@ -119,6 +120,7 @@ public class CommonService {
 
     /**
      * 接口传入 type → 数据库 file_category 映射
+     * 决定文件在 OSS 中的存储目录（路径）
      */
     private static final Map<String, String> TYPE_TO_CATEGORY = Map.of(
             "evidence", "proof",
