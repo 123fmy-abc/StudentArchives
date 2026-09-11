@@ -11,9 +11,12 @@
 --
 -- 数据口径（与《管理端接口文档》V5.6 权限控制对齐）：
 --   - 角色 code='admin'，level=0（RoleLevelEnum.SYSTEM），role_type=4（系统管理类）
---   - 关键权限码：indicator:manage / score:recalculate / log:view
+--   - 关键权限码：user:view / user:manage / system:role:manage / org:manage
+--                semester:manage / semester:import / dictionary:manage / approval:flow:manage
+--                indicator:manage / score:recalculate / grade:import
 --                export:research / export:manage / export:template:manage
---                / audit:revoke / grade:import
+--                archive:view / archive:export / statistics:view
+--                form:template:manage / log:view / audit:revoke
 --   - 管理员通过 role_scopes 绑定学校范围（scope_type=1），实现全校数据权限
 -- ============================================================
 
@@ -38,10 +41,10 @@ INSERT INTO `roles` (`id`, `name`, `code`, `description`, `level`, `role_type`, 
 (2, '超级管理员', 'admin', '系统管理员，拥有系统全部管理权限', 0, 4, 1, 1, '[1,2,3,4]', 0, 1);
 
 -- ============================================================
--- 3. 管理员权限（permissions，id=8~23）
+-- 3. 管理员权限（permissions，id=8~23、37、38~43）
 --    菜单（type=1）为父节点，API（type=3）挂载其下
---    id=8~10 为菜单；id=11~23 为管理端关键权限码
---    （与《管理端接口文档》V5.6 关键权限码表一致）
+--    id=8~10 为菜单；id=11~23、37、38~43 为管理端关键权限码
+--    （与《管理端接口文档》V5.6 关键权限码表一致，代码层为唯一校验口径）
 -- ============================================================
 
 -- 3.1 菜单权限（type=1）
@@ -52,7 +55,7 @@ INSERT INTO `permissions` (`id`, `name`, `code`, `type`, `parent_id`, `sort`, `s
 
 -- 3.2 API 权限（type=3）— 系统管理模块
 INSERT INTO `permissions` (`id`, `name`, `code`, `type`, `parent_id`, `sort`, `status`) VALUES
-(11, '用户管理',         'system:user:manage',   3, 8,  1, 1),
+(11, '用户管理',         'user:manage',          3, 8,  1, 1),
 (12, '角色权限管理',     'system:role:manage',   3, 8,  2, 1),
 (13, '组织架构管理',     'org:manage',           3, 8,  3, 1),
 (14, '学期管理',         'semester:manage',      3, 8,  4, 1),
@@ -73,10 +76,23 @@ INSERT INTO `permissions` (`id`, `name`, `code`, `type`, `parent_id`, `sort`, `s
 (22, '查看操作日志', 'log:view',      3, 10, 1, 1),
 (23, '撤销审核',     'audit:revoke',  3, 10, 2, 1);
 
+-- 3.5 API 权限（type=3）— 代码层已校验但种子缺失的权限码
+--    这些权限码在 AdminArchiveService / AdminStatisticsService / AdminExportService /
+--    AdminFormTemplateService / SemesterManageService 中硬编码校验，必须存在于 permissions 表，
+--    /auth/me 才能通过 AuthService.getUserPermissions() 返回给前端。
+INSERT INTO `permissions` (`id`, `name`, `code`, `type`, `parent_id`, `sort`, `status`) VALUES
+(38, '用户查看',           'user:view',              3, NULL, 7, 1),
+(39, '档案查看',           'archive:view',           3, NULL, 7, 1),
+(40, '统计查看',           'statistics:view',        3, NULL, 8, 1),
+(41, '档案导出',           'archive:export',         3, NULL, 9, 1),
+(42, '表单模板管理',       'form:template:manage',   3, NULL, 8, 1),
+(43, '学期导入',           'semester:import',        3, NULL, 9, 1);
+
 -- ============================================================
--- 4. 角色-权限关联（role_permissions，id=8~23 + 52）
---    超级管理员（role_id=2）授予上述全部 17 个权限（含菜单）
+-- 4. 角色-权限关联（role_permissions，id=8~23 + 52 + 53~58）
+--    超级管理员（role_id=2）授予上述全部 23 个权限（含菜单）
 --    id=52：导出模板管理 export:template:manage（permission id=37）
+--    id=53~58：补充代码层已校验的 6 个缺失权限码（permission id=38~43）
 --    （permission/role_permissions 的 24~51 已由 seed_teachers.sql 占用，故新权限从 37/52 起）
 -- ============================================================
 INSERT INTO `role_permissions` (`id`, `role_id`, `permission_id`) VALUES
@@ -96,7 +112,13 @@ INSERT INTO `role_permissions` (`id`, `role_id`, `permission_id`) VALUES
 (21, 2, 21),
 (22, 2, 22),
 (23, 2, 23),
-(52, 2, 37);
+(52, 2, 37),
+(53, 2, 38),
+(54, 2, 39),
+(55, 2, 40),
+(56, 2, 41),
+(57, 2, 42),
+(58, 2, 43);
 
 -- ============================================================
 -- 5. 用户-角色关联（user_roles，id=6~7）
