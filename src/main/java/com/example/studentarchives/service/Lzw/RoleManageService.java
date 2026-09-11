@@ -45,7 +45,7 @@ import java.util.stream.Collectors;
  * 对应《管理端接口文档》八、角色与权限管理模块（8.1 ~ 8.7）。
  * 数据来源：roles、permissions、role_permissions、user_roles。
  * <p>
- * 权限：文档附录标注该模块「仅管理员可见」，统一要求 admin 角色，越权返回 20005。
+ * 权限：admin 角色或 system:role:manage 权限码，越权返回 20005。
  */
 @Slf4j
 @Service
@@ -72,7 +72,7 @@ public class RoleManageService {
 
     @Transactional(readOnly = true)
     public PageResult<RoleListItem> listRoles(Long operatorId, RoleListQuery query, PageParam pageParam) {
-        adminAuthService.requireAdmin(operatorId);
+        adminAuthService.requireAdminOrPermission(operatorId, "system:role:manage");
 
         Specification<Role> spec = buildRoleSpec(query.getStatus());
         Sort sort = Sort.by(Sort.Direction.ASC, "id");
@@ -112,7 +112,7 @@ public class RoleManageService {
 
     @Transactional
     public RoleIdResponse createRole(Long operatorId, RoleSaveRequest body) {
-        adminAuthService.requireAdmin(operatorId);
+        adminAuthService.requireAdminOrPermission(operatorId, "system:role:manage");
 
         String roleName = requireNotBlank(body.getRoleName(), "角色名称不能为空");
         String roleCode = requireNotBlank(body.getRoleCode(), "角色编码不能为空");
@@ -143,7 +143,7 @@ public class RoleManageService {
 
     @Transactional
     public void updateRole(Long operatorId, Long roleId, RoleSaveRequest body) {
-        adminAuthService.requireAdmin(operatorId);
+        adminAuthService.requireAdminOrPermission(operatorId, "system:role:manage");
 
         Role role = roleRepository.findById(roleId)
                 .orElseThrow(() -> new BusinessException(ResultCode.DATA_NOT_EXIST, "角色不存在"));
@@ -176,7 +176,7 @@ public class RoleManageService {
 
     @Transactional
     public void deleteRole(Long operatorId, Long roleId) {
-        adminAuthService.requireAdmin(operatorId);
+        adminAuthService.requireAdminOrPermission(operatorId, "system:role:manage");
 
         roleRepository.findById(roleId)
                 .orElseThrow(() -> new BusinessException(ResultCode.DATA_NOT_EXIST, "角色不存在"));
@@ -193,7 +193,7 @@ public class RoleManageService {
 
     @Transactional(readOnly = true)
     public RolePermissionsResponse getRolePermissions(Long operatorId, Long roleId) {
-        adminAuthService.requireAdmin(operatorId);
+        adminAuthService.requireAdminOrPermission(operatorId, "system:role:manage");
 
         Role role = roleRepository.findById(roleId)
                 .orElseThrow(() -> new BusinessException(ResultCode.DATA_NOT_EXIST, "角色不存在"));
@@ -220,7 +220,7 @@ public class RoleManageService {
 
     @Transactional
     public void assignRolePermissions(Long operatorId, Long roleId, List<Long> permissionIds) {
-        adminAuthService.requireAdmin(operatorId);
+        adminAuthService.requireAdminOrPermission(operatorId, "system:role:manage");
 
         roleRepository.findById(roleId)
                 .orElseThrow(() -> new BusinessException(ResultCode.DATA_NOT_EXIST, "角色不存在"));
@@ -254,7 +254,7 @@ public class RoleManageService {
 
     @Transactional(readOnly = true)
     public List<PermissionListItem> listPermissions(Long operatorId, String module, Integer status) {
-        adminAuthService.requireAdmin(operatorId);
+        adminAuthService.requireAdminOrPermission(operatorId, "system:role:manage");
 
         Specification<Permission> spec = buildPermissionSpec(module, status);
         Sort sort = Sort.by(Sort.Direction.ASC, "sort").and(Sort.by(Sort.Direction.ASC, "id"));

@@ -33,8 +33,8 @@ import java.nio.charset.StandardCharsets;
  * 管理端学期管理模块（Lzw）
  * <p>
  * 对应《管理端接口文档》九、学期管理模块（9.1 ~ 9.7）。
- * 权限：9.1~9.5 要求 admin 角色；9.6/9.7 校验 {@code semester:import} 权限码，
- * 由 Service 层校验，越权返回 20005。
+ * 权限：9.1~9.5 校验 admin 角色或 {@code semester:manage} 权限码；
+ * 9.6/9.7 校验 admin 角色或 {@code semester:import} 权限码，由 Service 层执行，越权返回 20005。
  */
 @RestController
 @RequestMapping("/admin")

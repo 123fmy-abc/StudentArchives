@@ -26,7 +26,7 @@ import org.springframework.web.bind.annotation.RestController;
  * 管理端字典数据管理模块（Lzw）
  * <p>
  * 对应《管理端接口文档》十、字典数据管理模块（10.1 ~ 10.5）。
- * 权限：要求 admin 角色（越权返回 20005），由 Service 层校验。
+ * 权限：admin 角色或 dictionary:manage 权限码（越权返回 20005），由 Service 层校验。
  */
 @RestController
 @RequestMapping("/admin")

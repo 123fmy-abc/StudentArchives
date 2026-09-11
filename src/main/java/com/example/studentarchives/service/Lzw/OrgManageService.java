@@ -38,7 +38,7 @@ import java.util.List;
  * 对应《管理端接口文档》十一、基础组织架构管理模块（11.1 ~ 11.7）。
  * 数据来源：schools、colleges、majors、classes。
  * <p>
- * 权限：文档未为组织架构列出权限码，且附录接口关系表未收录本模块，故全部要求 admin 角色（越权返回 20005）。
+ * 权限：admin 角色或 org:manage 权限码（越权返回 20005）。
  */
 @Slf4j
 @Service
@@ -55,7 +55,7 @@ public class OrgManageService {
 
     @Transactional(readOnly = true)
     public List<SchoolItem> listSchools(Long operatorId) {
-        adminAuthService.requireAdmin(operatorId);
+        adminAuthService.requireAdminOrPermission(operatorId, "org:manage");
         List<School> schools = schoolRepository.findAll(Sort.by(Sort.Direction.ASC, "id"));
         return schools.stream().map(s -> SchoolItem.builder()
                 .schoolId(s.getId())
@@ -69,7 +69,7 @@ public class OrgManageService {
 
     @Transactional(readOnly = true)
     public List<CollegeItem> listColleges(Long operatorId, Long schoolId, Integer status) {
-        adminAuthService.requireAdmin(operatorId);
+        adminAuthService.requireAdminOrPermission(operatorId, "org:manage");
         if (schoolId == null) {
             throw new BusinessException(ResultCode.PARAM_MISSING, "schoolId 不能为空");
         }
@@ -96,7 +96,7 @@ public class OrgManageService {
 
     @Transactional(readOnly = true)
     public List<MajorItem> listMajors(Long operatorId, Long collegeId, Long schoolId, Integer status) {
-        adminAuthService.requireAdmin(operatorId);
+        adminAuthService.requireAdminOrPermission(operatorId, "org:manage");
 
         // 解析学院范围：collegeId 优先，其次按 schoolId 下钻
         List<Long> collegeIds = null;
@@ -141,7 +141,7 @@ public class OrgManageService {
     @Transactional(readOnly = true)
     public PageResult<ClassItem> listClasses(Long operatorId, Long majorId, Long collegeId, Long schoolId,
                                              String grade, Integer status, String keyword, PageParam pageParam) {
-        adminAuthService.requireAdmin(operatorId);
+        adminAuthService.requireAdminOrPermission(operatorId, "org:manage");
 
         List<Long> majorIds = resolveMajorIds(majorId, collegeId, schoolId);
         if (majorIds != null && majorIds.isEmpty()) {
@@ -187,7 +187,7 @@ public class OrgManageService {
 
     @Transactional
     public ClassIdResponse createClass(Long operatorId, ClassSaveRequest body) {
-        adminAuthService.requireAdmin(operatorId);
+        adminAuthService.requireAdminOrPermission(operatorId, "org:manage");
 
         Long majorId = body.getMajorId();
         if (majorId == null) {
@@ -216,7 +216,7 @@ public class OrgManageService {
 
     @Transactional
     public void updateClass(Long operatorId, Long classId, ClassSaveRequest body) {
-        adminAuthService.requireAdmin(operatorId);
+        adminAuthService.requireAdminOrPermission(operatorId, "org:manage");
 
         Clazz clazz = clazzRepository.findById(classId)
                 .orElseThrow(() -> new BusinessException(ResultCode.DATA_NOT_EXIST, "班级不存在"));
@@ -244,7 +244,7 @@ public class OrgManageService {
 
     @Transactional
     public MajorIdResponse createMajor(Long operatorId, MajorCreateRequest body) {
-        adminAuthService.requireAdmin(operatorId);
+        adminAuthService.requireAdminOrPermission(operatorId, "org:manage");
 
         Long collegeId = body.getCollegeId();
         if (collegeId == null) {

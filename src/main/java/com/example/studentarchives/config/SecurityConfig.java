@@ -70,9 +70,7 @@ public class SecurityConfig {
                     // 管理端接口需认证（角色/权限码校验由各服务层经 AdminAuthService 执行，越权返回 20005）
 
                     .requestMatchers("/admin/**").authenticated()
-                    // 撤销已审核记录：HTTP 层要求 ADMIN 角色，防止路径前缀 /teacher 造成权限误解
-                    .requestMatchers("/teacher/audits/*/revoke").hasRole("ADMIN")
-                    // 教师端接口需登录，具体数据范围由 Service 层按教师授权班级/专业校验
+                    // 教师端接口需登录，具体数据范围与权限码由 Service 层校验
                     .requestMatchers("/teacher/**").authenticated()
                     // 学生端动态记录模块需登录（对齐《学生端接口文档》六、动态记录模块）
                     .requestMatchers("/activities/**").authenticated()

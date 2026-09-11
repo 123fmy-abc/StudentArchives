@@ -32,7 +32,7 @@ import java.util.List;
  * <p>
  * 对应《教师端接口文档》四、待审核任务模块（4.1 ~ 4.7）。
  * 路径前缀 {@code /teacher/audits}，全部接口需认证；
- * 撤销接口（4.6）在 HTTP 层（SecurityConfig）已要求 admin 角色，Service 层再次校验。
+ * 撤销接口（4.6）在 Service 层校验 admin 角色或 audit:revoke 权限码。
  */
 @RestController
 @RequestMapping("/teacher/audits")

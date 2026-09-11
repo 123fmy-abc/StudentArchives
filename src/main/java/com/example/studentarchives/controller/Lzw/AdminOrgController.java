@@ -30,7 +30,7 @@ import java.util.List;
  * 管理端基础组织架构管理模块（Lzw）
  * <p>
  * 对应《管理端接口文档》十一、基础组织架构管理模块（11.1 ~ 11.7）。
- * 权限：要求 admin 角色（越权返回 20005），由 Service 层校验。
+ * 权限：admin 角色或 org:manage 权限码（越权返回 20005），由 Service 层校验。
  */
 @RestController
 @RequestMapping("/admin")

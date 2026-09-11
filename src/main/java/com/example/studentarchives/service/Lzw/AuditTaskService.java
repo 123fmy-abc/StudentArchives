@@ -322,10 +322,10 @@ public class AuditTaskService {
 
     // ==================== 4.6 撤销已审核记录 ====================
 
-    /** 撤销已审核记录（POST /teacher/audits/{taskId}/revoke，仅 admin 角色）。 */
+    /** 撤销已审核记录（POST /teacher/audits/{taskId}/revoke，admin 角色或 audit:revoke 权限码）。 */
     @Transactional
     public RevokeResult revoke(Long teacherId, Long taskId, String revokeReason) {
-        adminAuthService.requireAdmin(teacherId);
+        adminAuthService.requireAdminOrPermission(teacherId, "audit:revoke");
         if (revokeReason == null || revokeReason.isBlank()) {
             throw new BusinessException(ResultCode.PARAM_MISSING, "撤销原因不能为空");
         }

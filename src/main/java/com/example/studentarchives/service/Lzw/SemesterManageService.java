@@ -56,8 +56,8 @@ import java.util.zip.ZipOutputStream;
  * 对应《管理端接口文档》九、学期管理模块（9.1 ~ 9.7）。
  * 数据来源：semesters（批量导入读取 file_uploads + OSS）。
  * <p>
- * 权限：9.1~9.5 文档附录标注「管理端可增删改，公共端只读」，要求 admin 角色；
- * 9.6/9.7 文档关键权限码标注 {@code semester:import}。
+ * 权限：9.1~9.5 要求 admin 角色或 semester:manage 权限码；
+ * 9.6/9.7 要求 admin 角色或 semester:import 权限码。
  */
 @Slf4j
 @Service
@@ -93,7 +93,7 @@ public class SemesterManageService {
 
     @Transactional(readOnly = true)
     public PageResult<SemesterListItem> listSemesters(Long operatorId, SemesterListQuery query, PageParam pageParam) {
-        adminAuthService.requireAdmin(operatorId);
+        adminAuthService.requireAdminOrPermission(operatorId, "semester:manage");
 
         Specification<Semester> spec = buildSemesterSpec(query.getSchoolId(), query.getStatus());
         Sort sort = Sort.by(Sort.Direction.DESC, "startDate").and(Sort.by(Sort.Direction.DESC, "id"));
@@ -127,7 +127,7 @@ public class SemesterManageService {
 
     @Transactional
     public SemesterIdResponse createSemester(Long operatorId, SemesterSaveRequest body) {
-        adminAuthService.requireAdmin(operatorId);
+        adminAuthService.requireAdminOrPermission(operatorId, "semester:manage");
 
         Long schoolId = body.getSchoolId();
         if (schoolId == null) {
@@ -158,7 +158,7 @@ public class SemesterManageService {
 
     @Transactional
     public void updateSemester(Long operatorId, Long semesterId, SemesterSaveRequest body) {
-        adminAuthService.requireAdmin(operatorId);
+        adminAuthService.requireAdminOrPermission(operatorId, "semester:manage");
 
         Semester semester = semesterRepository.findById(semesterId)
                 .orElseThrow(() -> new BusinessException(ResultCode.DATA_NOT_EXIST, "学期不存在"));
@@ -189,7 +189,7 @@ public class SemesterManageService {
 
     @Transactional
     public void setCurrentSemester(Long operatorId, Long semesterId) {
-        adminAuthService.requireAdmin(operatorId);
+        adminAuthService.requireAdminOrPermission(operatorId, "semester:manage");
 
         Semester target = semesterRepository.findById(semesterId)
                 .orElseThrow(() -> new BusinessException(ResultCode.DATA_NOT_EXIST, "学期不存在"));
@@ -211,7 +211,7 @@ public class SemesterManageService {
 
     @Transactional
     public void updateSemesterStatus(Long operatorId, Long semesterId, Integer status) {
-        adminAuthService.requireAdmin(operatorId);
+        adminAuthService.requireAdminOrPermission(operatorId, "semester:manage");
 
         Semester semester = semesterRepository.findById(semesterId)
                 .orElseThrow(() -> new BusinessException(ResultCode.DATA_NOT_EXIST, "学期不存在"));

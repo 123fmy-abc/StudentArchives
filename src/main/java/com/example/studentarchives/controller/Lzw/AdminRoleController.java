@@ -30,7 +30,7 @@ import java.util.List;
  * 管理端角色与权限管理模块（Lzw）
  * <p>
  * 对应《管理端接口文档》八、角色与权限管理模块（8.1 ~ 8.7）。
- * 权限：该模块「仅管理员可见」，由 Service 层 requireAdmin 校验，越权返回 20005。
+ * 权限：admin 角色或 system:role:manage 权限码，由 Service 层校验，越权返回 20005。
  */
 @RestController
 @RequestMapping("/admin")

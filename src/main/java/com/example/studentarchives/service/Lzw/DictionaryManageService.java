@@ -39,8 +39,7 @@ import java.util.stream.Collectors;
  * 对应《管理端接口文档》十、字典数据管理模块（10.1 ~ 10.5）。
  * 数据来源：dictionaries。
  * <p>
- * 权限：文档附录标注「管理端可增删改，公共端只读」，且关键权限码表未列出字典相关权限码，
- * 故 10.1~10.5 均要求 admin 角色（越权返回 20005）。
+ * 权限：admin 角色或 dictionary:manage 权限码（越权返回 20005）。
  */
 @Slf4j
 @Service
@@ -66,7 +65,7 @@ public class DictionaryManageService {
      */
     @Transactional(readOnly = true)
     public PageResult<DictTypeItem> listTypes(Long operatorId, String keyword, Integer status, PageParam pageParam) {
-        adminAuthService.requireAdmin(operatorId);
+        adminAuthService.requireAdminOrPermission(operatorId, "dictionary:manage");
 
         // 加载全部未删除字典项（@SQLRestriction 已过滤 deleted_at），在内存按类型分组
         List<Dictionary> all = dictionaryRepository.findAll();
@@ -124,7 +123,7 @@ public class DictionaryManageService {
 
     @Transactional(readOnly = true)
     public DictItemListResponse listItems(Long operatorId, String dictType, Integer status, PageParam pageParam) {
-        adminAuthService.requireAdmin(operatorId);
+        adminAuthService.requireAdminOrPermission(operatorId, "dictionary:manage");
         String type = requireNotBlank(dictType, "dictType 不能为空");
 
         Specification<Dictionary> spec = (root, cq, cb) -> {
@@ -165,7 +164,7 @@ public class DictionaryManageService {
      */
     @Transactional
     public DictItemIdResponse createItem(Long operatorId, DictItemCreateRequest body) {
-        adminAuthService.requireAdmin(operatorId);
+        adminAuthService.requireAdminOrPermission(operatorId, "dictionary:manage");
 
         String dictType = requireNotBlank(body.getDictType(), "dictType 不能为空");
         String dictValue = requireNotBlank(body.getDictValue(), "dictValue 不能为空");
@@ -194,7 +193,7 @@ public class DictionaryManageService {
 
     @Transactional
     public void updateItem(Long operatorId, Long itemId, DictItemUpdateRequest body) {
-        adminAuthService.requireAdmin(operatorId);
+        adminAuthService.requireAdminOrPermission(operatorId, "dictionary:manage");
 
         Dictionary d = dictionaryRepository.findById(itemId)
                 .orElseThrow(() -> new BusinessException(ResultCode.DATA_NOT_EXIST, "字典项不存在"));
@@ -245,7 +244,7 @@ public class DictionaryManageService {
      */
     @Transactional
     public void deleteItem(Long operatorId, Long itemId) {
-        adminAuthService.requireAdmin(operatorId);
+        adminAuthService.requireAdminOrPermission(operatorId, "dictionary:manage");
 
         Dictionary d = dictionaryRepository.findById(itemId)
                 .orElseThrow(() -> new BusinessException(ResultCode.DATA_NOT_EXIST, "字典项不存在"));
