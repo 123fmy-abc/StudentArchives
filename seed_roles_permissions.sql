@@ -15,28 +15,26 @@ INSERT INTO `roles` (`id`, `name`, `code`, `description`, `level`, `role_type`, 
 (1, '学生', 'student', '学生角色，可管理个人档案和查看个人信息', 1, 1, 1, 0, '[4]', 0, 1);
 
 -- ============================================================
--- 2. 学生权限（permissions，type=3 表示 API 接口权限）
+-- 2. 学生权限（permissions）
+--    权限字典已由 Flyway 迁移统一维护：
+--      db/migration/V35__ensure_role_permissions_and_scopes.sql
+--    本脚本不再插入 permissions 行。原因：新库中迁移先于本脚本执行，迁移会以自增 id
+--    建好全部权限码，若此处再按 id 1~7 插入会撞 uk_permissions_code 唯一键。
 -- ============================================================
-INSERT INTO `permissions` (`id`, `name`, `code`, `type`, `parent_id`, `sort`, `status`) VALUES
-(1, '查看个人档案', 'student:archive:view',   3, NULL, 1, 1),
-(2, '创建个人档案', 'student:archive:create', 3, NULL, 2, 1),
-(3, '编辑个人档案', 'student:archive:edit',   3, NULL, 3, 1),
-(4, '删除个人档案', 'student:archive:delete', 3, NULL, 4, 1),
-(5, '查看个人信息', 'student:profile:view',   3, NULL, 5, 1),
-(6, '编辑个人信息', 'student:profile:edit',   3, NULL, 6, 1),
-(7, '修改密码',     'student:auth:password',  3, NULL, 7, 1);
 
 -- ============================================================
 -- 3. 角色-权限关联（role_permissions）
+--    按权限码关联，不写死 id；INSERT IGNORE 保证可重复执行。
 -- ============================================================
-INSERT INTO `role_permissions` (`id`, `role_id`, `permission_id`) VALUES
-(1, 1, 1),
-(2, 1, 2),
-(3, 1, 3),
-(4, 1, 4),
-(5, 1, 5),
-(6, 1, 6),
-(7, 1, 7);
+INSERT IGNORE INTO `role_permissions` (`role_id`, `permission_id`)
+SELECT r.`id`, p.`id`
+FROM `roles` r
+JOIN `permissions` p ON p.`deleted_at` IS NULL AND p.`code` IN (
+    'student:archive:view', 'student:archive:create', 'student:archive:edit',
+    'student:archive:delete', 'student:profile:view', 'student:profile:edit',
+    'student:auth:password'
+)
+WHERE r.`deleted_at` IS NULL AND r.`code` = 'student';
 
 -- ============================================================
 -- 4. 用户-角色关联（user_roles）

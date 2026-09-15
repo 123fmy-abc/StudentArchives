@@ -2,13 +2,14 @@
 -- 种子数据：3 条完整教师数据（含辅导员角色）
 --
 -- 为系统初始化 3 名教师（用户 id=8~10），补齐教师端所需的
--- 全部关联数据：用户 + 教师档案 + 教师角色 + 辅导员角色 + 权限（API，id=24~36）
+-- 全部关联数据：用户 + 教师档案 + 教师角色 + 辅导员角色
 --              + 角色-权限关联 + 用户-角色关联 + 学院/班级范围 + 联系信息。
 --
 -- 前提：已依次执行以下种子文件
 --   1. seed_students.sql        （schools/colleges/majors/classes/users 1~5）
---   2. seed_roles_permissions.sql（roles 1 / permissions 1~7 / user_roles 1~5）
---   3. seed_admins.sql          （roles 2 / permissions 8~23、37 / users 6~7）
+--   2. seed_roles_permissions.sql（roles 1 / user_roles 1~5；permissions 由 Flyway V35 维护）
+--   3. seed_admins.sql          （roles 2 / users 6~7；permissions 由 Flyway V35 维护）
+--   另：schema 与 permissions 字典由 Flyway 迁移负责（V1~V35），本脚本只补演示数据。
 --
 -- 数据口径（与《RoleLevelEnum / RoleTypeEnum / 教师端接口文档》V5.6 对齐）：
 --   - 教师角色 code='teacher'，level=2（RoleLevelEnum.TEACHER 教师）
@@ -18,9 +19,11 @@
 --   - 两个角色均 role_type=1（教学类）、is_auditor=1（可作为审批节点/被委托）
 --   - teacher 范围 scope_types='[2,3,4]'（学院/专业/班级）
 --   - counselor 范围 scope_types='[4]'（班级，与《管理端接口文档》5.3"辅导员审核"节点一致）
---   - 两个角色共享同一套权限码（permissions 24~36 + 复用 score:recalculate id=18），
+--   - 两个角色共享同一套权限码：教师端 13 个 + score:recalculate + log:view，
 --     覆盖《教师端接口文档》§6 + 附录A
 --   - audit:revoke（撤销审核）/ export:research（研究数据导出）仅授予管理员，普通教师不授予
+--   - delegate:manage（审批委托）为教师专属，不授予管理员；
+--     审核员由管理员在「审批流程配置」模块指定
 --   - 教师职称 title 直接存展示值（教授/副教授/讲师）
 -- ============================================================
 
@@ -55,62 +58,39 @@ INSERT INTO `roles` (`id`, `name`, `code`, `description`, `level`, `role_type`, 
 (4, '辅导员', 'counselor', '辅导员角色，负责班级学生管理与初审（辅导员也是教师，同一用户可同时绑定两角色）', 3, 1, 1, 1, '[4]', 0, 1);
 
 -- ============================================================
--- 4. 教师权限（permissions，id=24~36，type=3 表示 API 接口权限）
---    id=24~28：个人中心（与教师端 /teacher/profile、/auth/password 对应）
---    id=29~36：核心业务权限码（与《教师端接口文档》§6 关键权限码 + 附录A 对照表对齐）
---       score:recalculate 复用管理员种子已建权限（id=18），此处不重复插入
---       audit:revoke / export:research 不授予普通教师（仅管理员）
+-- 4. 教师权限（permissions）
+--    权限字典已由 Flyway 迁移统一维护：
+--      db/migration/V35__ensure_role_permissions_and_scopes.sql
+--    本脚本不再插入 permissions 行。原因：新库中迁移先于本脚本执行，迁移会以自增 id
+--    建好全部权限码，若此处再按 id 24~36 插入会撞 uk_permissions_code 唯一键。
+--    audit:revoke / export:research 不授予普通教师（仅管理员）。
 -- ============================================================
-INSERT INTO `permissions` (`id`, `name`, `code`, `type`, `parent_id`, `sort`, `status`) VALUES
-(24, '查看个人档案',   'teacher:archive:view',  3, NULL, 1, 1),
-(25, '编辑个人档案',   'teacher:archive:edit',  3, NULL, 2, 1),
-(26, '查看个人信息',   'teacher:profile:view',  3, NULL, 3, 1),
-(27, '编辑个人信息',   'teacher:profile:edit',  3, NULL, 4, 1),
-(28, '修改密码',       'teacher:auth:password', 3, NULL, 5, 1),
-(29, '教师首页',       'dashboard:view',        3, NULL, 6, 1),
-(30, '待审核列表',     'audit:pending',         3, NULL, 7, 1),
-(31, '审核通过',       'audit:approve',         3, NULL, 8, 1),
-(32, '批量审核',       'audit:batch',           3, NULL, 9, 1),
-(33, '查看学生',       'student:view',          3, NULL, 10, 1),
-(34, 'AI评价生成',     'ai:invoke',             3, NULL, 11, 1),
-(35, '数据导出',       'export:execute',        3, NULL, 12, 1),
-(36, '审批委托管理',   'delegate:manage',       3, NULL, 13, 1);
 
 -- ============================================================
--- 5. 角色-权限关联（role_permissions，id=24~51）
---    教师角色（role_id=3）与辅导员角色（role_id=4）共享同一套
---    权限码（permissions 24~36 + 共享 score:recalculate id=18）
---    辅导员无需重复定义权限
+-- 5. 角色-权限关联（role_permissions）
+--    教师角色（role_id=3）与辅导员角色（role_id=4）共享同一套权限码：
+--    教师端 13 个 + score:recalculate（复用管理端码）+ log:view（教师端日志接口所需）。
+--    按权限码关联，不写死 id；INSERT IGNORE 保证可重复执行。
+--    辅导员无需重复定义权限。
+--    注意：delegate:manage（审批委托）为教师专属——管理员在「审批流程配置」模块
+--    指定各审批节点的审核员，不通过本模块指派，故该码不授予 admin。
 -- ============================================================
-INSERT INTO `role_permissions` (`id`, `role_id`, `permission_id`) VALUES
-(24, 3, 24),
-(25, 3, 25),
-(26, 3, 26),
-(27, 3, 27),
-(28, 3, 28),
-(29, 3, 29),
-(30, 3, 30),
-(31, 3, 31),
-(32, 3, 32),
-(33, 3, 33),
-(34, 3, 34),
-(35, 3, 18),
-(36, 3, 35),
-(37, 3, 36),
-(38, 4, 24),
-(39, 4, 25),
-(40, 4, 26),
-(41, 4, 27),
-(42, 4, 28),
-(43, 4, 29),
-(44, 4, 30),
-(45, 4, 31),
-(46, 4, 32),
-(47, 4, 33),
-(48, 4, 34),
-(49, 4, 18),
-(50, 4, 35),
-(51, 4, 36);
+INSERT IGNORE INTO `role_permissions` (`role_id`, `permission_id`)
+SELECT r.`id`, p.`id`
+FROM `roles` r
+JOIN `permissions` p ON p.`deleted_at` IS NULL AND p.`code` IN (
+    'teacher:archive:view', 'teacher:archive:edit',
+    'teacher:profile:view', 'teacher:profile:edit', 'teacher:auth:password',
+    'dashboard:view', 'audit:pending', 'audit:approve', 'audit:batch',
+    'student:view', 'ai:invoke', 'export:execute',
+    -- 审批委托（教师专属）
+    'delegate:manage',
+    -- 教师端日志接口校验 log:view，此前只授给 admin 导致教师端日志必然 20005
+    'log:view',
+    -- 教师端评分重算复用管理端权限码
+    'score:recalculate'
+)
+WHERE r.`deleted_at` IS NULL AND r.`code` IN ('teacher', 'counselor');
 
 -- ============================================================
 -- 6. 用户-角色关联（user_roles，id=8~11）

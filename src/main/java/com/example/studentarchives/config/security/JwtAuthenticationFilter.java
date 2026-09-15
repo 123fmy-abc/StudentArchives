@@ -20,14 +20,12 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Component;
+import org.springframework.util.AntPathMatcher;
+import org.springframework.util.PathMatcher;
 import org.springframework.util.StringUtils;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
-import java.util.Arrays;
-import java.util.Set;
-import java.util.stream.Collectors;
-import java.util.stream.Stream;
 
 /**
  * JWT 认证过滤器
@@ -35,6 +33,10 @@ import java.util.stream.Stream;
  * 从请求头中提取 JWT 令牌，验证后设置 SecurityContext。
  * 支持 tokenVersion 校验（用于踢人/退出所有设备）、
  * 用户状态校验、以及区分不同 Token 错误类型。
+ * <p>
+ * 公开路径（{@link SecurityConstants#PUBLIC_AUTH_PATHS}）同时支持两种语义：
+ * Ant 风格通配（{@code /public/**}）与「条目 + /」的前缀匹配（{@code /auth/password/reset} 覆盖其子路径）。
+ * 新增公开路径时按这两者之一书写即可，两者都会在 {@link #shouldNotFilter} 中命中。
  */
 @Slf4j
 @Component
@@ -45,20 +47,18 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
     private final ObjectMapper objectMapper;
     private final UserRepository userRepository;
 
-    /** 公开路径集合（用于 O(1) 匹配） */
-    private static final Set<String> PUBLIC_PATH_SET = Arrays.stream(PUBLIC_AUTH_PATHS)
-            .flatMap(p -> Stream.of(p, p + "/"))
-            .collect(Collectors.toUnmodifiableSet());
+    /** 公开路径匹配器：必须支持 `**` 通配，否则 /public/** 之类的条目在这里永远不会命中 */
+    private static final PathMatcher PATH_MATCHER = new AntPathMatcher();
 
     @Override
     protected boolean shouldNotFilter(HttpServletRequest request) {
         String path = request.getServletPath();
-        // 先精确匹配
-        if (PUBLIC_PATH_SET.contains(path)) {
-            return true;
-        }
-        // 前缀匹配：/auth/password/reset 等带子路径的情况
         for (String publicPath : PUBLIC_AUTH_PATHS) {
+            // 通配匹配：/public/** 覆盖 /public/statistics 等子路径
+            if (PATH_MATCHER.match(publicPath, path)) {
+                return true;
+            }
+            // 前缀匹配：/auth/password/reset 覆盖其下子路径，且兼容条目末尾带 / 的写法
             if (path.startsWith(publicPath + "/")) {
                 return true;
             }

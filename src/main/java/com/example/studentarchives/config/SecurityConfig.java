@@ -31,6 +31,11 @@ import static com.example.studentarchives.config.security.SecurityConstants.PUBL
  *       避免未来实现 /teacher/audits/{taskId}/revoke 时因路径前缀被误解为普通教师可操作.</li>
  *   <li>{@code /teacher/**} - 教师端接口需登录, 具体数据范围由 Service 层按教师授权班级/专业校验.</li>
  *   <li>{@code /activities/**}：学生端动态记录模块，需登录。</li>
+ *   <li>{@code /applications/**}、{@code /awards/**}、{@code /ai/**}：学生端申报/奖项/AI 对话，需登录。
+ *       此前未列入保护前缀，靠 {@code anyRequest().permitAll()} 放行，未登录时 userId=null 会流入
+ *       Service 层导致 500；现由兜底 {@code authenticated()} 统一返回 401。</li>
+ *   <li>兜底为 {@code authenticated()}：任何未显式 permitAll 的路径都需要登录。
+ *       新增公开接口时必须加入 {@link com.example.studentarchives.config.security.SecurityConstants#PUBLIC_AUTH_PATHS}。</li>
  * </ul>
  */
 //类级别的注解
@@ -74,8 +79,15 @@ public class SecurityConfig {
                     .requestMatchers("/teacher/**").authenticated()
                     // 学生端动态记录模块需登录（对齐《学生端接口文档》六、动态记录模块）
                     .requestMatchers("/activities/**").authenticated()
-                    // 其他未匹配的兜底放行（如健康检查、静态资源等）
-                    .anyRequest().permitAll()
+                    // 学生端申报/奖项/AI 对话需登录。
+                    // 这三个前缀此前落在 anyRequest().permitAll() 上，未登录请求会以
+                    // userId=null 流入 Service（findById(null) 抛异常 → 500，而不是 401）。
+                    .requestMatchers("/applications/**", "/awards/**", "/ai/**").authenticated()
+                    // 健康检查保留免鉴权，供探针使用
+                    .requestMatchers("/actuator/health", "/actuator/health/**").permitAll()
+                    // 兜底：未在上方显式声明的路径一律要求登录。
+                    // 公开接口必须在前面的 permitAll 中显式列出（见 SECURITY-PATHS 说明）。
+                    .anyRequest().authenticated()
             )
             // 添加 JWT 认证过滤器
             .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);

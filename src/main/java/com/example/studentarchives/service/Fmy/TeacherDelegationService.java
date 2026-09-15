@@ -5,6 +5,8 @@ import com.example.studentarchives.common.PageResult;
 import com.example.studentarchives.common.ResultCode;
 import com.example.studentarchives.dto.Fmy.delegation.request.DelegationCreateRequest;
 import com.example.studentarchives.dto.Fmy.delegation.response.DelegationCancelResponse;
+import com.example.studentarchives.dto.Fmy.delegation.response.DelegationCandidateItem;
+import com.example.studentarchives.dto.Fmy.delegation.response.DelegationCandidateResponse;
 import com.example.studentarchives.dto.Fmy.delegation.response.DelegationCreateResponse;
 import com.example.studentarchives.dto.Fmy.delegation.response.DelegationItem;
 import com.example.studentarchives.dto.Fmy.delegation.response.DelegationItem.RoleBrief;
@@ -15,15 +17,18 @@ import com.example.studentarchives.entity.org.Clazz;
 import com.example.studentarchives.entity.org.College;
 import com.example.studentarchives.entity.org.Major;
 import com.example.studentarchives.entity.user.Role;
+import com.example.studentarchives.entity.user.TeacherProfile;
 import com.example.studentarchives.entity.user.User;
 import com.example.studentarchives.entity.user.UserRole;
 import com.example.studentarchives.enums.ScopeTypeEnum;
+import com.example.studentarchives.enums.StatusEnum;
 import com.example.studentarchives.exception.BusinessException;
 import com.example.studentarchives.repository.ApprovalDelegationRepository;
 import com.example.studentarchives.repository.ClazzRepository;
 import com.example.studentarchives.repository.CollegeRepository;
 import com.example.studentarchives.repository.MajorRepository;
 import com.example.studentarchives.repository.RoleRepository;
+import com.example.studentarchives.repository.TeacherProfileRepository;
 import com.example.studentarchives.repository.UserRepository;
 import com.example.studentarchives.repository.UserRoleRepository;
 import com.example.studentarchives.service.common.AdminAuthService;
@@ -37,9 +42,13 @@ import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Comparator;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 /**
@@ -47,7 +56,10 @@ import java.util.stream.Collectors;
  * <p>
  * 教师因出差、请假等原因无法处理审批任务时，可将自己的审批权限临时委托给其他教师。
  * 数据来源：approval_delegations 表。委托仅对 approval_flow_steps.allow_delegate=1 的审批节点生效。
- * 权限码：delegate:manage — 管理自己的审批委托（创建/取消）。
+ * 权限码：delegate:manage — 管理自己的审批委托（创建/取消）。三个对外方法均在入口校验该码，
+ * 学生/其他未授权角色调用统一返回 20005。委托人是当前登录人，只能委托自己拥有的角色与范围。
+ * <p>
+ * 本模块为教师专属：管理员不通过本模块指派审核人，而是在「审批流程配置」模块配置各审批节点的审核员。
  * <p>
  * 委托状态机：0=待生效（定时委托）→ 1=生效中（到达 start_time 自动切换）→ 2=已过期
  * （超过 end_time，由定时任务扫描置位）；3=已取消 为手动取消。
@@ -71,6 +83,12 @@ public class TeacherDelegationService {
     /** 最长委托期：180 天 */
     private static final long MAX_DELEGATION_DAYS = 180;
 
+    /** 可持有委托的教师角色编码（受托人候选来源） */
+    private static final String ROLE_CODE_TEACHER = "teacher";
+
+    /** 辅导员角色编码（辅导员也是教师，同样可作为受托人） */
+    private static final String ROLE_CODE_COUNSELOR = "counselor";
+
     /** ISO 8601 带时区格式：2026-07-01T10:00:00+08:00 */
     private static final DateTimeFormatter ISO_WITH_ZONE =
             DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ssXXX");
@@ -81,6 +99,7 @@ public class TeacherDelegationService {
     private final UserRepository userRepository;
     private final UserRoleRepository userRoleRepository;
     private final RoleRepository roleRepository;
+    private final TeacherProfileRepository teacherProfileRepository;
     private final CollegeRepository collegeRepository;
     private final MajorRepository majorRepository;
     private final ClazzRepository clazzRepository;
@@ -101,6 +120,7 @@ public class TeacherDelegationService {
      */
     @Transactional(readOnly = true)
     public DelegationListResponse listDelegations(Long userId, String direction, Integer status, PageParam pageParam) {
+        adminAuthService.requireAdminOrPermission(userId, "delegate:manage");
         List<ApprovalDelegation> records = collectRecords(userId, direction);
         List<DelegationItem> items = records.stream()
                 .filter(d -> status == null || Objects.equals(effectiveStatus(d), status))
@@ -164,6 +184,7 @@ public class TeacherDelegationService {
      */
     @Transactional
     public DelegationCreateResponse createDelegation(Long userId, DelegationCreateRequest request) {
+        adminAuthService.requireAdminOrPermission(userId, "delegate:manage");
         LocalDateTime now = LocalDateTime.now();
         LocalDateTime startTime = request.getStartTime();
         LocalDateTime endTime = request.getEndTime();
@@ -266,6 +287,7 @@ public class TeacherDelegationService {
      */
     @Transactional
     public DelegationCancelResponse cancelDelegation(Long userId, Long delegationId, String cancelReason) {
+        adminAuthService.requireAdminOrPermission(userId, "delegate:manage");
         ApprovalDelegation delegation = approvalDelegationRepository.findByIdAndDelegatorId(delegationId, userId)
                 .orElseThrow(() -> new BusinessException(ResultCode.DATA_NOT_EXIST, "委托记录不存在"));
 
@@ -283,6 +305,116 @@ public class TeacherDelegationService {
                 .status(STATUS_CANCELLED)
                 .statusLabel(statusLabel(STATUS_CANCELLED))
                 .cancelledAt(toIso(delegation.getCancelledAt()))
+                .build();
+    }
+
+    // ==================== 可委托教师 ====================
+
+    /**
+     * 获取可委托教师列表（GET /teacher/delegations/candidates，《教师端接口文档》15.4）
+     * <p>
+     * 委托页「被委托人」下拉此前调管理端 {@code GET /admin/users}，教师调用必然 403；
+     * 本接口提供教师端可访问的数据源。
+     * <p>
+     * 取数：同校、状态启用、持有 {@code is_auditor=1} 的角色（teacher / counselor）的用户，排除当前登录人。
+     * 可选按 {@code keyword}（姓名/工号模糊）与 {@code collegeId}（教师档案所属学院）过滤。
+     *
+     * @param userId    当前登录教师用户 ID
+     * @param keyword   姓名/工号模糊关键字（可选）
+     * @param collegeId 学院 ID 过滤（可选）
+     * @return 可委托教师列表（按姓名升序）
+     */
+    @Transactional(readOnly = true)
+    public DelegationCandidateResponse listCandidates(Long userId, String keyword, Long collegeId) {
+        adminAuthService.requireAdminOrPermission(userId, "delegate:manage");
+
+        Long schoolId = adminAuthService.getOperatorSchoolId(userId);
+        DelegationCandidateResponse empty = DelegationCandidateResponse.builder()
+                .list(Collections.emptyList())
+                .total(0)
+                .build();
+
+        // 1. 可审批角色（is_auditor=1）：委托只能落在真正能审的角色上
+        Map<Long, String> roleNameById = new LinkedHashMap<>();
+        for (String code : new String[]{ROLE_CODE_TEACHER, ROLE_CODE_COUNSELOR}) {
+            roleRepository.findByCode(code)
+                    .filter(r -> Objects.equals(r.getIsAuditor(), 1))
+                    .ifPresent(r -> roleNameById.put(r.getId(), r.getName()));
+        }
+        if (roleNameById.isEmpty()) {
+            return empty;
+        }
+
+        // 2. 持有这些角色的用户
+        List<Long> candidateIds = userRoleRepository.findByRoleIdIn(roleNameById.keySet()).stream()
+                .map(UserRole::getUserId)
+                .filter(Objects::nonNull)
+                .distinct()
+                .collect(Collectors.toList());
+        if (candidateIds.isEmpty()) {
+            return empty;
+        }
+
+        // 3. 同校 + 非本人 + 启用中
+        List<User> candidates = userRepository.findByIdIn(candidateIds).stream()
+                .filter(u -> Objects.equals(u.getSchoolId(), schoolId))
+                .filter(u -> !Objects.equals(u.getId(), userId))
+                .filter(u -> StatusEnum.ENABLED.equalsValue(u.getStatus()))
+                .collect(Collectors.toList());
+        if (candidates.isEmpty()) {
+            return empty;
+        }
+
+        // 4. 角色名（仅保留可审批角色）与教师档案（职称 / 学院）
+        List<Long> candidateUserIds = candidates.stream().map(User::getId).collect(Collectors.toList());
+        Map<Long, List<String>> roleNamesByUserId = userRoleRepository.findByUserIdIn(candidateUserIds).stream()
+                .filter(ur -> roleNameById.containsKey(ur.getRoleId()))
+                .collect(Collectors.groupingBy(UserRole::getUserId,
+                        Collectors.mapping(ur -> roleNameById.get(ur.getRoleId()), Collectors.toList())));
+        Map<Long, TeacherProfile> profileByUserId = teacherProfileRepository.findByUserIdIn(candidateUserIds).stream()
+                .collect(Collectors.toMap(TeacherProfile::getUserId, p -> p, (a, b) -> a));
+
+        Set<Long> collegeIds = profileByUserId.values().stream()
+                .map(TeacherProfile::getCollegeId)
+                .filter(Objects::nonNull)
+                .collect(Collectors.toSet());
+        Map<Long, String> collegeNameById = collegeIds.isEmpty() ? Collections.emptyMap()
+                : collegeRepository.findAllById(collegeIds).stream()
+                        .collect(Collectors.toMap(College::getId, College::getName, (a, b) -> a));
+
+        // 5. 关键字 / 学院过滤
+        String kw = keyword == null ? null : keyword.trim();
+        List<DelegationCandidateItem> items = candidates.stream()
+                .filter(u -> kw == null || kw.isEmpty()
+                        || (u.getName() != null && u.getName().contains(kw))
+                        || (u.getUserNo() != null && u.getUserNo().contains(kw)))
+                .filter(u -> {
+                    if (collegeId == null) {
+                        return true;
+                    }
+                    TeacherProfile p = profileByUserId.get(u.getId());
+                    return p != null && Objects.equals(p.getCollegeId(), collegeId);
+                })
+                .map(u -> {
+                    TeacherProfile p = profileByUserId.get(u.getId());
+                    Long cid = p != null ? p.getCollegeId() : null;
+                    return DelegationCandidateItem.builder()
+                            .userId(u.getId())
+                            .name(u.getName())
+                            .userNo(u.getUserNo())
+                            .title(p != null ? p.getTitle() : null)
+                            .collegeId(cid)
+                            .collegeName(cid != null ? collegeNameById.get(cid) : null)
+                            .roleNames(roleNamesByUserId.getOrDefault(u.getId(), Collections.emptyList()))
+                            .build();
+                })
+                .sorted(Comparator.comparing(DelegationCandidateItem::getName,
+                        Comparator.nullsLast(Comparator.naturalOrder())))
+                .collect(Collectors.toList());
+
+        return DelegationCandidateResponse.builder()
+                .list(items)
+                .total(items.size())
                 .build();
     }
 

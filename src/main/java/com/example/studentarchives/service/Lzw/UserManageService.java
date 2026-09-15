@@ -85,6 +85,9 @@ public class UserManageService {
     /** 教师角色编码（自动创建 teacher_profiles 记录） */
     private static final String ROLE_CODE_TEACHER = "teacher";
 
+    /** 辅导员角色编码（同一用户可同时持有 teacher + counselor，范围需分别绑定） */
+    private static final String ROLE_CODE_COUNSELOR = "counselor";
+
     /** ISO 8601 带时区输出格式 */
     private static final DateTimeFormatter ISO_WITH_ZONE =
             DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ssXXX");
@@ -348,7 +351,7 @@ public class UserManageService {
 
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new BusinessException(ResultCode.DATA_NOT_EXIST, "用户不存在"));
-        Long teacherRoleId = resolveTeacherRoleId(userId);
+        List<Long> scopeRoleIds = resolveScopeRoleIds(userId);
 
         List<ScopeConfigItem> items = scopes == null ? Collections.emptyList() : scopes;
         for (ScopeConfigItem item : items) {
@@ -362,19 +365,24 @@ public class UserManageService {
             // role_scopes 唯一索引 uk_role_scopes_assign(user_id, role_id, scope_type, scope_id, semester_id, is_deleted_null)
             roleScopeRepository.flush();
         }
-        for (ScopeConfigItem item : items) {
-            RoleScope rs = new RoleScope();
-            rs.setUserId(userId);
-            rs.setSchoolId(user.getSchoolId());
-            rs.setRoleId(teacherRoleId);
-            rs.setScopeType(item.getScopeType());
-            rs.setScopeId(item.getScopeId());
-            rs.setSemesterId(item.getSemesterId());
-            rs.setIsPrimary(1);
-            rs.setAppointBy(operatorId);
-            rs.setValidFrom(LocalDate.now());
-            rs.setStatus(1);
-            roleScopeRepository.save(rs);
+        // 同一份范围同时写入该用户持有的每个「可持有范围」的角色：
+        // 兼辅导员的教师需要 teacher + counselor 两套 role_scopes，否则辅导员端范围筛选恒为空。
+        // uk_role_scopes_assign 含 role_id，同一 scope 挂多个角色不冲突。
+        for (Long roleId : scopeRoleIds) {
+            for (ScopeConfigItem item : items) {
+                RoleScope rs = new RoleScope();
+                rs.setUserId(userId);
+                rs.setSchoolId(user.getSchoolId());
+                rs.setRoleId(roleId);
+                rs.setScopeType(item.getScopeType());
+                rs.setScopeId(item.getScopeId());
+                rs.setSemesterId(item.getSemesterId());
+                rs.setIsPrimary(1);
+                rs.setAppointBy(operatorId);
+                rs.setValidFrom(LocalDate.now());
+                rs.setStatus(1);
+                roleScopeRepository.save(rs);
+            }
         }
     }
 
@@ -556,18 +564,36 @@ public class UserManageService {
         };
     }
 
-    /** 定位用户的教师角色 ID（配置数据范围时必须具备教师角色） */
-    private Long resolveTeacherRoleId(Long userId) {
+    /**
+     * 定位配置数据范围时需要写入的角色 ID 列表：teacher 必选，持有 counselor 时追加 counselor。
+     * <p>
+     * 辅导员也是教师，同一用户可同时持有 teacher + counselor，而两个角色各自需要一套
+     * role_scopes（教师端与辅导员端的范围筛选分别按角色读取）。此前只写 teacher 角色，
+     * 导致兼辅导员的账号在辅导员端范围筛选恒为空。
+     *
+     * @param userId 目标用户 ID
+     * @return 角色 ID 列表，至少含 teacher 角色
+     */
+    private List<Long> resolveScopeRoleIds(Long userId) {
         List<Long> roleIds = userRoleRepository.findByUserId(userId).stream()
                 .map(UserRole::getRoleId).filter(Objects::nonNull).collect(Collectors.toList());
         if (roleIds.isEmpty()) {
             throw new BusinessException(ResultCode.PARAM_ERROR, "该用户未分配教师角色");
         }
-        return roleRepository.findByIdIn(roleIds).stream()
-                .filter(r -> ROLE_CODE_TEACHER.equals(r.getCode()))
-                .map(Role::getId)
-                .findFirst()
-                .orElseThrow(() -> new BusinessException(ResultCode.PARAM_ERROR, "该用户未分配教师角色"));
+        Map<String, Long> idByCode = roleRepository.findByIdIn(roleIds).stream()
+                .filter(r -> r.getCode() != null)
+                .collect(Collectors.toMap(Role::getCode, Role::getId, (a, b) -> a));
+        List<Long> scopeRoleIds = new ArrayList<>();
+        for (String code : new String[]{ROLE_CODE_TEACHER, ROLE_CODE_COUNSELOR}) {
+            Long roleId = idByCode.get(code);
+            if (roleId != null) {
+                scopeRoleIds.add(roleId);
+            }
+        }
+        if (scopeRoleIds.isEmpty()) {
+            throw new BusinessException(ResultCode.PARAM_ERROR, "该用户未分配教师角色");
+        }
+        return scopeRoleIds;
     }
 
     /** 校验数据范围存在且启用（scopeType 仅支持 2学院/3专业/4班级） */

@@ -5,6 +5,7 @@ import com.example.studentarchives.common.PageParam;
 import com.example.studentarchives.dto.Fmy.delegation.request.DelegationCancelRequest;
 import com.example.studentarchives.dto.Fmy.delegation.request.DelegationCreateRequest;
 import com.example.studentarchives.dto.Fmy.delegation.response.DelegationCancelResponse;
+import com.example.studentarchives.dto.Fmy.delegation.response.DelegationCandidateResponse;
 import com.example.studentarchives.dto.Fmy.delegation.response.DelegationCreateResponse;
 import com.example.studentarchives.dto.Fmy.delegation.response.DelegationListResponse;
 import com.example.studentarchives.service.Fmy.TeacherDelegationService;
@@ -25,7 +26,11 @@ import org.springframework.web.bind.annotation.RestController;
  * 教师端审批委托 Controller（《教师端接口文档》十一、审批委托模块）
  * <p>
  * 权限码：delegate:manage — 创建/取消/查看自己的审批委托。
- * 路由前缀 /teacher 已在 SecurityConfig 中配置为登录即可访问（无需管理员角色）。
+ * 路由前缀 /teacher 在 SecurityConfig 中仅要求登录，权限码由
+ * {@link com.example.studentarchives.service.Fmy.TeacherDelegationService} 逐方法校验，
+ * 未授权角色调用返回 20005。
+ * <p>
+ * 本模块为教师专属：审核员由管理员在「审批流程配置」模块指定，不通过本模块指派。
  */
 @Slf4j
 @RestController
@@ -56,6 +61,23 @@ public class TeacherDelegationController {
                 .perPage(Math.min(Math.max(perPage, 1), 100))
                 .build();
         return ApiResult.success(teacherDelegationService.listDelegations(userId, direction, status, pageParam));
+    }
+
+    /**
+     * 获取可委托教师列表（GET /teacher/delegations/candidates，《教师端接口文档》15.4）
+     * <p>
+     * 委托页「被委托人」下拉的数据源。此前该下拉调管理端 GET /admin/users，教师调用必然 403。
+     *
+     * @param userId    当前登录教师用户 ID
+     * @param keyword   姓名/工号模糊关键字，不传返回全部
+     * @param collegeId 学院 ID 过滤，不传返回全部学院
+     */
+    @GetMapping("/candidates")
+    public ApiResult<DelegationCandidateResponse> listCandidates(
+            @AuthenticationPrincipal Long userId,
+            @RequestParam(value = "keyword", required = false) String keyword,
+            @RequestParam(value = "collegeId", required = false) Long collegeId) {
+        return ApiResult.success(teacherDelegationService.listCandidates(userId, keyword, collegeId));
     }
 
     /**

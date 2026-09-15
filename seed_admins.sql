@@ -7,7 +7,8 @@
 --
 -- 前提：已依次执行以下种子文件
 --   1. seed_students.sql        （schools/colleges/majors/classes/users 1~5）
---   2. seed_roles_permissions.sql（roles 1 / permissions 1~7 / user_roles 1~5）
+--   2. seed_roles_permissions.sql（roles 1 / user_roles 1~5；permissions 由 Flyway V35 维护）
+--   另：schema 与 permissions 字典由 Flyway 迁移负责（V1~V35），本脚本只补演示数据。
 --
 -- 数据口径（与《管理端接口文档》V5.6 权限控制对齐）：
 --   - 角色 code='admin'，level=0（RoleLevelEnum.SYSTEM），role_type=4（系统管理类）
@@ -41,84 +42,46 @@ INSERT INTO `roles` (`id`, `name`, `code`, `description`, `level`, `role_type`, 
 (2, '超级管理员', 'admin', '系统管理员，拥有系统全部管理权限', 0, 4, 1, 1, '[1,2,3,4]', 0, 1);
 
 -- ============================================================
--- 3. 管理员权限（permissions，id=8~23、37、38~43）
---    菜单（type=1）为父节点，API（type=3）挂载其下
---    id=8~10 为菜单；id=11~23、37、38~43 为管理端关键权限码
+-- 3. 管理员权限（permissions）
+--    菜单（type=1）为父节点，API（type=3）挂载其下。
+--    权限字典已迁移至 Flyway（V35），此处保留占位说明，不再插入行。
 --    （与《管理端接口文档》V5.6 关键权限码表一致，代码层为唯一校验口径）
 -- ============================================================
 
--- 3.1 菜单权限（type=1）
-INSERT INTO `permissions` (`id`, `name`, `code`, `type`, `parent_id`, `sort`, `status`) VALUES
-(8,  '系统管理', 'system:manage', 1, NULL, 1, 1),
-(9,  '数据管理', 'data:manage',   1, NULL, 2, 1),
-(10, '日志审计', 'log:audit',     1, NULL, 3, 1);
-
--- 3.2 API 权限（type=3）— 系统管理模块
-INSERT INTO `permissions` (`id`, `name`, `code`, `type`, `parent_id`, `sort`, `status`) VALUES
-(11, '用户管理',         'user:manage',          3, 8,  1, 1),
-(12, '角色权限管理',     'system:role:manage',   3, 8,  2, 1),
-(13, '组织架构管理',     'org:manage',           3, 8,  3, 1),
-(14, '学期管理',         'semester:manage',      3, 8,  4, 1),
-(15, '字典管理',         'dictionary:manage',    3, 8,  5, 1),
-(16, '审批流程配置',     'approval:flow:manage', 3, 8,  6, 1);
-
--- 3.3 API 权限（type=3）— 数据管理模块
-INSERT INTO `permissions` (`id`, `name`, `code`, `type`, `parent_id`, `sort`, `status`) VALUES
-(17, '指标配置管理', 'indicator:manage',   3, 9, 1, 1),
-(18, '触发评分重算', 'score:recalculate',  3, 9, 2, 1),
-(19, '成绩导入',     'grade:import',       3, 9, 3, 1),
-(20, '研究数据导出', 'export:research',    3, 9, 4, 1),
-(21, '管理端数据导出', 'export:manage',    3, 9, 5, 1),
-(37, '导出模板管理', 'export:template:manage', 3, 9, 6, 1);
-
--- 3.4 API 权限（type=3）— 日志审计模块
-INSERT INTO `permissions` (`id`, `name`, `code`, `type`, `parent_id`, `sort`, `status`) VALUES
-(22, '查看操作日志', 'log:view',      3, 10, 1, 1),
-(23, '撤销审核',     'audit:revoke',  3, 10, 2, 1);
-
--- 3.5 API 权限（type=3）— 代码层已校验但种子缺失的权限码
---    这些权限码在 AdminArchiveService / AdminStatisticsService / AdminExportService /
---    AdminFormTemplateService / SemesterManageService 中硬编码校验，必须存在于 permissions 表，
---    /auth/me 才能通过 AuthService.getUserPermissions() 返回给前端。
-INSERT INTO `permissions` (`id`, `name`, `code`, `type`, `parent_id`, `sort`, `status`) VALUES
-(38, '用户查看',           'user:view',              3, NULL, 7, 1),
-(39, '档案查看',           'archive:view',           3, NULL, 7, 1),
-(40, '统计查看',           'statistics:view',        3, NULL, 8, 1),
-(41, '档案导出',           'archive:export',         3, NULL, 9, 1),
-(42, '表单模板管理',       'form:template:manage',   3, NULL, 8, 1),
-(43, '学期导入',           'semester:import',        3, NULL, 9, 1);
+-- 3.1~3.5 权限字典（permissions）
+--    已由 Flyway 迁移统一维护：
+--      db/migration/V35__ensure_role_permissions_and_scopes.sql
+--    本脚本不再插入 permissions 行。原因：新库中迁移先于本脚本执行，迁移会以自增 id
+--    建好全部权限码，若此处再按 id 8~23/37/38~43 插入会撞 uk_permissions_code 唯一键。
+--    原 3.5 节（代码层已校验但种子缺失的 6 个权限码 user:view/archive:view/statistics:view/
+--    archive:export/form:template:manage/semester:import）同样由 V35 建好。
 
 -- ============================================================
--- 4. 角色-权限关联（role_permissions，id=8~23 + 52 + 53~58）
---    超级管理员（role_id=2）授予上述全部 23 个权限（含菜单）
---    id=52：导出模板管理 export:template:manage（permission id=37）
---    id=53~58：补充代码层已校验的 6 个缺失权限码（permission id=38~43）
---    （permission/role_permissions 的 24~51 已由 seed_teachers.sql 占用，故新权限从 37/52 起）
+-- 4. 角色-权限关联（role_permissions）
+--    超级管理员（role_id=2）授予管理端全部 23 个权限（含菜单）。
+--    按权限码关联，不写死 id；INSERT IGNORE 保证可重复执行。
+--    注意：审批委托 delegate:manage 为教师专属（见 seed_teachers.sql），不授予管理员；
+--    管理员在「审批流程配置」模块指定各审批节点的审核员。
 -- ============================================================
-INSERT INTO `role_permissions` (`id`, `role_id`, `permission_id`) VALUES
-(8,  2, 8),
-(9,  2, 9),
-(10, 2, 10),
-(11, 2, 11),
-(12, 2, 12),
-(13, 2, 13),
-(14, 2, 14),
-(15, 2, 15),
-(16, 2, 16),
-(17, 2, 17),
-(18, 2, 18),
-(19, 2, 19),
-(20, 2, 20),
-(21, 2, 21),
-(22, 2, 22),
-(23, 2, 23),
-(52, 2, 37),
-(53, 2, 38),
-(54, 2, 39),
-(55, 2, 40),
-(56, 2, 41),
-(57, 2, 42),
-(58, 2, 43);
+INSERT IGNORE INTO `role_permissions` (`role_id`, `permission_id`)
+SELECT r.`id`, p.`id`
+FROM `roles` r
+JOIN `permissions` p ON p.`deleted_at` IS NULL AND p.`code` IN (
+    -- 菜单
+    'system:manage', 'data:manage', 'log:audit',
+    -- 系统管理模块
+    'user:manage', 'system:role:manage', 'org:manage', 'semester:manage',
+    'dictionary:manage', 'approval:flow:manage',
+    -- 数据管理模块
+    'indicator:manage', 'score:recalculate', 'grade:import',
+    'export:research', 'export:manage', 'export:template:manage',
+    -- 日志审计模块
+    'log:view', 'audit:revoke',
+    -- 代码层校验的补充权限码
+    'user:view', 'archive:view', 'statistics:view', 'archive:export',
+    'form:template:manage', 'semester:import'
+)
+WHERE r.`deleted_at` IS NULL AND r.`code` = 'admin';
 
 -- ============================================================
 -- 5. 用户-角色关联（user_roles，id=6~7）
