@@ -126,27 +126,36 @@ public class AuthService {
     /**
      * 用户登录
      *
-     * @param request   登录请求
-     * @param ipAddress 客户端 IP
-     * @param userAgent 客户端 User-Agent
+     * @param request     登录请求
+     * @param ipAddress   客户端 IP
+     * @param userAgent   客户端 User-Agent
+     * @param skipCaptcha 是否跳过图形验证码校验。
+     *                    仅测试环境的白名单账号携带约定请求头时为 true，
+     *                    由 {@link com.example.studentarchives.support.CaptchaSkipPolicy} 判定。
      * @return 登录响应（含 JWT 令牌和用户信息）
      */
     @Transactional
-    public LoginResponse login(LoginRequest request, String ipAddress, String userAgent) {
+    public LoginResponse login(LoginRequest request, String ipAddress, String userAgent, boolean skipCaptcha) {
         // 1. 校验验证码
-        CaptchaStore.VerifyResult captchaResult = captchaStore.verify(request.getCaptchaKey(), request.getCaptchaCode());
-        if (captchaResult != CaptchaStore.VerifyResult.OK) {
-            String captchaMessage = switch (captchaResult) {
-                case EXPIRED -> "验证码已过期，请重新获取";
-                case MISMATCH -> "验证码错误";
-                case EXHAUSTED -> "验证码错误次数过多，请重新获取";
-                default -> "验证码无效，请重新获取";
-            };
-            log.warn("[登录调试] 步骤1失败: {}, key={}, code={}", captchaMessage, request.getCaptchaKey(), request.getCaptchaCode());
-            recordLoginLog(null, null, LOGIN_STATUS_FAILED, captchaMessage, ipAddress, userAgent);
-            throw new BusinessException(ResultCode.PARAM_ERROR, captchaMessage);
+        if (skipCaptcha) {
+            // 免验证码登录属于测试便利能力，每次调用都单独留痕，便于审计回溯
+            log.warn("[CAPTCHA-SKIP-AUDIT] 免验证码登录: userNo={}, ip={}, userAgent={}",
+                    request.getUserNo(), ipAddress, userAgent);
+        } else {
+            CaptchaStore.VerifyResult captchaResult = captchaStore.verify(request.getCaptchaKey(), request.getCaptchaCode());
+            if (captchaResult != CaptchaStore.VerifyResult.OK) {
+                String captchaMessage = switch (captchaResult) {
+                    case EXPIRED -> "验证码已过期，请重新获取";
+                    case MISMATCH -> "验证码错误";
+                    case EXHAUSTED -> "验证码错误次数过多，请重新获取";
+                    default -> "验证码无效，请重新获取";
+                };
+                log.warn("[登录调试] 步骤1失败: {}, key={}, code={}", captchaMessage, request.getCaptchaKey(), request.getCaptchaCode());
+                recordLoginLog(null, null, LOGIN_STATUS_FAILED, captchaMessage, ipAddress, userAgent);
+                throw new BusinessException(ResultCode.PARAM_ERROR, captchaMessage);
+            }
+            log.info("[登录调试] 步骤1通过: 验证码正确");
         }
-        log.info("[登录调试] 步骤1通过: 验证码正确");
 
         // 2. 检查登录失败次数
         boolean allowed = loginAttemptLimiter.isAllowed(request.getUserNo());

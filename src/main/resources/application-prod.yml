@@ -40,3 +40,14 @@ spring:
 # ===== JWT 密钥（生产环境必须通过环境变量注入）=====
 jwt:
   secret: ${JWT_SECRET}
+
+# ===== 免验证码登录（生产永久关闭）=====
+# 这里显式写死关闭只是「自我说明」，真正的保证是 CaptchaSkipPolicy 里硬编码的
+# 生产 profile 守卫：只要 active profile 命中 prod/production/prd，一律强制校验验证码，
+# 因此即使有人用 -DskipCodeVerify=true 或环境变量覆盖下面的开关也不会生效。
+auth:
+  captcha:
+    skip-code-verify: false
+    skip-allowed-profiles: []
+    skip-users: []
+    skip-secret: ""
