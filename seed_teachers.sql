@@ -69,7 +69,7 @@ INSERT INTO `roles` (`id`, `name`, `code`, `description`, `level`, `role_type`, 
 -- ============================================================
 -- 5. 角色-权限关联（role_permissions）
 --    教师角色（role_id=3）与辅导员角色（role_id=4）共享同一套权限码：
---    教师端 13 个 + score:recalculate（复用管理端码）+ log:view（教师端日志接口所需）。
+--    教师端 13 个 + score:recalculate（复用管理端码）。日志仅管理员可见，不再授予 log:view。
 --    按权限码关联，不写死 id；INSERT IGNORE 保证可重复执行。
 --    辅导员无需重复定义权限。
 --    注意：delegate:manage（审批委托）为教师专属——管理员在「审批流程配置」模块
@@ -85,8 +85,6 @@ JOIN `permissions` p ON p.`deleted_at` IS NULL AND p.`code` IN (
     'student:view', 'ai:invoke', 'export:execute',
     -- 审批委托（教师专属）
     'delegate:manage',
-    -- 教师端日志接口校验 log:view，此前只授给 admin 导致教师端日志必然 20005
-    'log:view',
     -- 教师端评分重算复用管理端权限码
     'score:recalculate'
 )

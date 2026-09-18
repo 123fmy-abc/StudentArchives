@@ -46,7 +46,8 @@ import java.util.stream.Collectors;
 /**
  * 教师端「操作日志查询模块」Service（《教师端接口文档》六，6.1）。
  * <p>
- * 数据来源：system_logs（只读）。权限码 {@code log:view}。数据范围：
+ * 数据来源：system_logs（只读）。日志仅管理员可见：非 admin 角色（teacher/counselor）
+ * 访问统一返回 20005（{@code AdminAuthService#requireAdmin}，不再校验 log:view 权限码）。数据范围：
  * 仅返回「当前教师自身操作」（operator_id = 当前教师）与「授权范围内学生相关操作」
  * （system_logs.user_id 落在教师 role_scopes 范围内）的日志；admin 角色不限定范围。
  */
@@ -73,7 +74,7 @@ public class TeacherLogService {
      * 查询授权范围内的系统操作日志（GET /teacher/logs）
      */
     public PageResult<LogItem> listLogs(Long teacherId, LogQuery query, PageParam pageParam) {
-        adminAuthService.requireAdminOrPermission(teacherId, "log:view");
+        adminAuthService.requireAdmin(teacherId);
         Long schoolId = adminAuthService.getOperatorSchoolId(teacherId);
 
         // null = admin 或学校级授权（不限定范围）
