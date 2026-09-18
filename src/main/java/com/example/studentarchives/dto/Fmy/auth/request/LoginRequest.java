@@ -1,7 +1,6 @@
 package com.example.studentarchives.dto.Fmy.auth.request;
 
 import jakarta.validation.constraints.NotBlank;
-import jakarta.validation.constraints.Size;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
@@ -20,11 +19,8 @@ public class LoginRequest {
     @NotBlank(message = "密码不能为空")
     private String password;
 
-    @NotBlank(message = "验证码标识不能为空")
     private String captchaKey;
 
-    @NotBlank(message = "验证码不能为空")
-    @Size(min = 4, max = 8, message = "验证码长度不正确")
     private String captchaCode;
 
     /** 是否记住我，默认 false */

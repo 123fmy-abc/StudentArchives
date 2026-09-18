@@ -142,6 +142,12 @@ public class AuthService {
             log.warn("[CAPTCHA-SKIP-AUDIT] 免验证码登录: userNo={}, ip={}, userAgent={}",
                     request.getUserNo(), ipAddress, userAgent);
         } else {
+            if (request.getCaptchaKey() == null || request.getCaptchaKey().isBlank()
+                    || request.getCaptchaCode() == null || request.getCaptchaCode().isBlank()) {
+                log.warn("[登录调试] 步骤1失败: 验证码不能为空, userNo={}", request.getUserNo());
+                recordLoginLog(null, null, LOGIN_STATUS_FAILED, "验证码不能为空", ipAddress, userAgent);
+                throw new BusinessException(ResultCode.PARAM_ERROR, "验证码不能为空");
+            }
             CaptchaStore.VerifyResult captchaResult = captchaStore.verify(request.getCaptchaKey(), request.getCaptchaCode());
             if (captchaResult != CaptchaStore.VerifyResult.OK) {
                 String captchaMessage = switch (captchaResult) {
