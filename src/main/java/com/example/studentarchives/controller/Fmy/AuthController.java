@@ -2,6 +2,7 @@ package com.example.studentarchives.controller.Fmy;
 
 import com.example.studentarchives.annotation.AuditLog;
 import com.example.studentarchives.common.ApiResult;
+import com.example.studentarchives.config.Fmy.AuthCaptchaProperties;
 import com.example.studentarchives.dto.Fmy.auth.request.LoginRequest;
 import com.example.studentarchives.dto.Fmy.auth.request.LogoutRequest;
 import com.example.studentarchives.dto.Fmy.auth.request.PasswordChangeRequest;
@@ -13,6 +14,7 @@ import com.example.studentarchives.dto.Fmy.auth.response.LoginResponse;
 import com.example.studentarchives.dto.Fmy.auth.response.TokenRefreshResponse;
 import com.example.studentarchives.dto.Fmy.auth.response.UserInfoResponse;
 import com.example.studentarchives.service.Fmy.AuthService;
+import com.example.studentarchives.support.CaptchaSkipPolicy;
 import com.example.studentarchives.support.IpAddressExtractor;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
@@ -39,6 +41,8 @@ public class AuthController {
 
     private final AuthService authService;
     private final IpAddressExtractor ipAddressExtractor;
+    private final CaptchaSkipPolicy captchaSkipPolicy;
+    private final AuthCaptchaProperties authCaptchaProperties;
 
     /**
      * 获取图形验证码
@@ -55,6 +59,9 @@ public class AuthController {
      * 用户登录
      * <p>
      * 公开接口，验证验证码 + 学号密码后返回 JWT 令牌。
+     * <p>
+     * 测试环境下的白名单账号携带约定请求头时，可跳过图形验证码校验，
+     * 用于端到端自动化测试；其余情况一律正常校验。判定规则见 {@link CaptchaSkipPolicy}。
      */
     @AuditLog(module = "auth", action = "login", description = "用户登录", logParams = false, logResult = true)
     @PostMapping("/login")
@@ -62,7 +69,10 @@ public class AuthController {
                                            HttpServletRequest httpRequest) {
         String ip = ipAddressExtractor.extract(httpRequest);
         String userAgent = httpRequest.getHeader("User-Agent");
-        LoginResponse response = authService.login(request, ip, userAgent);
+        boolean skipCaptcha = captchaSkipPolicy.shouldSkip(
+                request.getUserNo(),
+                httpRequest.getHeader(authCaptchaProperties.getSkipHeaderName()));
+        LoginResponse response = authService.login(request, ip, userAgent, skipCaptcha);
         return ApiResult.success("登录成功", response);
     }
 
