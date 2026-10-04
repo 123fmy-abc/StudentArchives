@@ -4,6 +4,7 @@ import com.example.studentarchives.common.ResultCode;
 import com.example.studentarchives.config.security.JwtProperties;
 import com.example.studentarchives.dto.Fmy.auth.request.LoginRequest;
 import com.example.studentarchives.enums.GenderEnum;
+import com.example.studentarchives.enums.RoleLevelEnum;
 import com.example.studentarchives.enums.StatusEnum;
 import com.example.studentarchives.util.DateUtils;
 import com.example.studentarchives.dto.Fmy.auth.request.LogoutRequest;
@@ -25,7 +26,6 @@ import com.example.studentarchives.entity.user.Role;
 import com.example.studentarchives.entity.user.RoleScope;
 import com.example.studentarchives.entity.user.User;
 import com.example.studentarchives.entity.user.UserContactInfo;
-import com.example.studentarchives.entity.user.UserRole;
 import com.example.studentarchives.entity.user.RolePermission;
 import com.example.studentarchives.enums.ScopeTypeEnum;
 import com.example.studentarchives.exception.BusinessException;
@@ -34,12 +34,10 @@ import com.example.studentarchives.repository.CollegeRepository;
 import com.example.studentarchives.repository.MajorRepository;
 import com.example.studentarchives.repository.PermissionRepository;
 import com.example.studentarchives.repository.RolePermissionRepository;
-import com.example.studentarchives.repository.RoleRepository;
 import com.example.studentarchives.repository.RoleScopeRepository;
 import com.example.studentarchives.repository.SchoolRepository;
 import com.example.studentarchives.repository.UserContactInfoRepository;
 import com.example.studentarchives.repository.UserRepository;
-import com.example.studentarchives.repository.UserRoleRepository;
 import com.example.studentarchives.repository.projection.UserAuthStatus;
 import com.example.studentarchives.support.CaptchaGenerator;
 import com.example.studentarchives.support.CaptchaStore;
@@ -82,8 +80,7 @@ public class AuthService {
 
     private final UserRepository userRepository;
     private final UserContactInfoRepository userContactInfoRepository;
-    private final RoleRepository roleRepository;
-    private final UserRoleRepository userRoleRepository;
+    private final AccountRoleResolver accountRoleResolver;
     private final RolePermissionRepository rolePermissionRepository;
     private final PermissionRepository permissionRepository;
     private final SchoolRepository schoolRepository;
@@ -199,6 +196,22 @@ public class AuthService {
             throw new BusinessException(ResultCode.PASSWORD_ERROR, "账号或密码错误");
         }
 
+        // 5.5 登录入口与角色匹配校验：loginType 非空时校验账号角色是否匹配入口，
+        // 防止教师/管理员账号从学生登录页签登录取得学生端 token。
+        if (request.getLoginType() != null && !request.getLoginType().isBlank()) {
+            Integer primaryLevel = accountRoleResolver.primaryLevel(accountRoleResolver.activeRoles(user.getId()));
+            boolean roleMatches = switch (request.getLoginType()) {
+                case "student" -> primaryLevel != null && primaryLevel == RoleLevelEnum.STUDENT.getValue();
+                case "admin"   -> primaryLevel != null && primaryLevel != RoleLevelEnum.STUDENT.getValue();
+                default -> true;
+            };
+            if (!roleMatches) {
+                recordLoginLog(user.getSchoolId(), user.getId(), LOGIN_STATUS_FAILED,
+                        "角色与登录入口不匹配", ipAddress, userAgent);
+                throw new BusinessException(ResultCode.ACCESS_DENIED, "该账号不是学生账号，请改用对应入口登录");
+            }
+        }
+
         // 6. 登录成功，清除失败计数
         loginAttemptLimiter.recordSuccess(request.getUserNo());
 
@@ -230,8 +243,11 @@ public class AuthService {
         List<Role> roles = getUserRoles(currentUser.getId());
 
         // 11. 构建响应
+        // roles 已由 getUserRoles 按权限从高到低排序，roles[0] 恒为最高权限角色，
+        // 前端分流结果稳定（同一账号反复登录落到同一首页）。
         List<String> roleCodes = roles.stream().map(Role::getCode).collect(Collectors.toList());
         List<String> roleNames = roles.stream().map(Role::getName).collect(Collectors.toList());
+        Integer roleLevel = accountRoleResolver.primaryLevel(roles);
 
         LoginResponse.UserInfo userInfo = LoginResponse.UserInfo.builder()
                 .userId(currentUser.getId())
@@ -244,6 +260,9 @@ public class AuthService {
                 .schoolName(school != null ? school.getName() : null)
                 .roles(roleCodes)
                 .roleNames(roleNames)
+                .roleLevel(roleLevel)
+                .roleLevelLabel(roleLevelLabel(roleLevel))
+                .homePage(accountRoleResolver.homePage(roles))
                 .avatar(contactInfo != null ? contactInfo.getAvatar() : null)
                 .build();
 
@@ -279,6 +298,7 @@ public class AuthService {
 
         List<String> roleCodes = roles.stream().map(Role::getCode).collect(Collectors.toList());
         List<String> roleNames = roles.stream().map(Role::getName).collect(Collectors.toList());
+        Integer roleLevel = accountRoleResolver.primaryLevel(roles);
 
         return UserInfoResponse.builder()
                 .userId(user.getId())
@@ -292,6 +312,9 @@ public class AuthService {
                 .schoolName(school != null ? school.getName() : null)
                 .roles(roleCodes)
                 .roleNames(roleNames)
+                .roleLevel(roleLevel)
+                .roleLevelLabel(roleLevelLabel(roleLevel))
+                .homePage(accountRoleResolver.homePage(roles))
                 .permissions(permissions)
                 .scopes(resolveUserScopes(roleScopes))
                 .avatar(contactInfo != null ? contactInfo.getAvatar() : null)
@@ -362,6 +385,15 @@ public class AuthService {
     private String scopeTypeLabel(Integer scopeType) {
         ScopeTypeEnum e = ScopeTypeEnum.of(scopeType);
         return e != null ? e.getLabel() : "未知";
+    }
+
+    /**
+     * 角色层级标签（roleLevel → 中文名，如 1→「学生」）。
+     * 无角色时返回 null；未知层级由 {@link RoleLevelEnum#of(Integer)} 归为「自定义」。
+     */
+    private String roleLevelLabel(Integer roleLevel) {
+        RoleLevelEnum e = RoleLevelEnum.of(roleLevel);
+        return e != null ? e.getLabel() : null;
     }
 
     // ==================== 退出登录 ====================
@@ -588,17 +620,14 @@ public class AuthService {
     // ==================== 私有辅助方法 ====================
 
     /**
-     * 获取用户的所有角色
+     * 获取用户启用中的全部角色，按权限从高到低排序（level 升序，roles[0] 为最高权限角色）。
+     * <p>
+     * 委托 {@link AccountRoleResolver#activeRoles(Long)}：只认启用中（{@code roles.status=1}）
+     * 且未软删除的角色，禁用角色不再出现在登录/{@code /auth/me} 的 roles 中，
+     * 也不再授予任何权限。
      */
     private List<Role> getUserRoles(Long userId) {
-        List<UserRole> userRoles = userRoleRepository.findByUserId(userId);
-        if (userRoles.isEmpty()) {
-            return Collections.emptyList();
-        }
-        List<Long> roleIds = userRoles.stream()
-                .map(UserRole::getRoleId)
-                .collect(Collectors.toList());
-        return roleRepository.findByIdIn(roleIds);
+        return accountRoleResolver.activeRoles(userId);
     }
 
     /**

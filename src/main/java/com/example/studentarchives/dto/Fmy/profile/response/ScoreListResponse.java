@@ -36,6 +36,12 @@ public class ScoreListResponse {
     /** 评分计算批次 ID */
     private Long calculationId;
 
+    /** 综合评分（各维度得分之和，0-100） */
+    private BigDecimal totalScore;
+
+    /** 综合评分满分（各维度目标分之和） */
+    private BigDecimal maxTotalScore;
+
     /** 各维度分数列表 */
     private List<ScoreItem> list;
 
@@ -57,6 +63,9 @@ public class ScoreListResponse {
 
         /** 目标分 */
         private BigDecimal targetScore;
+
+        /** 维度权重（0-1，等于该维度下指标权重之和 = 目标分 / 100） */
+        private BigDecimal weight;
 
         /** 与目标差距 */
         private BigDecimal gap;

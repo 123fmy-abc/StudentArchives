@@ -1,8 +1,10 @@
 package com.example.studentarchives.service.common;
 
 import com.example.studentarchives.common.ResultCode;
+import com.example.studentarchives.entity.user.Role;
 import com.example.studentarchives.entity.user.RolePermission;
 import com.example.studentarchives.entity.user.UserRole;
+import com.example.studentarchives.enums.StatusEnum;
 import com.example.studentarchives.exception.BusinessException;
 import com.example.studentarchives.repository.PermissionRepository;
 import com.example.studentarchives.repository.RolePermissionRepository;
@@ -70,12 +72,7 @@ public class AdminAuthService {
         if (userId == null) {
             return null;
         }
-        List<UserRole> userRoles = userRoleRepository.findByUserId(userId);
-        if (userRoles.isEmpty()) {
-            return null;
-        }
-        List<Long> roleIds = userRoles.stream().map(UserRole::getRoleId).collect(Collectors.toList());
-        return roleRepository.findByIdIn(roleIds).stream()
+        return activeRoles(userId).stream()
                 .map(r -> new OperatorRole(r.getId(), r.getName(), r.getCode()))
                 .sorted((a, b) -> {
                     boolean aAdmin = a.isAdmin();
@@ -96,12 +93,11 @@ public class AdminAuthService {
         if (userId == null) {
             throw new BusinessException(ResultCode.UNAUTHORIZED, "未登录");
         }
-        List<UserRole> userRoles = userRoleRepository.findByUserId(userId);
-        if (userRoles.isEmpty()) {
+        List<Role> roles = activeRoles(userId);
+        if (roles.isEmpty()) {
             throw new BusinessException(ResultCode.ACCESS_DENIED, "无访问权限");
         }
-        List<Long> roleIds = userRoles.stream().map(UserRole::getRoleId).collect(Collectors.toList());
-        boolean isAdmin = roleRepository.findByIdIn(roleIds).stream()
+        boolean isAdmin = roles.stream()
                 .anyMatch(r -> ADMIN_ROLE_CODE.equals(r.getCode()));
         if (!isAdmin) {
             throw new BusinessException(ResultCode.ACCESS_DENIED, "无访问权限");
@@ -119,16 +115,16 @@ public class AdminAuthService {
         if (userId == null) {
             throw new BusinessException(ResultCode.UNAUTHORIZED, "未登录");
         }
-        List<UserRole> userRoles = userRoleRepository.findByUserId(userId);
-        if (userRoles.isEmpty()) {
+        List<Role> roles = activeRoles(userId);
+        if (roles.isEmpty()) {
             throw new BusinessException(ResultCode.ACCESS_DENIED, "无访问权限");
         }
-        List<Long> roleIds = userRoles.stream().map(UserRole::getRoleId).collect(Collectors.toList());
-        boolean isAdmin = roleRepository.findByIdIn(roleIds).stream()
+        boolean isAdmin = roles.stream()
                 .anyMatch(r -> ADMIN_ROLE_CODE.equals(r.getCode()));
         if (isAdmin) {
             return;
         }
+        List<Long> roleIds = roles.stream().map(Role::getId).collect(Collectors.toList());
         List<Long> permissionIds = rolePermissionRepository.findByRoleIdIn(roleIds).stream()
                 .map(RolePermission::getPermissionId)
                 .collect(Collectors.toList());
@@ -147,6 +143,28 @@ public class AdminAuthService {
         if (!hasPermission) {
             throw new BusinessException(ResultCode.ACCESS_DENIED, "无访问权限");
         }
+    }
+
+    /**
+     * 当前用户<b>启用中</b>的角色列表（鉴权链路的统一角色口径）。
+     * <p>
+     * 只认 {@code roles.status=1} 的角色：禁用角色不再授予任何权限（此前四处鉴权查询都用
+     * {@code findByIdIn} 不带状态条件，导致管理员在角色管理页「停用」admin 角色后依旧放行）。
+     * 软删除（{@code deleted_at}）由 {@code Role} 实体上的 {@code @SQLRestriction} 过滤。
+     *
+     * @param userId 用户 ID
+     * @return 启用中的角色；无角色返回空列表
+     */
+    private List<Role> activeRoles(Long userId) {
+        List<UserRole> userRoles = userRoleRepository.findByUserId(userId);
+        if (userRoles.isEmpty()) {
+            return List.of();
+        }
+        List<Long> roleIds = userRoles.stream()
+                .map(UserRole::getRoleId)
+                .distinct()
+                .collect(Collectors.toList());
+        return roleRepository.findByIdInAndStatus(roleIds, StatusEnum.ENABLED.getValue());
     }
 
     /**

@@ -81,6 +81,7 @@ public class TeacherDashboardService {
             DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ssXXX");
 
     private final AdminAuthService adminAuthService;
+    private final AccountRoleResolver accountRoleResolver;
     private final TeacherScopeValidator scopeValidator;
     private final UserRepository userRepository;
     private final SemesterRepository semesterRepository;
@@ -102,6 +103,10 @@ public class TeacherDashboardService {
      */
     @Transactional(readOnly = true)
     public TeacherDashboardOverviewResponse getDashboard(Long userId) {
+        // 角色守卫：教师端首页对非学生角色开放（教师/辅导员/admin），纯学生越权返回 20005。
+        // 此前本接口只要求登录，学生调用会拿到 200 + 空 scopes/空待办的空壳教师首页。
+        accountRoleResolver.requireNonStudent(userId);
+
         User teacher = userRepository.findById(userId)
                 .orElseThrow(() -> new BusinessException(ResultCode.DATA_NOT_EXIST, "教师不存在"));
         Long schoolId = adminAuthService.getOperatorSchoolId(userId);

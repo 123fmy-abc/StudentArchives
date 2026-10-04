@@ -55,4 +55,22 @@ public interface PortraitEvaluationScoreRepository extends JpaRepository<Portrai
     @Query("SELECT s FROM PortraitEvaluationScore s WHERE s.userId IN :userIds AND s.semesterId = :semesterId")
     List<PortraitEvaluationScore> findByUserIdInAndSemesterId(@Param("userIds") Collection<Long> userIds,
                                                                @Param("semesterId") Long semesterId);
+
+    /**
+     * 查询学校某学期下「画像评分缺失」或「rule_version 落后于最新发布版本」的学生 ID 列表
+     * （供每日画像评分兜底重算使用）。
+     * <p>
+     * 原生 SQL：显式携带各表 {@code deleted_at IS NULL} 软删过滤（原生查询不经过
+     * {@code @SQLRestriction}）。落后判定：无画像记录，或画像记录的 rule_version 小于最新发布版本号。
+     */
+    @Query(value = "SELECT DISTINCT u.id FROM users u "
+            + "JOIN student_profiles sp ON sp.user_id = u.id AND sp.deleted_at IS NULL "
+            + "LEFT JOIN portrait_evaluation_scores pes ON pes.user_id = u.id "
+            + "  AND pes.semester_id = :semesterId AND pes.deleted_at IS NULL "
+            + "WHERE u.school_id = :schoolId AND u.deleted_at IS NULL "
+            + "AND (pes.id IS NULL OR pes.rule_version < :latestVersion)",
+            nativeQuery = true)
+    List<Long> findStaleStudentIds(@Param("schoolId") Long schoolId,
+                                   @Param("semesterId") Long semesterId,
+                                   @Param("latestVersion") int latestVersion);
 }

@@ -8,6 +8,7 @@ import com.example.studentarchives.enums.EventTypeEnum;
 import com.example.studentarchives.enums.GenderEnum;
 import com.example.studentarchives.enums.RoleLevelEnum;
 import com.example.studentarchives.enums.ScopeTypeEnum;
+import com.example.studentarchives.enums.StatusEnum;
 import com.example.studentarchives.dto.Fmy.common.response.DictItemResponse;
 import com.example.studentarchives.dto.Fmy.common.response.FilePreviewResponse;
 import com.example.studentarchives.dto.Fmy.common.response.FileUploadResponse;
@@ -913,6 +914,8 @@ public class CommonService {
      * 判断当前用户是否拥有管理员角色
      * <p>
      * 用于文件预览/下载等操作的管理员绕过权限校验。
+     * 只认启用中（{@code roles.status=1}）的角色——禁用角色不再授予任何权限，
+     * 与 {@code AdminAuthService} 的口径保持一致。
      */
     private boolean isAdmin(Long userId) {
         if (userId == null) return false;
@@ -920,8 +923,9 @@ public class CommonService {
         if (userRoles.isEmpty()) return false;
         List<Long> roleIds = userRoles.stream()
                 .map(UserRole::getRoleId)
+                .distinct()
                 .collect(Collectors.toList());
-        return roleRepository.findByIdIn(roleIds).stream()
+        return roleRepository.findByIdInAndStatus(roleIds, StatusEnum.ENABLED.getValue()).stream()
                 .anyMatch(r -> ADMIN_ROLE_CODE.equals(r.getCode()));
     }
 

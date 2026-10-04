@@ -10,6 +10,7 @@ import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
 import java.time.LocalDateTime;
+import java.util.List;
 
 /**
  * 导出任务 Repository（对应表 export_jobs）
@@ -34,4 +35,14 @@ public interface ExportJobRepository extends JpaRepository<ExportJob, Long> {
     @Query(value = "UPDATE export_jobs SET deleted_at = :deletedAt WHERE id = :id AND deleted_at IS NULL",
             nativeQuery = true)
     int softDeleteById(@Param("id") Long id, @Param("deletedAt") LocalDateTime deletedAt);
+
+    /**
+     * 查询指定学校下指定状态且创建时间早于 cutoff 的导出任务（用于清理过期/卡死任务）。
+     */
+    List<ExportJob> findBySchoolIdAndStatusAndCreatedAtBefore(Long schoolId, Integer status, LocalDateTime cutoff);
+
+    /**
+     * 查询指定学校下指定状态且完成时间早于 cutoff 的导出任务（用于清理已完成下载）。
+     */
+    List<ExportJob> findBySchoolIdAndStatusAndCompletedAtBefore(Long schoolId, Integer status, LocalDateTime cutoff);
 }

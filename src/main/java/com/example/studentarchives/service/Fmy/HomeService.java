@@ -108,6 +108,7 @@ public class HomeService {
     private final UserMessageRepository userMessageRepository;
     private final DataCompletenessRepository dataCompletenessRepository;
     private final AbilityDimensionRepository abilityDimensionRepository;
+    private final AccountRoleResolver accountRoleResolver;
 
     /**
      * 获取首页数据概览
@@ -119,6 +120,11 @@ public class HomeService {
     @Transactional(readOnly = true)
     //DashboardResponse 本质上就是一个 DTO
     public DashboardResponse getDashboard(Long userId) {
+        // 角色守卫：学生端首页只对持有学生角色的账号开放，管理员/教师越权返回 20005 无访问权限。
+        // 此前本接口只要求登录，管理员调用会拿到 200 + 一个"空壳学生首页"：studentName/studentNo
+        // 落成管理员的姓名与工号，专业/班级/绩点/排名/申报计数全为 null 或 0，静默返回而非报错。
+        accountRoleResolver.requireStudent(userId);
+
         //声明一个类型为 User 的变量，变量名叫 user
         //userRepository.findById(userId)：根据主键查用户表；
         //.orElseThrow()：查询为空直接抛自定义业务异常；
@@ -180,7 +186,7 @@ public class HomeService {
         Map<Long, String> semesterNameMap = buildSemesterNameMap(currentSemester, comparedSemesterId);
 
         List<IndicatorItem> indicators = buildIndicators(currentScores, dimensionNameMap, semesterNameMap, dimensions);
-        RadarChart radarChart = buildRadarChart(dimensions, currentScores, previousScores);
+        RadarChart radarChart = buildRadarChart(dimensions, currentScores, previousScores, comparedSemesterId);
 
         // ==================== 申报统计 + 最近动态 ====================
         // 统计口径与 GET /activities 列表一致：聚合 archives / award_applications / career_plans 三表。
@@ -271,10 +277,17 @@ public class HomeService {
     /**
      * 构建雷达图数据：维度按 ability_dimensions.sort 对齐，
      * 当前/目标取当前学期评分，previous 取上阶段评分，缺失维度补 0。
+     * <p>
+     * 三个数组与 {@code dimensions} 等长，缺失维度补 0 仅为对齐，<b>不代表真实得分为 0</b>。
+     * 是否存在上阶段数据由 {@code hasPrevious} 单独标识（由 {@code comparedSemesterId} 推导）：
+     * 为 false 时 previous 全是补位 0，前端不得据此计算环比，否则会得出虚高的“较上阶段 +N 分”。
+     *
+     * @param comparedSemesterId 上阶段（对比）学期 ID，为 null 表示无上阶段数据
      */
     private RadarChart buildRadarChart(List<AbilityDimension> dimensions,
                                        List<PortraitEvaluationScore> currentScores,
-                                       List<PortraitEvaluationScore> previousScores) {
+                                       List<PortraitEvaluationScore> previousScores,
+                                       Long comparedSemesterId) {
         Map<String, PortraitEvaluationScore> currentMap = toDimensionMap(currentScores);
         Map<String, PortraitEvaluationScore> previousMap = toDimensionMap(previousScores);
 
@@ -299,6 +312,9 @@ public class HomeService {
                 .current(current)
                 .target(target)
                 .previous(previous)
+                // 只要存在对比学期即视为有上阶段口径；该学期若个别维度无评分，
+                // 已由上面的补位逻辑处理，不改变"有上阶段"这一整体语义。
+                .hasPrevious(comparedSemesterId != null)
                 .build();
     }
 

@@ -100,6 +100,7 @@ auth:
       - 202401002
       - A00002
       - T00003
+      - A00001
 
     # 调用免验证码能力必须携带的请求头名称
     skip-header-name: X-Captcha-Skip-Token

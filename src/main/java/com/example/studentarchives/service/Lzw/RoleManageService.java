@@ -7,6 +7,7 @@ import com.example.studentarchives.entity.user.Permission;
 import com.example.studentarchives.entity.user.Role;
 import com.example.studentarchives.entity.user.RolePermission;
 import com.example.studentarchives.entity.user.UserRole;
+import com.example.studentarchives.enums.StatusEnum;
 import com.example.studentarchives.exception.BusinessException;
 import com.example.studentarchives.repository.PermissionRepository;
 import com.example.studentarchives.repository.RolePermissionRepository;
@@ -37,6 +38,7 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 /**
@@ -57,6 +59,15 @@ public class RoleManageService {
 
     /** 角色类型默认值（roles.role_type：1=教学类） */
     private static final int DEFAULT_ROLE_TYPE = 1;
+
+    /**
+     * 角色权限管理权限码。
+     * <p>
+     * 本模块所有接口（含「更新角色」本身）都由 {@code AdminAuthService} 按此权限码或 admin 角色放行，
+     * 因此它也是「管理端被锁死后唯一能自我恢复的入口」。停用最后一个持有该权限的角色会导致不可恢复的锁死，
+     * 相关护栏见 {@link #ensureRoleManagePermissionNotOrphaned(Role)}。
+     */
+    private static final String PERM_ROLE_MANAGE = "system:role:manage";
 
     /** ISO 8601 带时区输出格式 */
     private static final DateTimeFormatter ISO_WITH_ZONE =
@@ -167,9 +178,94 @@ public class RoleManageService {
         }
         if (body.getStatus() != null) {
             validateStatus(body.getStatus());
+            ensureRoleStatusChangeAllowed(role, body.getStatus());
             role.setStatus(body.getStatus());
         }
         roleRepository.save(role);
+    }
+
+    // ==================== 停用角色的两道护栏 ====================
+
+    /**
+     * 停用角色的护栏入口（仅在「停用」方向生效，「启用」方向始终放行）。
+     * <p>
+     * 背景：{@code roles.status=0} 此前不影响鉴权（各鉴权查询不带状态条件），停用按钮形同虚设；
+     * 自 V5.10 起 {@code AdminAuthService} 只认启用中的角色，停用即刻撤销该角色的全部权限。
+     * 而 {@code system:role:manage} 权限码只经 admin 角色持有，一旦最后一个持有者被停用，
+     * 将没有任何账号还能调用角色管理接口把状态改回来。故在本接口（全项目唯一能改
+     * {@code roles.status} 的入口）收口拦截。
+     *
+     * @param role      待修改的角色（未落库前的当前状态）
+     * @param newStatus 目标状态
+     */
+    private void ensureRoleStatusChangeAllowed(Role role, Integer newStatus) {
+        if (!StatusEnum.DISABLED.equalsValue(newStatus)) {
+            return;
+        }
+        // 护栏 1：内置角色（is_system=1）不允许停用
+        if (Objects.equals(role.getIsSystem(), 1)) {
+            throw new BusinessException(ResultCode.FORBIDDEN,
+                    "内置角色不允许停用（角色：" + role.getName() + "）");
+        }
+        // 护栏 2：不得停用最后一个「能执行角色管理」的启用角色
+        ensureRoleManagePermissionNotOrphaned(role);
+    }
+
+    /**
+     * 护栏 2：停用前确认仍有别的角色能执行角色管理。
+     * <p>
+     * 判定口径为「存在另一个<b>启用中</b>、持有 {@code system:role:manage}、且已被至少一个用户
+     * 持有的角色」。不依赖 {@code is_system} 标记，自建的管理员角色同样覆盖。
+     * <p>
+     * 边界：本护栏只校验角色维度（角色启用 + 有用户绑定），不校验持有者账号本身是否启用
+     * （与「所有管理员账号被禁用」属于同一类锁死场景，不在本接口职责内）。
+     *
+     * @param target 待停用的角色
+     */
+    private void ensureRoleManagePermissionNotOrphaned(Role target) {
+        Long managePermissionId = permissionRepository.findByCode(PERM_ROLE_MANAGE)
+                .map(Permission::getId)
+                .orElse(null);
+        if (managePermissionId == null) {
+            return; // 权限字典缺失，无从判断，不阻断既有流程
+        }
+        boolean targetHoldsManage = rolePermissionRepository.findByRoleId(target.getId()).stream()
+                .map(RolePermission::getPermissionId)
+                .anyMatch(pid -> Objects.equals(pid, managePermissionId));
+        if (!targetHoldsManage) {
+            return; // 停用该角色不影响角色管理权限
+        }
+
+        List<Long> otherEnabledRoleIds = roleRepository.findAll().stream()
+                .filter(r -> !Objects.equals(r.getId(), target.getId()))
+                .filter(r -> StatusEnum.ENABLED.equalsValue(r.getStatus()))
+                .map(Role::getId)
+                .collect(Collectors.toList());
+        if (otherEnabledRoleIds.isEmpty()) {
+            throw new BusinessException(ResultCode.FORBIDDEN, orphanMessage(target, null));
+        }
+
+        // 其余启用角色中，真正持有 system:role:manage 的那些
+        Set<Long> holderRoleIds = rolePermissionRepository.findByRoleIdIn(otherEnabledRoleIds).stream()
+                .filter(rp -> Objects.equals(rp.getPermissionId(), managePermissionId))
+                .map(RolePermission::getRoleId)
+                .collect(Collectors.toSet());
+        // 其中只要存在被任意用户绑定的角色，停用后仍有人能恢复
+        boolean stillHasHolder = !holderRoleIds.isEmpty()
+                && !userRoleRepository.findByRoleIdIn(holderRoleIds).isEmpty();
+        if (!stillHasHolder) {
+            throw new BusinessException(ResultCode.FORBIDDEN, orphanMessage(target, holderRoleIds));
+        }
+    }
+
+    /** 锁死兜底护栏的报错文案（说明为何拒绝以及如何恢复） */
+    private String orphanMessage(Role target, Set<Long> holderRoleIds) {
+        String detail = (holderRoleIds == null || holderRoleIds.isEmpty())
+                ? "不存在其他启用角色"
+                : "其他持有该权限的角色均无用户绑定";
+        return "不允许停用角色「" + target.getName() + "」：" + detail
+                + "能执行角色管理（" + PERM_ROLE_MANAGE + "）。停用后将无账号可登录管理端恢复，"
+                + "只能直接修改数据库。请先给另一角色授予该权限并绑定管理员用户";
     }
 
     // ==================== 8.4 删除角色 ====================

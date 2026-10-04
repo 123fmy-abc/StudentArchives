@@ -334,10 +334,11 @@ public class TeacherDelegationService {
                 .total(0)
                 .build();
 
-        // 1. 可审批角色（is_auditor=1）：委托只能落在真正能审的角色上
+        // 1. 可审批角色（is_auditor=1 且启用中）：委托只能落在真正能审的角色上
         Map<Long, String> roleNameById = new LinkedHashMap<>();
         for (String code : new String[]{ROLE_CODE_TEACHER, ROLE_CODE_COUNSELOR}) {
             roleRepository.findByCode(code)
+                    .filter(r -> StatusEnum.ENABLED.equalsValue(r.getStatus()))
                     .filter(r -> Objects.equals(r.getIsAuditor(), 1))
                     .ifPresent(r -> roleNameById.put(r.getId(), r.getName()));
         }
@@ -517,15 +518,20 @@ public class TeacherDelegationService {
         };
     }
 
-    /** 用户是否为教师审批角色（roles.is_auditor=1） */
+    /**
+     * 用户是否为教师审批角色（roles.is_auditor=1）
+     * <p>
+     * 只认启用中（{@code roles.status=1}）的角色：被停用的审批角色不再允许作为受托人。
+     */
     private boolean isAuditor(Long userId) {
         List<Long> roleIds = userRoleRepository.findByUserId(userId).stream()
                 .map(UserRole::getRoleId)
+                .distinct()
                 .collect(Collectors.toList());
         if (roleIds.isEmpty()) {
             return false;
         }
-        return roleRepository.findByIdIn(roleIds).stream()
+        return roleRepository.findByIdInAndStatus(roleIds, StatusEnum.ENABLED.getValue()).stream()
                 .anyMatch(r -> Objects.equals(r.getIsAuditor(), 1));
     }
 

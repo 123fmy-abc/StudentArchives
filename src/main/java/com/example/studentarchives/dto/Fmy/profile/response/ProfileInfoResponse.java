@@ -46,6 +46,12 @@ public class ProfileInfoResponse {
     /** 各学期成绩 */
     private List<SemesterGradeItem> semesterGrades;
 
+    /** 累计学分加权绩点（各学期 gpa 按 total_credit 加权求和 / 累计总学分） */
+    private BigDecimal overallGpa;
+
+    /** 累计平均分（各学期 average_score 按 total_credit 加权） */
+    private BigDecimal overallAverageScore;
+
     /** 个人奖项汇总 */
     private List<PersonalAwardItem> personalAwards;
 

@@ -265,6 +265,26 @@ public class ProfileService {
                 .map(s -> toSemesterGradeItem(s, semesterNameMap))
                 .collect(Collectors.toList());
 
+        // ==================== 累计绩点（学分加权累计口径） ====================
+        BigDecimal overallTotalCredit = gpaSummaries.stream()
+                .map(SemesterGpaSummary::getTotalCredit)
+                .filter(Objects::nonNull)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        BigDecimal overallGpa = null;
+        BigDecimal overallAverageScore = null;
+        if (overallTotalCredit.compareTo(BigDecimal.ZERO) > 0) {
+            BigDecimal gpaWeightedSum = gpaSummaries.stream()
+                    .filter(s -> s.getWeightedGpa() != null && s.getTotalCredit() != null)
+                    .map(s -> s.getWeightedGpa().multiply(s.getTotalCredit()))
+                    .reduce(BigDecimal.ZERO, BigDecimal::add);
+            BigDecimal avgWeightedSum = gpaSummaries.stream()
+                    .filter(s -> s.getAverageScore() != null && s.getTotalCredit() != null)
+                    .map(s -> s.getAverageScore().multiply(s.getTotalCredit()))
+                    .reduce(BigDecimal.ZERO, BigDecimal::add);
+            overallGpa = cleanDecimal(gpaWeightedSum.divide(overallTotalCredit, 2, RoundingMode.HALF_UP));
+            overallAverageScore = cleanDecimal(avgWeightedSum.divide(overallTotalCredit, 2, RoundingMode.HALF_UP));
+        }
+
         // ==================== 个人奖项汇总 ====================
         List<PersonalAwardItem> personalAwards = awardSummaryRepository.findByUserId(userId)
                 .stream()
@@ -284,6 +304,8 @@ public class ProfileService {
                 .dimensionProfile(dimensionProfile)
                 .interests(interests)
                 .semesterGrades(semesterGrades)
+                .overallGpa(overallGpa)
+                .overallAverageScore(overallAverageScore)
                 .personalAwards(personalAwards)
                 .weaknessAnalysis(weaknessAnalysis)
                 .selfEvaluation(profile != null ? profile.getSelfEvaluation() : null)
@@ -365,6 +387,7 @@ public class ProfileService {
                         .dimensionName(dimensionNameMap.get(s.getDimensionCode()))
                         .score(cleanDecimal(s.getScore()))
                         .targetScore(cleanDecimal(s.getTargetScore()))
+                        .weight(dimensionWeight(s.getTargetScore()))
                         .gap(cleanDecimal(s.getGap()))
                         .change(formatTrend(s.getChangeVal()))
                         .comparedSemesterId(s.getComparedSemesterId())
@@ -375,14 +398,32 @@ public class ProfileService {
                 .collect(Collectors.toList());
 
         PortraitEvaluationScore first = scores.stream().findFirst().orElse(null);
+        BigDecimal totalScore = scores.isEmpty() ? null
+                : cleanDecimal(scores.stream().map(PortraitEvaluationScore::getScore)
+                        .filter(Objects::nonNull).reduce(BigDecimal.ZERO, BigDecimal::add));
+        BigDecimal maxTotalScore = scores.isEmpty() ? null
+                : cleanDecimal(scores.stream().map(PortraitEvaluationScore::getTargetScore)
+                        .filter(Objects::nonNull).reduce(BigDecimal.ZERO, BigDecimal::add));
         return ScoreListResponse.builder()
                 .semesterId(semester.getId())
                 .semesterName(semester.getName())
                 .calculatedAt(first != null ? toIso(first.getEvaluatedAt()) : null)
                 .ruleVersion(first != null ? first.getRuleVersion() : null)
                 .calculationId(first != null ? first.getCalculationId() : null)
+                .totalScore(totalScore)
+                .maxTotalScore(maxTotalScore)
                 .list(items)
                 .build();
+    }
+
+    /**
+     * 维度级权重 = 目标分 / 100（目标分即维度满分，满分 = 维度权重 × 100，见接口契约）
+     */
+    private BigDecimal dimensionWeight(BigDecimal targetScore) {
+        if (targetScore == null) {
+            return null;
+        }
+        return cleanDecimal(targetScore.divide(BigDecimal.valueOf(100), 4, RoundingMode.HALF_UP));
     }
 
     // ==================== 分数计算明细（4.1.3） ====================

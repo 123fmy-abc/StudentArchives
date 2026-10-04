@@ -401,6 +401,30 @@ public class AdminScoreService {
      */
     @Async("scoreRecalculationExecutor")
     public void executeAsync(Long taskId) {
+        executeTask(taskId, null, TRIGGER_MANUAL);
+    }
+
+    /**
+     * 异步执行评分重算任务，可指定目标学生列表（供定时兜底重算 / 指标发布后事件重算使用）。
+     * <p>
+     * 与 {@link #executeAsync} 共用同一执行引擎 {@link #executeTask}，区别在于：
+     * <ul>
+     *   <li>{@code studentIdsOverride} 非空时按该列表逐学生重算（不调用 {@link #resolveStudentIds}）；</li>
+     *   <li>批次 {@code trigger_type} 记为 2（系统自动/定时），而非手动触发。</li>
+     * </ul>
+     *
+     * @param taskId              评分重算任务 ID（已创建并持久化）
+     * @param studentIdsOverride  目标学生 ID 列表，null 表示回退到任务范围解析
+     */
+    @Async("scoreRecalculationExecutor")
+    public void executeAsyncAuto(Long taskId, List<Long> studentIdsOverride) {
+        executeTask(taskId, studentIdsOverride, TRIGGER_AUTO);
+    }
+
+    /**
+     * 评分重算任务执行引擎（手动与自动触发共用）。
+     */
+    private void executeTask(Long taskId, List<Long> studentIdsOverride, int triggerType) {
         ScoreRecalculationTask task = taskRepository.findById(taskId).orElse(null);
         if (task == null) {
             log.warn("评分重算任务不存在，跳过执行: taskId={}", taskId);
@@ -419,7 +443,7 @@ public class AdminScoreService {
             Map<Long, EvaluationIndicator> indicatorById = toIndicatorMap(resolved.indicators());
             Long comparedSemesterId = resolvePreviousSemesterId(task.getSchoolId(), task.getSemesterId());
 
-            List<Long> studentIds = resolveStudentIds(task);
+            List<Long> studentIds = studentIdsOverride != null ? studentIdsOverride : resolveStudentIds(task);
             if (studentIds.isEmpty()) {
                 failTask(task, "目标范围内没有可重算的学生");
                 return;
@@ -437,7 +461,7 @@ public class AdminScoreService {
                 try {
                     // 经 self 代理调用事务包装方法：@Modifying 清理与落库需活动事务，
                     // 事务边界按单个学生划分，失败仅回滚该学生写入
-                    self.reprocessStudent(task, studentId, indicatorById, resolved.version(), comparedSemesterId, TRIGGER_MANUAL);
+                    self.reprocessStudent(task, studentId, indicatorById, resolved.version(), comparedSemesterId, triggerType);
                     success++;
                 } catch (Exception e) {
                     fail++;
@@ -465,6 +489,117 @@ public class AdminScoreService {
             log.error("评分重算任务执行失败 taskId={}", taskId, e);
             failTask(task, e.getMessage());
         }
+    }
+
+    // ==================== 定时 / 事件触发的评分自动化 ====================
+
+    /**
+     * 每日画像评分兜底重算（由 {@code ScoreRecalculationNightlyHandler} 经统一任务框架调用）。
+     * <p>
+     * 扫描学校当前学期下「画像评分缺失」或「rule_version 落后于最新发布版本」的学生，
+     * 若有则创建一条 targetType=3（指定学期）的评分重算任务，并异步重算这些学生
+     * （trigger_type=2 自动）。无当前学期 / 无生效规则版本 / 同范围已有执行中任务 /
+     * 无待重算学生时直接跳过，避免无意义空跑。
+     *
+     * @param schoolId 学校 ID
+     */
+    public void recalculateStaleStudentsForCurrentSemester(Long schoolId) {
+        Semester semester = semesterRepository.findCurrentBySchoolId(schoolId).orElse(null);
+        if (semester == null) {
+            log.info("学校无当前学期，跳过画像评分兜底重算: schoolId={}", schoolId);
+            return;
+        }
+        if (resolveRuleForSemester(schoolId, semester.getId()) == null) {
+            log.warn("学校当前学期无生效指标规则版本，跳过画像评分兜底重算: schoolId={}, semesterId={}",
+                    schoolId, semester.getId());
+            return;
+        }
+        if (hasActiveRecalculationForSemester(schoolId, semester.getId())) {
+            log.info("学校当前学期已有评分重算任务执行中，跳过兜底重算: schoolId={}, semesterId={}",
+                    schoolId, semester.getId());
+            return;
+        }
+
+        int latestVersion = indicatorRuleVersionRepository.findTopBySchoolIdOrderByVersionDesc(schoolId)
+                .map(IndicatorRuleVersion::getVersion)
+                .orElse(0);
+        List<Long> staleIds = portraitEvaluationScoreRepository
+                .findStaleStudentIds(schoolId, semester.getId(), latestVersion);
+        if (staleIds.isEmpty()) {
+            log.info("学校当前学期无画像评分缺失/落后的学生，跳过兜底重算: schoolId={}", schoolId);
+            return;
+        }
+
+        Long triggeredBy = resolveTriggeredBy(schoolId, null);
+        if (triggeredBy == null) {
+            log.warn("学校无用户，跳过画像评分兜底重算落库: schoolId={}", schoolId);
+            return;
+        }
+
+        ScoreRecalculationTask task = new ScoreRecalculationTask();
+        task.setSchoolId(schoolId);
+        task.setTaskType(TARGET_SEMESTER);
+        task.setSemesterId(semester.getId());
+        task.setStatus(STATUS_QUEUED);
+        task.setTriggeredBy(triggeredBy);
+        task.setTriggeredAt(LocalDateTime.now());
+        task.setTotalCount(staleIds.size());
+        task.setProgress(0);
+        taskRepository.save(task);
+
+        self.executeAsyncAuto(task.getId(), staleIds);
+        log.info("已提交画像评分兜底重算: schoolId={}, semesterId={}, studentCount={}, taskId={}",
+                schoolId, semester.getId(), staleIds.size(), task.getId());
+    }
+
+    /**
+     * 触发某学期全量评分重算（供指标发布后事件监听器等内部调用，不做管理端鉴权）。
+     * <p>
+     * 与 {@code triggerRecalculate} 复用同一异步引擎（targetType=3 指定学期，trigger_type=2 自动），
+     * 幂等：同学校同学期已有执行中任务则跳过。
+     *
+     * @param schoolId   学校 ID
+     * @param semesterId 学期 ID
+     * @param operatorId 操作人 ID（可为 null，为空回退学校首个用户）
+     */
+    public void triggerSemesterRecalculation(Long schoolId, Long semesterId, Long operatorId) {
+        if (hasActiveRecalculationForSemester(schoolId, semesterId)) {
+            log.info("学校该学期已有评分重算任务执行中，跳过重复触发: schoolId={}, semesterId={}",
+                    schoolId, semesterId);
+            return;
+        }
+        Long triggeredBy = resolveTriggeredBy(schoolId, operatorId);
+        if (triggeredBy == null) {
+            log.warn("学校无用户，跳过学期评分重算落库: schoolId={}", schoolId);
+            return;
+        }
+
+        ScoreRecalculationTask task = new ScoreRecalculationTask();
+        task.setSchoolId(schoolId);
+        task.setTaskType(TARGET_SEMESTER);
+        task.setSemesterId(semesterId);
+        task.setStatus(STATUS_QUEUED);
+        task.setTriggeredBy(triggeredBy);
+        task.setTriggeredAt(LocalDateTime.now());
+        task.setProgress(0);
+        taskRepository.save(task);
+
+        self.executeAsyncAuto(task.getId(), null);
+        log.info("已提交学期全量评分重算: schoolId={}, semesterId={}, taskId={}",
+                schoolId, semesterId, task.getId());
+    }
+
+    /**
+     * 判断学校某学期是否已有执行中（0=待执行 / 1=执行中）的评分重算任务。
+     *
+     * @param schoolId   学校 ID
+     * @param semesterId 学期 ID
+     * @return 已有执行中任务返回 true
+     */
+    public boolean hasActiveRecalculationForSemester(Long schoolId, Long semesterId) {
+        List<Integer> activeStatuses = List.of(STATUS_QUEUED, STATUS_RUNNING);
+        return !taskRepository.findBySchoolIdAndTaskTypeAndSemesterIdAndStatusIn(
+                schoolId, TARGET_SEMESTER, semesterId, activeStatuses).isEmpty();
     }
 
     // ==================== 指标规则版本解析（评分数据源） ====================

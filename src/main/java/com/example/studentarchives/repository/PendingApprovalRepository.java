@@ -4,6 +4,7 @@ import com.example.studentarchives.entity.approval.PendingApproval;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
 
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 
@@ -30,4 +31,7 @@ public interface PendingApprovalRepository extends JpaRepository<PendingApproval
 
     /** 查询审批人当前待审批任务（status=1 待审批），按提交时间正序（先提交先审） */
     List<PendingApproval> findByAuditorIdAndStatusOrderBySubmittedAtAsc(Long auditorId, Integer status);
+
+    /** 查询指定学校下已超时的待审批任务（status=1 且 submittedAt < cutoff） */
+    List<PendingApproval> findBySchoolIdAndStatusAndSubmittedAtBefore(Long schoolId, Integer status, LocalDateTime cutoff);
 }

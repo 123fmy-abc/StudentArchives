@@ -25,4 +25,7 @@ public class LoginRequest {
 
     /** 是否记住我，默认 false */
     private Boolean rememberMe = false;
+
+    /** 登录入口：student / admin（null=不限制，兼容旧版调用） */
+    private String loginType;
 }

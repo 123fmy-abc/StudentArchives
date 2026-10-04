@@ -27,12 +27,14 @@ import com.example.studentarchives.repository.IndicatorVersionRepository;
 import com.example.studentarchives.repository.SchoolRepository;
 import com.example.studentarchives.repository.SemesterRepository;
 import com.example.studentarchives.service.common.AdminAuthService;
+import com.example.studentarchives.event.IndicatorPublishedEvent;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
@@ -98,6 +100,7 @@ public class AdminIndicatorService {
     private final SchoolRepository schoolRepository;
     private final SemesterRepository semesterRepository;
     private final ObjectMapper objectMapper;
+    private final ApplicationEventPublisher eventPublisher;
 
     // ==================== 1.1 获取指标树 ====================
 
@@ -250,6 +253,9 @@ public class AdminIndicatorService {
         }
         validateDimensionCodeActive(dimensionCode);
 
+        // 同名指标不得跨维度重复（同一数据源不能同时挂到多个维度重复计分）
+        ensureNoSameNameAcrossDimensions(schoolId, request.getIndicatorName(), dimensionCode, null);
+
         // 同级权重之和校验：子指标之和 = 父权重，一级之和 = 1
         validateSiblingWeights(schoolId, parent, request.getWeight());
 
@@ -352,6 +358,9 @@ public class AdminIndicatorService {
         if (request.getSort() != null) {
             indicator.setSort(request.getSort());
         }
+        // 同名指标不得跨维度重复（改名或改维度时校验）
+        ensureNoSameNameAcrossDimensions(indicator.getSchoolId(),
+                indicator.getIndicatorName(), indicator.getDimensionCode(), indicatorId);
         evaluationIndicatorRepository.save(indicator);
 
         log.info("更新指标: id={}, operatorId={}", indicatorId, userId);
@@ -661,6 +670,9 @@ public class AdminIndicatorService {
             log.info("发布指标规则版本: schoolId={}, version={}, versionName={}, operatorId={}",
                     schoolId, nextVersion, request.getVersionName(), userId);
         }
+
+        // 发布成功后（事务提交后）自动触发该学期全量评分重算，避免存量学生沿用旧版本分数
+        eventPublisher.publishEvent(new IndicatorPublishedEvent(this, schoolId, semesterId, userId));
 
         return IndicatorPublishResponse.builder()
                 .version(nextVersion)
@@ -1025,6 +1037,32 @@ public class AdminIndicatorService {
             throw new BusinessException(ResultCode.DATA_STATUS_ERROR,
                     "能力维度已禁用: " + dimensionCode);
         }
+    }
+
+    /**
+     * 校验同名指标不得同时挂到多个不同维度下，防止同一数据源被两个维度重复计分
+     * （如「志愿时长达标」同时出现在学业成绩与竞赛实践，导致学生总分被重复计算）。
+     *
+     * @param schoolId      学校 ID
+     * @param indicatorName 指标名称
+     * @param dimensionCode 目标维度编码
+     * @param excludeId     排除的指标 ID（更新时排除自身），新建传 null
+     */
+    private void ensureNoSameNameAcrossDimensions(Long schoolId, String indicatorName,
+                                                  String dimensionCode, Long excludeId) {
+        if (indicatorName == null || indicatorName.isBlank()) {
+            return;
+        }
+        evaluationIndicatorRepository.findBySchoolIdOrderBySortAsc(schoolId).stream()
+                .filter(e -> !Objects.equals(e.getId(), excludeId))
+                .filter(e -> indicatorName.equals(e.getIndicatorName()))
+                .filter(e -> !Objects.equals(e.getDimensionCode(), dimensionCode))
+                .findFirst()
+                .ifPresent(e -> {
+                    throw new BusinessException(ResultCode.DATA_DUPLICATE,
+                            "指标名称已存在于维度 [" + e.getDimensionCode()
+                                    + "]，同一数据源不能重复挂到多个维度");
+                });
     }
 
     /**

@@ -153,6 +153,16 @@ public class DashboardResponse {
 
         /** 上阶段各维度得分 */
         private List<BigDecimal> previous;
+
+        /**
+         * 是否存在上阶段（对比学期）数据。
+         * <p>
+         * 为 {@code false} 时 {@link #previous} 各元素恒为 0，但该 0 仅用于保持三个数组
+         * 与 {@link #dimensions} 等长，<b>不代表该维度上阶段得分为 0</b>；
+         * 前端此时不得用 {@code current - previous} 计算环比，否则会得出虚高的
+         * “较上阶段 +N 分”。
+         */
+        private Boolean hasPrevious;
     }
 
     /**

@@ -284,6 +284,7 @@ public class AuditTaskService {
         ApprovableRef ref = rejectApprovable(p, comment, now, teacherId);
         writeAuditLog(p, AuditActionEnum.REJECT.getValue(), comment, null, teacherId, ref.version(), null);
         notifyStudent(p, "audit_remind", "申报被退回", "您的申报「" + p.getTitle() + "」被退回：" + comment);
+        triggerScoreRecalc(p.getSchoolId(), p, ref.semesterId(), teacherId);
 
         return RejectResult.builder()
                 .taskId(p.getId())

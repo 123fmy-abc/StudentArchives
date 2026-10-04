@@ -41,8 +41,15 @@ import java.util.stream.Collectors;
  * <ul>
  *   <li>score = 累计原始分，不做归一化、不按 event_type 拆分、不提供等级标签与横向对比；</li>
  *   <li>不传 semesterId = 全部学期累计，响应 semesterId 为 null；</li>
- *   <li>无数据不报错，返回 dimensions: [] / totalScore: 0。</li>
+ *   <li>无数据不报错：{@code dimensions} 仍返回全部启用维度（无得分者 score=0），
+ *       {@code totalScore=0}；<b>不是</b>空数组。</li>
  * </ul>
+ * <p>
+ * <b>与首页雷达图口径不同，切勿混用</b>：本接口的 score 来自
+ * {@code growth_timeline_abilities}（成长事件原始分累加），而
+ * {@code GET /home/dashboard} 的 {@code radarChart} 来自
+ * {@code portrait_evaluation_scores}（评分引擎按指标权重加权后的结果）。
+ * 两者数据源不同、数值必然不同，前端不得互相替代或混算"综合分"。
  */
 @Slf4j
 @Service
