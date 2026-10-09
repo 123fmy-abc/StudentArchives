@@ -15,6 +15,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
 import java.time.LocalDate;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Objects;
 import java.util.Set;
@@ -186,6 +187,67 @@ public class TeacherScopeValidator {
         return scopes.stream()
                 .filter(s -> Objects.equals(s.getScopeType(), orgType) && s.getScopeId() != null)
                 .map(RoleScope::getScopeId)
+                .collect(Collectors.toSet());
+    }
+
+    /**
+     * 返回教师在授权范围内的全部学生 userId 集合。
+     * <p>
+     * 用于教师端列表/汇总按 {@code role_scopes} 限定可见学生：
+     * 返回 {@code null} 表示不限制（admin 或学校级/年级级授权，覆盖全校）；
+     * 返回空集合表示无任何授权；否则为各条生效授权的学生并集。
+     * 口径与 {@code ensureStudentInScope} 一致（学院/专业/班级按组织链展开，
+     * 年级授权为粗粒度，无法按 id 精确圈定，按全校处理）。
+     *
+     * @param teacherId 当前教师用户 ID
+     * @param schoolId  操作人所属学校 ID
+     * @return 授权学生 userId 集合；null=不限（全校）
+     */
+    public Set<Long> authorizedStudentIds(Long teacherId, Long schoolId) {
+        if (isAdmin(teacherId)) {
+            return null;
+        }
+        List<RoleScope> scopes = effectiveScopes(teacherId);
+        if (scopes.isEmpty()) {
+            return Set.of();
+        }
+        boolean schoolLevel = scopes.stream().anyMatch(s ->
+                Objects.equals(s.getScopeType(), SCOPE_SCHOOL) && Objects.equals(s.getScopeId(), schoolId));
+        // 年级授权为粗粒度（与 ensureStudentInScope 的年级放行一致），无法按 id 圈定，按全校处理
+        boolean gradeLevel = scopes.stream().anyMatch(s -> Objects.equals(s.getScopeType(), SCOPE_GRADE));
+        if (schoolLevel || gradeLevel) {
+            return null;
+        }
+        Set<Long> result = new LinkedHashSet<>();
+        for (RoleScope s : scopes) {
+            if (s.getScopeType() == null || s.getScopeId() == null) {
+                continue;
+            }
+            result.addAll(resolveScopeStudentIds(s.getScopeType(), s.getScopeId()));
+        }
+        return result;
+    }
+
+    /** 解析单条授权范围（学院/专业/班级）下的学生 userId 集合 */
+    private Set<Long> resolveScopeStudentIds(Integer scopeType, Long scopeId) {
+        List<Long> classIds;
+        switch (scopeType) {
+            case SCOPE_COLLEGE -> {
+                List<Long> majorIds = majorRepository.findByCollegeIdIn(List.of(scopeId)).stream()
+                        .map(Major::getId).toList();
+                classIds = majorIds.isEmpty() ? List.of()
+                        : clazzRepository.findByMajorIdIn(majorIds).stream().map(Clazz::getId).toList();
+            }
+            case SCOPE_MAJOR -> classIds = clazzRepository.findByMajorId(scopeId).stream()
+                    .map(Clazz::getId).toList();
+            case SCOPE_CLASS -> classIds = List.of(scopeId);
+            default -> classIds = List.of();
+        }
+        if (classIds.isEmpty()) {
+            return Set.of();
+        }
+        return studentProfileRepository.findByClassIdIn(classIds).stream()
+                .map(StudentProfile::getUserId)
                 .collect(Collectors.toSet());
     }
 

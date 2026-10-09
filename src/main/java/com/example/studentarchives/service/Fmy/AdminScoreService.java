@@ -818,7 +818,9 @@ public class AdminScoreService {
                     ? round(BD_100.multiply(nullToZero(level1.getWeight())))
                     : BD_100;
             BigDecimal previous = previousDimensionScore(userId, comparedSemesterId, dimensionCode);
-            BigDecimal change = previous != null ? round(score.subtract(previous)) : ZERO;
+            // 无上阶段数据时 change 记为 null（而非 ZERO）：避免下游格式化成 "+0"，
+            // 把「没有上期可比」伪装成「与上期持平」（与雷达图 hasPrevious 同一口径）。
+            BigDecimal change = previous != null ? round(score.subtract(previous)) : null;
             BigDecimal gap = round(target.subtract(score));
 
             PortraitEvaluationScore ps = new PortraitEvaluationScore();
@@ -960,6 +962,23 @@ public class AdminScoreService {
                 BigDecimal rate = BD_100.multiply(BigDecimal.valueOf(excellent))
                         .divide(BigDecimal.valueOf(scores.size()), 2, RoundingMode.HALF_UP);
                 return SourceValue.ofValue(rate);
+            }
+            case "weighted_gpa": {
+                // 学分加权绩点 = Σ(gpa×credit)/Σ(credit)，供「绩点达标」等 THRESHOLD 规则使用。
+                BigDecimal weightedSum = ZERO;
+                BigDecimal creditSum = ZERO;
+                for (GpaRecord g : ctx.gpaRecords()) {
+                    if (g.getGpa() == null || g.getCredit() == null
+                            || g.getCredit().compareTo(BigDecimal.ZERO) <= 0) {
+                        continue;
+                    }
+                    weightedSum = weightedSum.add(g.getGpa().multiply(g.getCredit()));
+                    creditSum = creditSum.add(g.getCredit());
+                }
+                if (creditSum.compareTo(BigDecimal.ZERO) <= 0) {
+                    return SourceValue.ofValue(ZERO);
+                }
+                return SourceValue.ofValue(round(weightedSum.divide(creditSum, 4, RoundingMode.HALF_UP)));
             }
             case "certificate_level": {
                 List<BigDecimal> values = new ArrayList<>();

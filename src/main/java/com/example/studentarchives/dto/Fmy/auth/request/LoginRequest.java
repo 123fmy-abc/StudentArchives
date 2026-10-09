@@ -26,6 +26,10 @@ public class LoginRequest {
     /** 是否记住我，默认 false */
     private Boolean rememberMe = false;
 
-    /** 登录入口：student / admin（null=不限制，兼容旧版调用） */
+    /**
+     * 登录入口：student / admin。
+     * 缺省（null 或空白）时后端按账号的实际角色兜底推导入口并照常校验，不会放行；
+     * 传入值与学生入口不匹配时按方向返回对应文案（见 AuthService#login 5.5）。
+     */
     private String loginType;
 }

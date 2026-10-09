@@ -169,11 +169,28 @@ public class AdminArchiveService {
                                                          Long semesterId, String keyword, PageParam pageParam) {
         adminAuthService.requireAdminOrPermission(userId, ARCHIVE_PERMISSION);
         Long schoolId = adminAuthService.getOperatorSchoolId(userId);
+        return listArchivesScoped(schoolId, grade, collegeId, majorId, classId, archiveType, status,
+                semesterId, keyword, pageParam, null);
+    }
 
-        List<Long> orgUserIds = resolveStudentIds(schoolId, grade, collegeId, majorId, classId);
-        if (orgUserIds.isEmpty()) {
+    /**
+     * 档案列表查询（不校验权限、学校与学生范围由调用方给定）。
+     * <p>
+     * {@code restrictUserIds} 为 {@code null} 表示不限制（管理端全校行为）；非 null 时在组织筛选结果上取交集，
+     * 供教师端按 {@code role_scopes} 限定可见学生，避免重复实现查询与映射逻辑。
+     */
+    public PageResult<ArchiveAdminListItem> listArchivesScoped(Long schoolId, String grade, Long collegeId, Long majorId,
+                                                               Long classId, String archiveType, Integer status,
+                                                               Long semesterId, String keyword, PageParam pageParam,
+                                                               Set<Long> restrictUserIds) {
+        List<Long> resolvedUserIds = resolveStudentIds(schoolId, grade, collegeId, majorId, classId);
+        if (restrictUserIds != null) {
+            resolvedUserIds = resolvedUserIds.stream().filter(restrictUserIds::contains).toList();
+        }
+        if (resolvedUserIds.isEmpty()) {
             return PageResult.empty();
         }
+        final List<Long> orgUserIds = resolvedUserIds;
 
         String kw = (keyword == null || keyword.isBlank()) ? null : keyword.trim();
         List<Long> keywordUserIds = List.of();
@@ -288,7 +305,17 @@ public class AdminArchiveService {
     public ArchiveOverviewResponse archiveOverview(Long userId, Long semesterId, Integer orgType, Long orgId, String grade) {
         adminAuthService.requireAdminOrPermission(userId, ARCHIVE_PERMISSION);
         Long schoolId = adminAuthService.getOperatorSchoolId(userId);
+        return archiveOverviewScoped(schoolId, semesterId, orgType, orgId, grade, null);
+    }
 
+    /**
+     * 组织档案汇总（不校验权限、学校与学生范围由调用方给定）。
+     * <p>
+     * {@code restrictUserIds} 为 {@code null} 表示不限制（管理端全校行为）；非 null 时每个组织行的学生集合
+     * 仅统计该集合内的学生，并**隐藏无授权学生的组织行**，供教师端按 {@code role_scopes} 限定可见范围。
+     */
+    public ArchiveOverviewResponse archiveOverviewScoped(Long schoolId, Long semesterId, Integer orgType,
+                                                         Long orgId, String grade, Set<Long> restrictUserIds) {
         if (semesterId == null) {
             semesterId = semesterRepository.findCurrentBySchoolId(schoolId).map(Semester::getId).orElse(null);
         }
@@ -296,9 +323,15 @@ public class AdminArchiveService {
 
         OrgIndex index = buildOrgIndex(schoolId);
         List<OrgScope> scopes = resolveScopes(schoolId, orgType, orgId, grade, index);
-        List<ArchiveOverviewRow> rows = scopes.stream()
-                .map(s -> aggregate(s, effSemesterId, index))
-                .collect(Collectors.toList());
+        List<ArchiveOverviewRow> rows = new ArrayList<>();
+        for (OrgScope s : scopes) {
+            ArchiveOverviewRow row = aggregate(s, effSemesterId, index, restrictUserIds);
+            // 教师侧隐藏无授权学生的组织行（restrictUserIds 非空时）
+            if (restrictUserIds != null && row.getStudentCount() == 0) {
+                continue;
+            }
+            rows.add(row);
+        }
         return ArchiveOverviewResponse.builder()
                 .orgType(resolveRowOrgType(orgType, orgId))
                 .rows(rows)
@@ -467,11 +500,14 @@ public class AdminArchiveService {
         return orgType;
     }
 
-    /** 单组织行汇总（实时聚合 archives） */
-    private ArchiveOverviewRow aggregate(OrgScope scope, Long semesterId, OrgIndex index) {
+    /** 单组织行汇总（实时聚合 archives；{@code restrictUserIds} 非 null 时仅统计集合内学生） */
+    private ArchiveOverviewRow aggregate(OrgScope scope, Long semesterId, OrgIndex index, Set<Long> restrictUserIds) {
         Set<Long> userIds = new LinkedHashSet<>();
         for (Long classId : scope.classIds()) {
             List<Long> classUsers = index.userIdsByClassId().getOrDefault(classId, List.of());
+            if (restrictUserIds != null) {
+                classUsers = classUsers.stream().filter(restrictUserIds::contains).toList();
+            }
             userIds.addAll(classUsers);
         }
         List<Archive> archives = userIds.isEmpty() ? List.of()

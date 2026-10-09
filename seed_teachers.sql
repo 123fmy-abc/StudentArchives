@@ -9,7 +9,7 @@
 --   1. seed_students.sql        （schools/colleges/majors/classes/users 1~5）
 --   2. seed_roles_permissions.sql（roles 1 / user_roles 1~5；permissions 由 Flyway V35 维护）
 --   3. seed_admins.sql          （roles 2 / users 6~7；permissions 由 Flyway V35 维护）
---   另：schema 与 permissions 字典由 Flyway 迁移负责（V1~V35），本脚本只补演示数据。
+--   另：schema 与 permissions 字典由 Flyway 迁移负责（V1~V38），本脚本只补演示数据。
 --
 -- 数据口径（与《RoleLevelEnum / RoleTypeEnum / 教师端接口文档》V5.6 对齐）：
 --   - 教师角色 code='teacher'，level=2（RoleLevelEnum.TEACHER 教师）
@@ -19,7 +19,8 @@
 --   - 两个角色均 role_type=1（教学类）、is_auditor=1（可作为审批节点/被委托）
 --   - teacher 范围 scope_types='[2,3,4]'（学院/专业/班级）
 --   - counselor 范围 scope_types='[4]'（班级，与《管理端接口文档》5.3"辅导员审核"节点一致）
---   - 两个角色共享同一套权限码：教师端 13 个 + score:recalculate + log:view，
+--   - 两个角色共享同一套权限码：教师端 13 个 + score:recalculate（日志 log:view 仅管理员，
+--     V36 已回收教师侧授权，以 V36 + TeacherLogService 的 requireAdmin 为准，见下方第 5 节），
 --     覆盖《教师端接口文档》§6 + 附录A
 --   - audit:revoke（撤销审核）/ export:research（研究数据导出）仅授予管理员，普通教师不授予
 --   - delegate:manage（审批委托）为教师专属，不授予管理员；

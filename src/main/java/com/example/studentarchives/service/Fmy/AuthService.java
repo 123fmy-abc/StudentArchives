@@ -196,20 +196,29 @@ public class AuthService {
             throw new BusinessException(ResultCode.PASSWORD_ERROR, "账号或密码错误");
         }
 
-        // 5.5 登录入口与角色匹配校验：loginType 非空时校验账号角色是否匹配入口，
-        // 防止教师/管理员账号从学生登录页签登录取得学生端 token。
-        if (request.getLoginType() != null && !request.getLoginType().isBlank()) {
-            Integer primaryLevel = accountRoleResolver.primaryLevel(accountRoleResolver.activeRoles(user.getId()));
-            boolean roleMatches = switch (request.getLoginType()) {
-                case "student" -> primaryLevel != null && primaryLevel == RoleLevelEnum.STUDENT.getValue();
-                case "admin"   -> primaryLevel != null && primaryLevel != RoleLevelEnum.STUDENT.getValue();
-                default -> true;
-            };
-            if (!roleMatches) {
-                recordLoginLog(user.getSchoolId(), user.getId(), LOGIN_STATUS_FAILED,
-                        "角色与登录入口不匹配", ipAddress, userAgent);
-                throw new BusinessException(ResultCode.ACCESS_DENIED, "该账号不是学生账号，请改用对应入口登录");
-            }
+        // 5.5 登录入口与角色匹配校验：始终校验账号角色是否匹配登录入口，
+        // 防止教师/管理员账号从学生登录页签登录取得学生端 token（以及学生从管理入口登录）。
+        // loginType 缺省时按账号实际角色兜底推导入口并照常校验，而不是直接放行——
+        // 否则任何省略该字段的老客户端/脚本都会绕过这层防护。
+        Integer primaryLevel = accountRoleResolver.primaryLevel(accountRoleResolver.activeRoles(user.getId()));
+        boolean isStudent = primaryLevel != null && primaryLevel == RoleLevelEnum.STUDENT.getValue();
+        String loginType = request.getLoginType();
+        String effectiveLoginType = (loginType == null || loginType.isBlank())
+                ? (isStudent ? "student" : "admin")
+                : loginType.trim();
+        boolean roleMatches = switch (effectiveLoginType) {
+            case "student" -> isStudent;
+            case "admin"   -> !isStudent;
+            default -> true; // 未知入口值不拦截，保持对新增入口的兼容
+        };
+        if (!roleMatches) {
+            recordLoginLog(user.getSchoolId(), user.getId(), LOGIN_STATUS_FAILED,
+                    "角色与登录入口不匹配", ipAddress, userAgent);
+            // 文案按方向区分，避免「该账号不是学生账号」在学生走管理入口时说反。
+            String message = isStudent
+                    ? "该账号是学生账号，请改用学生入口登录"
+                    : "该账号不是学生账号，请改用管理入口登录";
+            throw new BusinessException(ResultCode.ACCESS_DENIED, message);
         }
 
         // 6. 登录成功，清除失败计数
