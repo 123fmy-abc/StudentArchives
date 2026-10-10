@@ -4,6 +4,7 @@ import com.example.studentarchives.common.ApiResult;
 import com.example.studentarchives.common.PageParam;
 import com.example.studentarchives.common.PageResult;
 import com.example.studentarchives.dto.Fmy.profile.request.AiPlanCreateRequest;
+import com.example.studentarchives.dto.Fmy.profile.request.AiSuggestionSaveRequest;
 import com.example.studentarchives.dto.Fmy.profile.request.CareerActionAddRequest;
 import com.example.studentarchives.dto.Fmy.profile.request.CareerActionFileRequest;
 import com.example.studentarchives.dto.Fmy.profile.request.CareerActionStatusRequest;
@@ -16,6 +17,7 @@ import com.example.studentarchives.dto.Fmy.profile.request.CareerPlanCopyRequest
 import com.example.studentarchives.dto.Fmy.profile.request.CareerPlanCreateRequest;
 import com.example.studentarchives.dto.Fmy.profile.request.CareerReflectionAddRequest;
 import com.example.studentarchives.dto.Fmy.profile.response.AiPlanCreateResponse;
+import com.example.studentarchives.dto.Fmy.profile.response.AiSuggestionSaveResponse;
 import com.example.studentarchives.dto.Fmy.profile.response.CareerActionFileResponse;
 import com.example.studentarchives.dto.Fmy.profile.response.CareerActionStatusResponse;
 import com.example.studentarchives.dto.Fmy.profile.response.CareerPlanCopyResponse;
@@ -120,6 +122,22 @@ public class ProfileCareerPlanController {
             @AuthenticationPrincipal Long userId,
             @Valid @RequestBody AiPlanCreateRequest request) {
         return ApiResult.success(profileCareerPlanService.aiAddPlan(userId, request));
+    }
+
+    /**
+     * AI 建议入库（4.15.1）
+     * <p>
+     * 前端本地生成 AI 建议后落库拿回 aiSuggestionId，再调 4.15 ai-add 一键加入计划。
+     *
+     * @param userId  当前登录用户 ID
+     * @param request AI 建议入库请求
+     * @return aiSuggestionId
+     */
+    @PostMapping("/ai-suggestions")
+    public ApiResult<AiSuggestionSaveResponse> saveAiSuggestion(
+            @AuthenticationPrincipal Long userId,
+            @Valid @RequestBody AiSuggestionSaveRequest request) {
+        return ApiResult.success(profileCareerPlanService.saveAiSuggestion(userId, request));
     }
 
     /**
@@ -336,6 +354,23 @@ public class ProfileCareerPlanController {
             @PathVariable Long planId,
             @PathVariable Long milestoneId) {
         profileCareerPlanService.deleteMilestone(userId, planId, milestoneId);
+        return ApiResult.success("删除成功", null);
+    }
+
+    /**
+     * 删除整份职业规划（4.16）
+     * <p>
+     * 仅草稿(0)/已退回(3)可删；级联软删目标/行动/里程碑/反思/反馈/附件，并清理导出文件。
+     *
+     * @param userId 当前登录用户 ID
+     * @param planId 规划 ID
+     * @return 操作结果
+     */
+    @DeleteMapping("/{planId}")
+    public ApiResult<Void> deletePlan(
+            @AuthenticationPrincipal Long userId,
+            @PathVariable Long planId) {
+        profileCareerPlanService.deletePlan(userId, planId);
         return ApiResult.success("删除成功", null);
     }
 

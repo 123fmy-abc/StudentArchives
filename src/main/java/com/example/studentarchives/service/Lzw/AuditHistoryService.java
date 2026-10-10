@@ -5,6 +5,7 @@ import com.example.studentarchives.common.PageResult;
 import com.example.studentarchives.entity.archive.Archive;
 import com.example.studentarchives.entity.award.AwardApplication;
 import com.example.studentarchives.entity.career.CareerPlan;
+import com.example.studentarchives.entity.approval.PendingApproval;
 import com.example.studentarchives.entity.log.AuditLog;
 import com.example.studentarchives.entity.user.User;
 import com.example.studentarchives.enums.AuditActionEnum;
@@ -12,6 +13,7 @@ import com.example.studentarchives.repository.ArchiveRepository;
 import com.example.studentarchives.repository.AuditLogRepository;
 import com.example.studentarchives.repository.AwardApplicationRepository;
 import com.example.studentarchives.repository.CareerPlanRepository;
+import com.example.studentarchives.repository.PendingApprovalRepository;
 import com.example.studentarchives.repository.UserRepository;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import lombok.Builder;
@@ -27,6 +29,7 @@ import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
@@ -55,6 +58,7 @@ public class AuditHistoryService {
     private final AwardApplicationRepository awardApplicationRepository;
     private final CareerPlanRepository careerPlanRepository;
     private final UserRepository userRepository;
+    private final PendingApprovalRepository pendingApprovalRepository;
 
     /**
      * 获取我的审核记录（GET /teacher/audits/history）
@@ -92,6 +96,31 @@ public class AuditHistoryService {
         Map<Long, Archive> archiveMap = toMap(archiveRepository.findAllById(archiveIds), Archive::getId);
         Map<Long, AwardApplication> awardMap = toMap(awardApplicationRepository.findAllById(awardIds), AwardApplication::getId);
         Map<Long, CareerPlan> planMap = toMap(careerPlanRepository.findAllById(planIds), CareerPlan::getId);
+
+        // 批量反查已通过（status=2）待办任务：撤销审核入口所需 taskId（pending_approvals.id）。
+        // 倒序查询保证每个 (approvableType, approvableId) 首条即最新一条；IN 为笛卡尔积，
+        // 以 (type:id) 为 key 后仅命中请求内组合，天然过滤掉笛卡尔积中的非请求对。
+        Map<String, Long> approvedTaskIdByKey = new HashMap<>();
+        if (!archiveIds.isEmpty() || !awardIds.isEmpty() || !planIds.isEmpty()) {
+            List<String> types = new ArrayList<>();
+            List<Long> approvableIds = new ArrayList<>();
+            if (!archiveIds.isEmpty()) {
+                types.add("Archive");
+                approvableIds.addAll(archiveIds);
+            }
+            if (!awardIds.isEmpty()) {
+                types.add("AwardApplication");
+                approvableIds.addAll(awardIds);
+            }
+            if (!planIds.isEmpty()) {
+                types.add("CareerPlan");
+                approvableIds.addAll(planIds);
+            }
+            for (PendingApproval pa : pendingApprovalRepository
+                    .findByApprovableTypeInAndApprovableIdInAndStatusOrderByIdDesc(types, approvableIds, 2)) {
+                approvedTaskIdByKey.putIfAbsent(pa.getApprovableType() + ":" + pa.getApprovableId(), pa.getId());
+            }
+        }
 
         // 批量加载学生用户
         Set<Long> userIds = new HashSet<>();
@@ -146,8 +175,14 @@ public class AuditHistoryService {
                 continue;
             }
             AuditActionEnum actionEnum = AuditActionEnum.of(l.getAction());
+            // 仅「通过」记录关联撤销入口 taskId（pending_approvals.id，status=2），其余动作恒为 null
+            Long taskId = null;
+            if (l.getAction() != null && l.getAction() == AuditActionEnum.APPROVE.getValue()) {
+                taskId = approvedTaskIdByKey.get(l.getAuditableType() + ":" + l.getAuditableId());
+            }
             result.add(HistoryItem.builder()
                     .auditId(l.getId())
+                    .taskId(taskId)
                     .type(typeCode)
                     .archiveType(info != null ? info.archiveType() : null)
                     .title(info != null ? info.title() : null)
@@ -254,6 +289,8 @@ public class AuditHistoryService {
     @JsonInclude(JsonInclude.Include.NON_NULL)
     public static class HistoryItem {
         private Long auditId;
+        /** 撤销审核入口任务 ID（pending_approvals.id，仅「通过」记录非空） */
+        private Long taskId;
         private String type;
         private String archiveType;
         private String title;

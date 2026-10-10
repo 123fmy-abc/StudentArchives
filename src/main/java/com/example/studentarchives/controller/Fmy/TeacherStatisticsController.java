@@ -2,6 +2,7 @@ package com.example.studentarchives.controller.Fmy;
 
 import com.example.studentarchives.common.ApiResult;
 import com.example.studentarchives.dto.Fmy.statistics.response.HeatmapResponse;
+import com.example.studentarchives.dto.Fmy.statistics.response.OrgOverviewResponse;
 import com.example.studentarchives.dto.Fmy.statistics.response.SnapshotRefreshResponse;
 import com.example.studentarchives.dto.Fmy.statistics.response.TeacherDashboardResponse;
 import com.example.studentarchives.service.Fmy.AdminStatisticsService;
@@ -85,6 +86,33 @@ public class TeacherStatisticsController {
             @RequestParam(value = "grade", required = false) String grade) {
         AdminStatisticsService.StatsResult<HeatmapResponse> result =
                 teacherStatisticsService.getHeatmap(userId, semesterId, orgType, orgId, metric, grade);
+        return ResponseEntity.ok()
+                .header(CACHE_HIT_HEADER, result.cacheHit())
+                .body(ApiResult.success(result.data()));
+    }
+
+    /**
+     * 教师端组织多维汇总（GET /teacher/statistics/overview）
+     * <p>
+     * 复用管理端 16.2 概览引擎，教师侧按 role_scopes 限定组织行；scopeId 为空时返回
+     * 授权范围内全部组织行，显式 scopeId 越权返回 20005。响应复用 {@link OrgOverviewResponse}。
+     *
+     * @param userId     当前登录用户 ID
+     * @param semesterId 学期 ID（不传取当前学期）
+     * @param scopeType  下钻维度：1=学校 2=学院 3=专业 4=班级 6=年级
+     * @param scopeId    当前组织 ID（可选，下钻其下一级）
+     * @param grade      年级筛选（可选）
+     * @return 组织多维汇总，响应头携带 X-Cache-Hit
+     */
+    @GetMapping("/overview")
+    public ResponseEntity<ApiResult<OrgOverviewResponse>> overview(
+            @AuthenticationPrincipal Long userId,
+            @RequestParam(value = "semesterId", required = false) Long semesterId,
+            @RequestParam(value = "scopeType", required = false) Integer scopeType,
+            @RequestParam(value = "scopeId", required = false) Long scopeId,
+            @RequestParam(value = "grade", required = false) String grade) {
+        AdminStatisticsService.StatsResult<OrgOverviewResponse> result =
+                teacherStatisticsService.getOverview(userId, semesterId, scopeType, scopeId, grade);
         return ResponseEntity.ok()
                 .header(CACHE_HIT_HEADER, result.cacheHit())
                 .body(ApiResult.success(result.data()));

@@ -17,7 +17,7 @@ import org.springframework.web.bind.annotation.RestController;
  * 教师端「操作日志查询模块」控制器（Lzw）
  * <p>
  * 对应《教师端接口文档》六、操作日志查询模块（6.1）。
- * 路径 {@code /teacher/logs}，权限码 {@code log:view}。
+ * 路径 {@code /teacher/logs}，仅 admin 可见（服务层 {@code requireAdmin}），非管理员 403。
  */
 @RestController
 @RequestMapping("/teacher")

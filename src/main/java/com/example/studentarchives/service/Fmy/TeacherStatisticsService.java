@@ -2,6 +2,7 @@ package com.example.studentarchives.service.Fmy;
 
 import com.example.studentarchives.common.ResultCode;
 import com.example.studentarchives.dto.Fmy.statistics.response.HeatmapResponse;
+import com.example.studentarchives.dto.Fmy.statistics.response.OrgOverviewResponse;
 import com.example.studentarchives.dto.Fmy.statistics.response.SnapshotRefreshResponse;
 import com.example.studentarchives.dto.Fmy.statistics.response.TeacherDashboardResponse;
 import com.example.studentarchives.entity.archive.Archive;
@@ -182,6 +183,25 @@ public class TeacherStatisticsService {
     public AdminStatisticsService.StatsResult<HeatmapResponse> getHeatmap(
             Long userId, Long semesterId, Integer orgType, Long orgId, String metric, String grade) {
         return adminStatisticsService.heatmapByTeacher(userId, semesterId, orgType, orgId, metric, grade);
+    }
+
+    /**
+     * 教师端组织多维汇总（GET /teacher/statistics/overview，教师端文档 11.2）
+     * <p>
+     * 复用管理端 16.2 概览引擎（{@link AdminStatisticsService#overviewByTeacher}）：教师侧校验
+     * scopeType/scopeId 在 role_scopes 授权范围内，scopeId 为空时仅返回授权范围组织行。
+     *
+     * @param userId     当前教师用户 ID
+     * @param semesterId 学期 ID（可选，不传取当前学期）
+     * @param scopeType  下钻维度：1=学校 2=学院 3=专业 4=班级 6=年级
+     * @param scopeId    当前组织 ID（可选，下钻其下一级）
+     * @param grade      年级筛选（可选）
+     * @return 组织多维汇总
+     */
+    @Transactional(readOnly = true)
+    public AdminStatisticsService.StatsResult<OrgOverviewResponse> getOverview(
+            Long userId, Long semesterId, Integer scopeType, Long scopeId, String grade) {
+        return adminStatisticsService.overviewByTeacher(userId, semesterId, scopeType, scopeId, grade);
     }
 
     /**

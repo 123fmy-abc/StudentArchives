@@ -209,7 +209,12 @@ public class AuthService {
         boolean roleMatches = switch (effectiveLoginType) {
             case "student" -> isStudent;
             case "admin"   -> !isStudent;
-            default -> true; // 未知入口值不拦截，保持对新增入口的兼容
+            default -> {
+                recordLoginLog(user.getSchoolId(), user.getId(), LOGIN_STATUS_FAILED,
+                        "loginType 取值非法", ipAddress, userAgent);
+                throw new BusinessException(ResultCode.PARAM_ERROR,
+                        "loginType 取值非法，仅支持 student / admin");
+            }
         };
         if (!roleMatches) {
             recordLoginLog(user.getSchoolId(), user.getId(), LOGIN_STATUS_FAILED,

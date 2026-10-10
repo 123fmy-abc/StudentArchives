@@ -3,6 +3,7 @@ package com.example.studentarchives.service.Fmy;
 import com.example.studentarchives.common.PageParam;
 import com.example.studentarchives.common.PageResult;
 import com.example.studentarchives.common.ResultCode;
+import com.example.studentarchives.dto.Fmy.archive.response.ArchiveAdminDetailResponse;
 import com.example.studentarchives.dto.Fmy.archive.response.ArchiveAdminListItem;
 import com.example.studentarchives.dto.Fmy.archive.response.ArchiveOverviewResponse;
 import com.example.studentarchives.exception.BusinessException;
@@ -86,6 +87,23 @@ public class TeacherArchiveService {
         Long schoolId = adminAuthService.getOperatorSchoolId(userId);
         Set<Long> authorizedUserIds = requireAuthorizedStudents(userId, schoolId);
         return adminArchiveService.archiveOverviewScoped(schoolId, semesterId, orgType, orgId, grade, authorizedUserIds);
+    }
+
+    /**
+     * 教师端档案详情（GET /teacher/archives/{archiveId}）。
+     * <p>
+     * 数据范围 = 教师授权学生集合，档案归属学生不在其中时按「档案不存在」处理，
+     * 与列表/汇总口径一致；查询与映射复用 {@link AdminArchiveService#archiveDetailScoped}。
+     *
+     * @param userId    当前教师用户 ID
+     * @param archiveId 档案 ID
+     * @return 档案详情
+     */
+    @Transactional(readOnly = true)
+    public ArchiveAdminDetailResponse archiveDetail(Long userId, Long archiveId) {
+        Long schoolId = adminAuthService.getOperatorSchoolId(userId);
+        Set<Long> authorizedUserIds = requireAuthorizedStudents(userId, schoolId);
+        return adminArchiveService.archiveDetailScoped(schoolId, archiveId, authorizedUserIds);
     }
 
     /**

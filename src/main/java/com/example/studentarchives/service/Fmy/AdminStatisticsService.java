@@ -205,7 +205,17 @@ public class AdminStatisticsService {
     public StatsResult<OrgOverviewResponse> overview(Long userId, Long semesterId, Integer scopeType, Long scopeId, String grade) {
         adminAuthService.requireAdminOrPermission(userId, STATS_PERMISSION);
         Long schoolId = adminAuthService.getOperatorSchoolId(userId);
+        return overviewInternal(schoolId, semesterId, scopeType, scopeId, grade);
+    }
 
+    /**
+     * 组织多维汇总核心计算（鉴权/范围校验完成后共用，文档 16.2）。
+     * <p>
+     * 优先读对应行级维度（scopeType 下钻一级）的 org_archive_summaries 快照，
+     * 单班级未命中快照时实时聚合兜底，学院/专业级未命中则返回零值行并标记 cacheHit=false。
+     */
+    private StatsResult<OrgOverviewResponse> overviewInternal(Long schoolId, Long semesterId, Integer scopeType,
+                                                              Long scopeId, String grade) {
         if (semesterId == null) {
             semesterId = semesterRepository.findCurrentBySchoolId(schoolId).map(Semester::getId).orElse(null);
         }
@@ -265,6 +275,60 @@ public class AdminStatisticsService {
                 .cacheHit(cacheHit)
                 .build();
         return new StatsResult<>(data, "MISS");
+    }
+
+    /**
+     * 教师端组织多维汇总（GET /teacher/statistics/overview）。
+     * <p>
+     * 复用 16.2 概览引擎（{@link #overviewInternal}），仅替换鉴权与范围策略：
+     * 教师登录即可，显式 scopeId 必须落在当前教师 {@code role_scopes} 授权范围内
+     * （学院/专业/班级按同类型匹配，学校级授权覆盖校内全部，admin 由
+     * {@link TeacherScopeValidator} 放行），越权返回 20005。
+     * scopeId 为空时返回教师授权范围内全部组织行（行维度过滤）。
+     *
+     * @param userId     当前登录用户 ID
+     * @param semesterId 学期 ID（可选，不传取当前学期）
+     * @param scopeType  下钻维度（可选，1=学校 2=学院 3=专业 4=班级 6=年级）
+     * @param scopeId    当前组织 ID（可选，下钻其下一级）
+     * @param grade      年级筛选（可选）
+     * @return 组织多维汇总
+     */
+    public StatsResult<OrgOverviewResponse> overviewByTeacher(Long userId, Long semesterId, Integer scopeType,
+                                                              Long scopeId, String grade) {
+        // 教师端统计不校验管理端权限码：登录即可，数据范围由 ensureOrgInScope / authorizedOrgIds 按 role_scopes 兜底
+        Long schoolId = adminAuthService.getOperatorSchoolId(userId);
+
+        // 指定 scopeId：必须在教师授权范围内（学校级授权覆盖）；scopeType 为空时 scopeId 无下钻语义（引擎忽略），走行过滤
+        if (scopeId != null && scopeType != null) {
+            scopeValidator.ensureOrgInScope(userId, scopeType, scopeId, schoolId);
+            return overviewInternal(schoolId, semesterId, scopeType, scopeId, grade);
+        }
+
+        // scopeId 为空：返回教师授权范围内全部组织行；学校级/admin 授权直接返回全校行
+        StatsResult<OrgOverviewResponse> result = overviewInternal(schoolId, semesterId, scopeType, null, grade);
+        if (result.data() == null) {
+            return result;
+        }
+        int rowScopeType = result.data().getScopeType() == null ? ORG_COLLEGE : result.data().getScopeType();
+        Set<Long> authorized = scopeValidator.authorizedOrgIds(userId, rowScopeType, schoolId);
+        if (authorized == null) {
+            return result;
+        }
+        List<OrgOverviewRow> rows = result.data().getRows() == null ? List.of() : result.data().getRows();
+        if (rowScopeType == ORG_GRADE) {
+            // 年级行 orgId 恒为 0（resolveOverviewScopes 用 0L 占位），且年级授权为粗粒度
+            // （有任意年级授权即放行），authorizedOrgIds(6) 返回的是年级 scopeId 而非组织 id，
+            // 无法按 orgId 过滤，故此处仅在有年级/学校级授权（authorized 非空）时放行全部年级行。
+            if (authorized.isEmpty()) {
+                rows = List.of();
+            }
+        } else {
+            rows = rows.stream()
+                    .filter(r -> r.getOrgId() != null && authorized.contains(r.getOrgId()))
+                    .collect(Collectors.toList());
+        }
+        result.data().setRows(rows);
+        return result;
     }
 
     // ==================== 16.3 成果热力图数据 ====================

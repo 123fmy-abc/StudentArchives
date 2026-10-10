@@ -42,6 +42,7 @@ import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
@@ -354,11 +355,16 @@ public class AdminLogService {
         Map<Long, String> nameMap = operatorIds.isEmpty() ? Map.of()
                 : userRepository.findByIdIn(operatorIds).stream()
                         .collect(Collectors.toMap(User::getId, User::getName, (a, b) -> a));
-        Map<Long, String> roleNameMap = operatorIds.stream()
-                .collect(Collectors.toMap(id -> id, id -> {
-                    AdminAuthService.OperatorRole role = adminAuthService.resolveOperatorRole(id);
-                    return role != null ? role.roleName() : null;
-                }, (a, b) -> a));
+        // 操作人可能已无任何有效角色（账号被删/角色被收回），resolveOperatorRole 返回 null；
+        // Collectors.toMap 底层 HashMap.merge 不接受 null value，会抛 NPE 导致整个接口 500，
+        // 故手工填充，缺角色时响应中 roleName 保持 null（builder 侧 get() 天然兜底）。
+        Map<Long, String> roleNameMap = new HashMap<>();
+        for (Long id : operatorIds) {
+            AdminAuthService.OperatorRole role = adminAuthService.resolveOperatorRole(id);
+            if (role != null && role.roleName() != null) {
+                roleNameMap.put(id, role.roleName());
+            }
+        }
 
         return logs.stream().map(l -> ExportLogItem.builder()
                 .id(l.getId())

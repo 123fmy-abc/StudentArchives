@@ -51,4 +51,10 @@ public class CareerPlanListItem {
 
     /** 审核教师姓名 */
     private String auditorName;
+
+    /** 最新一条教师反馈内容 */
+    private String teacherFeedback;
+
+    /** 最新一条学生反思内容 */
+    private String reflection;
 }

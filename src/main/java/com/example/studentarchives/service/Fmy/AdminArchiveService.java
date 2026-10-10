@@ -246,10 +246,22 @@ public class AdminArchiveService {
     public ArchiveAdminDetailResponse archiveDetail(Long userId, Long archiveId) {
         adminAuthService.requireAdminOrPermission(userId, ARCHIVE_PERMISSION);
         Long schoolId = adminAuthService.getOperatorSchoolId(userId);
+        return archiveDetailScoped(schoolId, archiveId, null);
+    }
 
+    /**
+     * 档案详情查询（不校验权限、学校与学生范围由调用方给定）。
+     * <p>
+     * {@code restrictUserIds} 为 {@code null} 表示不限制（管理端全校行为）；非 null 时档案归属学生
+     * 须在其中，否则视为不存在，供教师端按 {@code role_scopes} 限定可见学生，避免重复实现查询与映射。
+     */
+    public ArchiveAdminDetailResponse archiveDetailScoped(Long schoolId, Long archiveId, Set<Long> restrictUserIds) {
         Archive archive = adminArchiveRepository.findById(archiveId)
                 .orElseThrow(() -> new BusinessException(ResultCode.DATA_NOT_EXIST, "档案不存在"));
         if (!Objects.equals(archive.getSchoolId(), schoolId)) {
+            throw new BusinessException(ResultCode.DATA_NOT_EXIST, "档案不存在");
+        }
+        if (restrictUserIds != null && !restrictUserIds.contains(archive.getUserId())) {
             throw new BusinessException(ResultCode.DATA_NOT_EXIST, "档案不存在");
         }
 

@@ -3,6 +3,7 @@ package com.example.studentarchives.controller.Fmy;
 import com.example.studentarchives.common.ApiResult;
 import com.example.studentarchives.common.PageParam;
 import com.example.studentarchives.common.PageResult;
+import com.example.studentarchives.dto.Fmy.archive.response.ArchiveAdminDetailResponse;
 import com.example.studentarchives.dto.Fmy.archive.response.ArchiveAdminListItem;
 import com.example.studentarchives.dto.Fmy.archive.response.ArchiveOverviewResponse;
 import com.example.studentarchives.service.Fmy.TeacherArchiveService;
@@ -10,6 +11,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -96,5 +98,24 @@ public class TeacherArchiveController {
             @RequestParam(value = "orgId", required = false) Long orgId,
             @RequestParam(value = "grade", required = false) String grade) {
         return ApiResult.success(teacherArchiveService.archiveOverview(userId, semesterId, orgType, orgId, grade));
+    }
+
+    // ==================== 12.1.9 档案详情 ====================
+
+    /**
+     * 获取授权范围内档案详情（GET /teacher/archives/{archiveId}）
+     * <p>
+     * 档案归属学生须在教师授权学生集合内，否则按「档案不存在」处理（不泄露存在性）。
+     * 响应复用 {@link ArchiveAdminDetailResponse}，与管理端 15.2 结构一致。
+     *
+     * @param userId    当前登录用户 ID
+     * @param archiveId 档案 ID
+     * @return 档案详情
+     */
+    @GetMapping("/{archiveId}")
+    public ApiResult<ArchiveAdminDetailResponse> archiveDetail(
+            @AuthenticationPrincipal Long userId,
+            @PathVariable Long archiveId) {
+        return ApiResult.success(teacherArchiveService.archiveDetail(userId, archiveId));
     }
 }

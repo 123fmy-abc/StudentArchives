@@ -6,6 +6,7 @@ import com.example.studentarchives.common.ResultCode;
 import com.example.studentarchives.config.DefaultTemplateHtml;
 import com.example.studentarchives.config.Fmy.OssProperties;
 import com.example.studentarchives.dto.Fmy.profile.request.AiPlanCreateRequest;
+import com.example.studentarchives.dto.Fmy.profile.request.AiSuggestionSaveRequest;
 import com.example.studentarchives.dto.Fmy.profile.request.CareerActionAddRequest;
 import com.example.studentarchives.dto.Fmy.profile.request.CareerActionFileRequest;
 import com.example.studentarchives.dto.Fmy.profile.request.CareerActionStatusRequest;
@@ -18,6 +19,7 @@ import com.example.studentarchives.dto.Fmy.profile.request.CareerPlanCopyRequest
 import com.example.studentarchives.dto.Fmy.profile.request.CareerPlanCreateRequest;
 import com.example.studentarchives.dto.Fmy.profile.request.CareerReflectionAddRequest;
 import com.example.studentarchives.dto.Fmy.profile.response.AiPlanCreateResponse;
+import com.example.studentarchives.dto.Fmy.profile.response.AiSuggestionSaveResponse;
 import com.example.studentarchives.dto.Fmy.profile.response.CareerActionFileResponse;
 import com.example.studentarchives.dto.Fmy.profile.response.CareerActionStatusResponse;
 import com.example.studentarchives.dto.Fmy.profile.response.CareerPlanCopyResponse;
@@ -178,8 +180,10 @@ public class ProfileCareerPlanService {
 
         Map<Long, String> auditorNameMap = buildAuditorNameMap(plans);
         Map<Long, String> semesterNameMap = buildSemesterNameMap(plans);
+        Map<Long, String> feedbackMap = buildLatestFeedbackMap(plans);
+        Map<Long, String> reflectionMap = buildLatestReflectionMap(plans);
         List<CareerPlanListItem> items = plans.stream()
-                .map(p -> toListItem(p, auditorNameMap, semesterNameMap))
+                .map(p -> toListItem(p, auditorNameMap, semesterNameMap, feedbackMap, reflectionMap))
                 .collect(Collectors.toList());
         return PageResult.of(items, total, pageParam);
     }
@@ -1157,6 +1161,70 @@ public class ProfileCareerPlanService {
         syncActionProgress(milestone.getActionId());
     }
 
+    // ==================== 删除整份规划（4.16） ====================
+
+    /**
+     * 删除整份职业规划（DELETE /profile/career-plans/{planId}）
+     * <p>
+     * 归属校验 + 仅草稿(0)/已退回(3)可删；级联软删 目标→行动→里程碑→行动成果文件、
+     * 阶段反思、教师反馈、规划附件与导出文件，最后软删规划本身。
+     *
+     * @param userId 当前登录用户 ID
+     * @param planId 规划 ID
+     */
+    @Transactional
+    public void deletePlan(Long userId, Long planId) {
+        CareerPlan plan = getOwnedPlan(userId, planId);
+        ensureEditable(plan);
+        LocalDateTime now = LocalDateTime.now();
+
+        // 1. 目标 → 行动 → 里程碑 → 行动成果文件（复用 deleteActionCascade 级联软删）
+        for (CareerGoal goal : careerGoalRepository.findByCareerPlanIdOrderBySortAsc(planId)) {
+            for (CareerAction action : careerActionRepository.findByGoalIdOrderBySortAsc(goal.getId())) {
+                deleteActionCascade(action.getId(), userId);
+            }
+            careerGoalRepository.softDeleteById(goal.getId(), now);
+        }
+
+        // 2. 阶段反思
+        for (CareerReflection r : careerReflectionRepository.findByCareerPlanIdOrderByCreatedAtAsc(planId)) {
+            careerReflectionRepository.softDeleteById(r.getId(), now);
+        }
+
+        // 3. 教师反馈
+        for (CareerPlanFeedback f : careerPlanFeedbackRepository.findByCareerPlanIdOrderByCreatedAtAsc(planId)) {
+            careerPlanFeedbackRepository.softDeleteById(f.getId(), now);
+        }
+
+        // 4. 规划附件与导出文件（附件软删 + OSS 物理清理）
+        deletePlanFiles(planId, userId);
+
+        // 5. 规划本身
+        careerPlanRepository.softDeleteById(planId, now);
+    }
+
+    /**
+     * 软删规划名下全部附件关系并清理 OSS 物理文件：
+     * 规划附件（career_plan）、内部导出（career_plan_export）、外部投递导出（career_plan_export_external）。
+     */
+    private void deletePlanFiles(Long planId, Long userId) {
+        List<String> bizTypes = List.of(
+                AttachmentBizTypeEnum.CAREER_PLAN.getValue(),
+                AttachmentBizTypeEnum.CAREER_PLAN_EXPORT.getValue(),
+                AttachmentBizTypeEnum.CAREER_PLAN_EXPORT_EXTERNAL.getValue());
+        for (String bizType : bizTypes) {
+            for (AttachmentRelation relation : attachmentRelationRepository
+                    .findByBizTypeAndBizIdOrderBySortOrderAsc(bizType, planId)) {
+                try {
+                    ossFileService.deleteFile(relation.getFilePath());
+                } catch (Exception e) {
+                    log.warn("OSS 文件删除失败（可能已被清理）: objectKey={}", relation.getFilePath(), e);
+                }
+                attachmentRelationRepository.softDeleteById(relation.getId(), LocalDateTime.now(), userId);
+            }
+        }
+    }
+
     // ==================== 更新行动状态（4.12） ====================
 
     /**
@@ -1327,6 +1395,42 @@ public class ProfileCareerPlanService {
                 .sourceLabel(PLAN_SOURCE_LABELS.getOrDefault(2, "AI建议添加"))
                 .requireConfirm(plan.getRequireConfirm())
                 .build();
+    }
+
+    // ==================== AI建议入库（4.15.1） ====================
+
+    /**
+     * AI 建议入库（POST /profile/career-plans/ai-suggestions）
+     * <p>
+     * 前端本地生成建议 → 调本端点落库拿回 {@code aiSuggestionId} → 再调 4.15 ai-add 一键加入计划。
+     * 写 improvement_suggestions：source=1（AI 生成）、teacher_id=null、is_implemented=0。
+     * weaknessId 非空时校验归属当前用户（经 weakness_analyses.user_id）。
+     *
+     * @param userId  当前登录用户 ID
+     * @param request AI 建议入库请求
+     * @return aiSuggestionId
+     */
+    @Transactional
+    public AiSuggestionSaveResponse saveAiSuggestion(Long userId, AiSuggestionSaveRequest request) {
+        if (request.getWeaknessId() != null) {
+            WeaknessAnalysis weakness = weaknessAnalysisRepository.findById(request.getWeaknessId()).orElse(null);
+            if (weakness == null || !userId.equals(weakness.getUserId())) {
+                throw new BusinessException(ResultCode.FORBIDDEN, "无访问权限");
+            }
+        }
+        if (request.getSemesterId() != null) {
+            semesterRepository.findById(request.getSemesterId())
+                    .orElseThrow(() -> new BusinessException(ResultCode.DATA_NOT_EXIST, "学期不存在"));
+        }
+
+        ImprovementSuggestion suggestion = new ImprovementSuggestion();
+        suggestion.setWeaknessId(request.getWeaknessId());
+        suggestion.setSuggestionContent(request.getSuggestionContent());
+        suggestion.setSource(1);
+        suggestion.setTeacherId(null);
+        suggestion.setIsImplemented(0);
+        suggestion = improvementSuggestionRepository.save(suggestion);
+        return AiSuggestionSaveResponse.builder().aiSuggestionId(suggestion.getId()).build();
     }
 
     // ==================== 私有辅助方法 ====================
@@ -1620,7 +1724,8 @@ public class ProfileCareerPlanService {
      * 规划 → 列表项
      */
     private CareerPlanListItem toListItem(CareerPlan plan, Map<Long, String> auditorNameMap,
-                                         Map<Long, String> semesterNameMap) {
+                                         Map<Long, String> semesterNameMap, Map<Long, String> feedbackMap,
+                                         Map<Long, String> reflectionMap) {
         ArchiveAuditInfo audit = plan.getAuditInfo();
         return CareerPlanListItem.builder()
                 .id(plan.getId())
@@ -1637,7 +1742,36 @@ public class ProfileCareerPlanService {
                 .rejectedReason(audit != null ? audit.getRejectedReason() : null)
                 .auditorName(audit != null && audit.getAuditorId() != null
                         ? auditorNameMap.get(audit.getAuditorId()) : null)
+                .teacherFeedback(feedbackMap.get(plan.getId()))
+                .reflection(reflectionMap.get(plan.getId()))
                 .build();
+    }
+
+    /**
+     * 批量构建规划 ID → 最新一条教师反馈内容映射（消除列表逐行查询的 N+1）。
+     * 按创建时间正序取回后逐条覆盖，最终保留每条规划最新一条反馈。
+     */
+    private Map<Long, String> buildLatestFeedbackMap(List<CareerPlan> plans) {
+        List<Long> ids = plans.stream().map(CareerPlan::getId).toList();
+        if (ids.isEmpty()) return Collections.emptyMap();
+        Map<Long, String> map = new HashMap<>();
+        for (CareerPlanFeedback f : careerPlanFeedbackRepository.findByCareerPlanIdInOrderByCreatedAtAsc(ids)) {
+            map.put(f.getCareerPlanId(), f.getFeedbackContent());
+        }
+        return map;
+    }
+
+    /**
+     * 批量构建规划 ID → 最新一条学生反思内容映射（消除列表逐行查询的 N+1）。
+     */
+    private Map<Long, String> buildLatestReflectionMap(List<CareerPlan> plans) {
+        List<Long> ids = plans.stream().map(CareerPlan::getId).toList();
+        if (ids.isEmpty()) return Collections.emptyMap();
+        Map<Long, String> map = new HashMap<>();
+        for (CareerReflection r : careerReflectionRepository.findByCareerPlanIdInOrderByCreatedAtAsc(ids)) {
+            map.put(r.getCareerPlanId(), r.getReflectionContent());
+        }
+        return map;
     }
 
     /**
