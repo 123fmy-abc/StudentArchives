@@ -15,6 +15,8 @@ import com.example.studentarchives.service.Lzw.AuditTaskService.RejectResult;
 import com.example.studentarchives.service.Lzw.AuditTaskService.RejectTemplateItem;
 import com.example.studentarchives.service.Lzw.AuditTaskService.RevokeRequest;
 import com.example.studentarchives.service.Lzw.AuditTaskService.RevokeResult;
+import com.example.studentarchives.service.Lzw.AuditTaskService.TransferRequest;
+import com.example.studentarchives.service.Lzw.AuditTaskService.TransferResult;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -124,6 +126,17 @@ public class TeacherAuditController {
             @RequestBody RevokeRequest body) {
         return ApiResult.success("撤销成功", auditTaskService.revoke(userId, taskId,
                 body.getRevokeReason()));
+    }
+
+    // ==================== 4.8 转交待审核任务 ====================
+
+    @PostMapping("/{taskId}/transfer")
+    public ApiResult<TransferResult> transfer(
+            @AuthenticationPrincipal Long userId,
+            @PathVariable Long taskId,
+            @RequestBody TransferRequest body) {
+        return ApiResult.success("已转交", auditTaskService.transfer(userId, taskId,
+                body.getTargetAuditorId(), body.getComment()));
     }
 
     // ==================== 4.7 获取常用退回原因模板 ====================

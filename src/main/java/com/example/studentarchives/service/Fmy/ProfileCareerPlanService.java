@@ -1175,7 +1175,11 @@ public class ProfileCareerPlanService {
     @Transactional
     public void deletePlan(Long userId, Long planId) {
         CareerPlan plan = getOwnedPlan(userId, planId);
-        ensureEditable(plan);
+        // 删除场景状态校验（仅草稿/已退回可删），文案与编辑区分，明确可删条件
+        int status = plan.getStatus() != null ? plan.getStatus() : 0;
+        if (status != 0 && status != 3) {
+            throw new BusinessException(ResultCode.BIZ_STATUS_NOT_OPERABLE, "当前状态不可删除（仅草稿/已退回状态可删除）");
+        }
         LocalDateTime now = LocalDateTime.now();
 
         // 1. 目标 → 行动 → 里程碑 → 行动成果文件（复用 deleteActionCascade 级联软删）
@@ -1436,11 +1440,18 @@ public class ProfileCareerPlanService {
     // ==================== 私有辅助方法 ====================
 
     /**
-     * 获取归属当前用户的规划，否则抛无访问权限
+     * 获取归属当前用户的规划：不存在/已软删 → 30001 规划不存在；存在但非本人 → 5 无访问权限。
+     * <p>
+     * findById 受 {@code @SQLRestriction}（deleted_at IS NULL）过滤，已删除规划自动归入「不存在」，
+     * 与 {@link #requireActionInPlan}、AI 建议模块的「不存在/越权」拆分口径一致。
      */
     private CareerPlan getOwnedPlan(Long userId, Long planId) {
-        return careerPlanRepository.findByIdAndUserId(planId, userId)
-                .orElseThrow(() -> new BusinessException(ResultCode.FORBIDDEN, "无访问权限"));
+        CareerPlan plan = careerPlanRepository.findById(planId)
+                .orElseThrow(() -> new BusinessException(ResultCode.DATA_NOT_EXIST, "规划不存在"));
+        if (!userId.equals(plan.getUserId())) {
+            throw new BusinessException(ResultCode.FORBIDDEN, "无访问权限");
+        }
+        return plan;
     }
 
     /**

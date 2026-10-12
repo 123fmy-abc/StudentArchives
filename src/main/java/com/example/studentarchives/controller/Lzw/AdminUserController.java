@@ -47,6 +47,8 @@ public class AdminUserController {
             @RequestParam(value = "roleId", required = false) Long roleId,
             @RequestParam(value = "status", required = false) Integer status,
             @RequestParam(value = "grade", required = false) String grade,
+            @RequestParam(value = "collegeId", required = false) Long collegeId,
+            @RequestParam(value = "classId", required = false) Long classId,
             @RequestParam(value = "keyword", required = false) String keyword,
             @RequestParam(value = "schoolId", required = false) Long schoolId,
             @RequestParam(value = "page", required = false, defaultValue = "1") int page,
@@ -55,6 +57,8 @@ public class AdminUserController {
                 .roleId(roleId)
                 .status(status)
                 .grade(grade)
+                .collegeId(collegeId)
+                .classId(classId)
                 .keyword(keyword)
                 .schoolId(schoolId)
                 .build();

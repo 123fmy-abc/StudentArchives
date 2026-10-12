@@ -17,4 +17,9 @@ public interface TeacherProfileRepository extends JpaRepository<TeacherProfile, 
     Optional<TeacherProfile> findByUserId(Long userId);
 
     List<TeacherProfile> findByUserIdIn(Collection<Long> userIds);
+
+    /**
+     * 查询某学院下全部教师（管理端用户列表「学院」筛选使用，归属学院取 teacher_profiles.college_id）
+     */
+    List<TeacherProfile> findByCollegeId(Long collegeId);
 }

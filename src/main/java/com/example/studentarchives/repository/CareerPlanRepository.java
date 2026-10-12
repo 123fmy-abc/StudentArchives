@@ -19,9 +19,6 @@ import java.time.LocalDateTime;
 @Repository
 public interface CareerPlanRepository extends JpaRepository<CareerPlan, Long> {
 
-    /** 按 ID + 归属用户查询（归属校验） */
-    Optional<CareerPlan> findByIdAndUserId(Long id, Long userId);
-
     /** 查询用户全部规划（导出等场景使用） */
     List<CareerPlan> findByUserId(Long userId);
 

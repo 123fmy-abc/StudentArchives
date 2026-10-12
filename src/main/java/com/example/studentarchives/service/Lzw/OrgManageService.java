@@ -12,6 +12,7 @@ import com.example.studentarchives.repository.ClazzRepository;
 import com.example.studentarchives.repository.CollegeRepository;
 import com.example.studentarchives.repository.MajorRepository;
 import com.example.studentarchives.repository.SchoolRepository;
+import com.example.studentarchives.repository.StudentProfileRepository;
 import com.example.studentarchives.service.common.AdminAuthService;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import jakarta.persistence.criteria.Predicate;
@@ -31,6 +32,9 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.stream.Collectors;
 
 /**
  * 管理端基础组织架构管理服务（Lzw）
@@ -49,6 +53,7 @@ public class OrgManageService {
     private final CollegeRepository collegeRepository;
     private final MajorRepository majorRepository;
     private final ClazzRepository clazzRepository;
+    private final StudentProfileRepository studentProfileRepository;
     private final AdminAuthService adminAuthService;
 
     // ==================== 11.1 获取学校列表 ====================
@@ -170,13 +175,16 @@ public class OrgManageService {
         Sort sort = Sort.by(Sort.Direction.ASC, "id");
         Pageable pageable = PageRequest.of(pageParam.getPage() - 1, pageParam.getPerPage(), sort);
         Page<Clazz> page = clazzRepository.findAll(spec, pageable);
+        List<Clazz> classes = page.getContent();
+        // 学生人数实时按 student_profiles.class_id 统计（clazz.student_count 列建班时仅置 0，不再维护）
+        Map<Long, Long> studentCountMap = loadStudentCounts(classes);
 
-        List<ClassItem> items = page.getContent().stream().map(c -> ClassItem.builder()
+        List<ClassItem> items = classes.stream().map(c -> ClassItem.builder()
                 .classId(c.getId())
                 .className(c.getName())
                 .grade(c.getGrade())
                 .majorId(c.getMajorId())
-                .studentCount(c.getStudentCount())
+                .studentCount(studentCountMap.getOrDefault(c.getId(), 0L).intValue())
                 .status(c.getStatus())
                 .build()).toList();
 
@@ -302,6 +310,17 @@ public class OrgManageService {
             return ids;
         }
         return null;
+    }
+
+    /** 批量统计各班学生人数（student_profiles.class_id → 人数），无学生的班级默认 0 */
+    private Map<Long, Long> loadStudentCounts(List<Clazz> classes) {
+        List<Long> classIds = classes.stream().map(Clazz::getId)
+                .filter(Objects::nonNull).collect(Collectors.toList());
+        if (classIds.isEmpty()) {
+            return Map.of();
+        }
+        return studentProfileRepository.countGroupedByClassIdIn(classIds).stream()
+                .collect(Collectors.toMap(row -> (Long) row[0], row -> (Long) row[1], (a, b) -> a));
     }
 
     // ==================== 通用辅助 ====================

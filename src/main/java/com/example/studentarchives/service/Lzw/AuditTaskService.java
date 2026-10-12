@@ -4,6 +4,9 @@ import com.example.studentarchives.common.PageParam;
 import com.example.studentarchives.common.PageResult;
 import com.example.studentarchives.common.ResultCode;
 import com.example.studentarchives.dto.Lzw.activity.response.ActivityDetailResponse;
+import com.example.studentarchives.entity.approval.ApprovalDelegation;
+import com.example.studentarchives.entity.approval.ApprovalFlowStep;
+import com.example.studentarchives.entity.approval.ApprovalInstance;
 import com.example.studentarchives.entity.approval.ApprovalNode;
 import com.example.studentarchives.entity.approval.PendingApproval;
 import com.example.studentarchives.entity.archive.Archive;
@@ -15,8 +18,10 @@ import com.example.studentarchives.entity.log.AuditLog;
 import com.example.studentarchives.entity.message.UserMessage;
 import com.example.studentarchives.entity.org.Clazz;
 import com.example.studentarchives.entity.org.Major;
+import com.example.studentarchives.entity.user.Role;
 import com.example.studentarchives.entity.user.StudentProfile;
 import com.example.studentarchives.entity.user.User;
+import com.example.studentarchives.entity.user.UserRole;
 import com.example.studentarchives.enums.ActivityTypeEnum;
 import com.example.studentarchives.enums.ApplyStatusEnum;
 import com.example.studentarchives.enums.ApprovalInstanceStatusEnum;
@@ -25,7 +30,10 @@ import com.example.studentarchives.enums.ArchiveTypeEnum;
 import com.example.studentarchives.enums.AuditActionEnum;
 import com.example.studentarchives.enums.AwardTypeEnum;
 import com.example.studentarchives.enums.DuplicateCheckStatusEnum;
+import com.example.studentarchives.enums.StatusEnum;
 import com.example.studentarchives.exception.BusinessException;
+import com.example.studentarchives.repository.ApprovalDelegationRepository;
+import com.example.studentarchives.repository.ApprovalFlowStepRepository;
 import com.example.studentarchives.repository.ArchiveRepository;
 import com.example.studentarchives.repository.ApprovalInstanceRepository;
 import com.example.studentarchives.repository.ApprovalNodeRepository;
@@ -38,10 +46,12 @@ import com.example.studentarchives.repository.ClazzRepository;
 import com.example.studentarchives.repository.DictionaryRepository;
 import com.example.studentarchives.repository.MajorRepository;
 import com.example.studentarchives.repository.PendingApprovalRepository;
+import com.example.studentarchives.repository.RoleRepository;
 import com.example.studentarchives.repository.SemesterRepository;
 import com.example.studentarchives.repository.StudentProfileRepository;
 import com.example.studentarchives.repository.UserMessageRepository;
 import com.example.studentarchives.repository.UserRepository;
+import com.example.studentarchives.repository.UserRoleRepository;
 import com.example.studentarchives.service.Fmy.AdminScoreService;
 import com.example.studentarchives.service.Fmy.TeacherScopeValidator;
 import com.example.studentarchives.service.common.AdminAuthService;
@@ -63,6 +73,8 @@ import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 /**
@@ -90,12 +102,17 @@ public class AuditTaskService {
     private final ApprovalInstanceRepository approvalInstanceRepository;
     private final AuditLogRepository auditLogRepository;
     private final AuditCommentTemplateRepository auditCommentTemplateRepository;
+    private final ApprovalDelegationRepository approvalDelegationRepository;
+    private final ApprovalFlowStepRepository approvalFlowStepRepository;
+    private final ApprovalSubmitService approvalSubmitService;
 
     private final ArchiveRepository archiveRepository;
     private final AwardApplicationRepository awardApplicationRepository;
     private final CareerPlanRepository careerPlanRepository;
 
     private final UserRepository userRepository;
+    private final UserRoleRepository userRoleRepository;
+    private final RoleRepository roleRepository;
     private final StudentProfileRepository studentProfileRepository;
     private final ClazzRepository clazzRepository;
     private final MajorRepository majorRepository;
@@ -205,26 +222,65 @@ public class AuditTaskService {
         }
         LocalDateTime now = LocalDateTime.now();
 
+        // 1. 完成当前节点（动作=通过）
         ApprovalNode node = approvalNodeRepository.findById(p.getNodeId()).orElse(null);
         if (node != null) {
             node.setAction(ApprovalNodeActionEnum.APPROVE.getValue());
             node.setActualAuditorId(teacherId);
             node.setComment(comment);
             node.setCompletedAt(now);
-            if (nextAuditorId != null) {
-                node.setAssignedAuditorId(nextAuditorId);
-            }
             approvalNodeRepository.save(node);
         }
 
+        // 2. 当前待办置为已通过
         p.setStatus(ApplyStatusEnum.APPROVED.getValue());
         pendingApprovalRepository.save(p);
 
-        approvalInstanceRepository.findById(p.getInstanceId()).ifPresent(inst -> {
+        // 3. 推进流程：存在下一步则生成下一步节点与待办（非终审），否则整体通过（终审）
+        ApprovalInstance inst = approvalInstanceRepository.findById(p.getInstanceId()).orElse(null);
+        ApprovalFlowStep nextStep = resolveNextStep(inst, p.getStepNo());
+        if (nextStep != null) {
+            // 非终审：仅当当前步骤允许指定下一审批人时才采纳 nextAuditorId
+            ApprovalFlowStep currentStep = resolveStep(inst, p.getStepNo());
+            boolean designateAllowed = currentStep != null
+                    && Integer.valueOf(1).equals(currentStep.getAllowDesignateNext());
+            if (nextAuditorId != null && !designateAllowed) {
+                log.warn("当前步骤不允许指定下一审批人，忽略 nextAuditorId: taskId={}, stepNo={}",
+                        taskId, p.getStepNo());
+            }
+            Long designated = designateAllowed ? nextAuditorId : null;
+
+            ApprovalNode nextNode = approvalSubmitService.createStepNode(inst, nextStep, schoolId,
+                    p.getApplicantId(), p.getApplicantName(), p.getApplicantNo(), p.getTitle(),
+                    p.getCategoryLabel(), p.getSubmittedAt(), designated);
+
+            writeAuditLog(p, AuditActionEnum.APPROVE.getValue(), comment, null, teacherId, 1, null);
+
+            if (nextNode != null) {
+                inst.setCurrentStep(nextStep.getStepNo());
+                approvalInstanceRepository.save(inst);
+                notifyStudent(p, "audit_remind", "申报进入下一级审批",
+                        "您的申报「" + p.getTitle() + "」已通过当前审核，等待下一级审批。");
+            } else {
+                // 下一步审批人解析失败（无校级管理员兜底），保持实例审批中，等待管理员配置
+                log.error("多级审批推进失败，下一步无审批人: taskId={}, instanceId={}, nextStepNo={}",
+                        taskId, p.getInstanceId(), nextStep.getStepNo());
+            }
+            return ApproveResult.builder()
+                    .taskId(p.getId())
+                    .approvableId(p.getApprovableId())
+                    .status(ApplyStatusEnum.APPROVED.getValue())
+                    .statusLabel("已通过（进入下一级）")
+                    .auditedAt(format(now))
+                    .build();
+        }
+
+        // 终审通过
+        if (inst != null) {
             inst.setStatus(ApprovalInstanceStatusEnum.APPROVED.getValue());
             inst.setCompletedAt(now);
             approvalInstanceRepository.save(inst);
-        });
+        }
 
         ApprovableRef ref = approveApprovable(p, now, teacherId);
         writeAuditLog(p, AuditActionEnum.APPROVE.getValue(), comment, null, teacherId, ref.version(), null);
@@ -238,6 +294,27 @@ public class AuditTaskService {
                 .statusLabel(ApplyStatusEnum.APPROVED.getLabel())
                 .auditedAt(format(now))
                 .build();
+    }
+
+    /** 解析流程实例中指定步骤号的步骤配置（无实例/步骤号返回 null） */
+    private ApprovalFlowStep resolveStep(ApprovalInstance inst, Integer stepNo) {
+        if (inst == null || stepNo == null) {
+            return null;
+        }
+        return approvalFlowStepRepository.findByFlowIdOrderByStepNoAsc(inst.getFlowId()).stream()
+                .filter(s -> Objects.equals(s.getStepNo(), stepNo))
+                .findFirst().orElse(null);
+    }
+
+    /** 解析当前步骤之后的下一步骤（stepNo 严格大于当前步骤号的最小者） */
+    private ApprovalFlowStep resolveNextStep(ApprovalInstance inst, Integer currentStepNo) {
+        if (inst == null || currentStepNo == null) {
+            return null;
+        }
+        return approvalFlowStepRepository.findByFlowIdOrderByStepNoAsc(inst.getFlowId()).stream()
+                .filter(s -> s.getStepNo() != null && s.getStepNo() > currentStepNo)
+                .min(Comparator.comparing(ApprovalFlowStep::getStepNo))
+                .orElse(null);
     }
 
     // ==================== 4.4 单个审核退回 ====================
@@ -366,6 +443,67 @@ public class AuditTaskService {
                 .build();
     }
 
+    // ==================== 4.8 转交待审核任务 ====================
+
+    /**
+     * 转交待审核任务（POST /teacher/audits/{taskId}/transfer）
+     * <p>
+     * 当前审批人将待审核任务转交给本校另一位审批教师：任务保持待审核状态，
+     * 待办改派给目标审批人，并在审核记录（audit_logs.action=4「转交」）中留痕，
+     * 同时向目标审批人发送审核提醒。转交后原审批人不再持有该待办。
+     */
+    @Transactional
+    public TransferResult transfer(Long teacherId, Long taskId, Long targetAuditorId, String comment) {
+        Long schoolId = adminAuthService.getOperatorSchoolId(teacherId);
+        if (targetAuditorId == null) {
+            throw new BusinessException(ResultCode.PARAM_MISSING, "转交对象不能为空");
+        }
+        if (Objects.equals(targetAuditorId, teacherId)) {
+            throw new BusinessException(ResultCode.PARAM_ERROR, "不能转交给本人");
+        }
+        User target = userRepository.findById(targetAuditorId)
+                .orElseThrow(() -> new BusinessException(ResultCode.DATA_NOT_EXIST, "转交对象不存在"));
+        if (!Objects.equals(target.getSchoolId(), schoolId)) {
+            throw new BusinessException(ResultCode.PARAM_ERROR, "只能转交给本校教师");
+        }
+        if (!isAuditor(targetAuditorId)) {
+            throw new BusinessException(ResultCode.PARAM_ERROR, "转交对象不具备审批角色");
+        }
+
+        PendingApproval p = loadTask(taskId);
+        ensureTaskAccess(p, teacherId, schoolId);
+        if (!Integer.valueOf(1).equals(p.getStatus())) {
+            throw new BusinessException(ResultCode.BIZ_STATUS_NOT_OPERABLE, "任务已处理，请勿重复操作");
+        }
+        LocalDateTime now = LocalDateTime.now();
+
+        // 节点改派：待办归属目标审批人（节点仍待审核，action 不置位）
+        ApprovalNode node = approvalNodeRepository.findById(p.getNodeId()).orElse(null);
+        if (node != null) {
+            node.setAssignedAuditorId(targetAuditorId);
+            approvalNodeRepository.save(node);
+        }
+
+        // 待办改派给目标审批人
+        p.setAuditorId(targetAuditorId);
+        pendingApprovalRepository.save(p);
+
+        // 审核记录写入「转交」（audit_logs.action=4），管理员「审核记录」按转交筛选即可命中
+        writeAuditLog(p, AuditActionEnum.TRANSFER.getValue(), buildTransferComment(target.getName(), comment),
+                null, teacherId, 1, null);
+
+        // 通知目标审批人
+        notifyAuditor(targetAuditorId, "audit_remind", "收到转交的待审核任务",
+                "「" + p.getTitle() + "」已转交给您审核，请及时处理。", p);
+
+        return TransferResult.builder()
+                .taskId(p.getId())
+                .approvableId(p.getApprovableId())
+                .targetAuditorId(targetAuditorId)
+                .transferredAt(format(now))
+                .build();
+    }
+
     // ==================== 4.7 获取常用退回原因模板 ====================
 
     /** 获取常用退回原因模板（GET /teacher/audits/reject-templates），按使用频率降序、排序升序。 */
@@ -390,9 +528,10 @@ public class AuditTaskService {
                                                  Long semesterId, String grade, String keyword,
                                                  String sortOrder) {
         List<PendingApproval> all = pendingApprovalRepository.findByStatusAndSchoolId(1, schoolId);
+        Set<Long> delegatedDelegatorIds = resolveDelegatedDelegatorIds(teacherId);
         List<PendingApproval> result = new ArrayList<>();
         for (PendingApproval p : all) {
-            if (!isInScope(p, teacherId, schoolId)) {
+            if (!isInScope(p, teacherId, schoolId, delegatedDelegatorIds)) {
                 continue;
             }
             if (type != null && !type.isEmpty() && !type.equals(toTypeCode(p.getApprovableType()))) {
@@ -457,19 +596,35 @@ public class AuditTaskService {
     // ==================== 私有：范围校验 ====================
 
     private void ensureTaskAccess(PendingApproval p, Long teacherId, Long schoolId) {
-        if (!isInScope(p, teacherId, schoolId)) {
+        if (!isInScope(p, teacherId, schoolId, resolveDelegatedDelegatorIds(teacherId))) {
             throw new BusinessException(ResultCode.ACCESS_DENIED, "无访问权限");
         }
     }
 
-    private boolean isInScope(PendingApproval p, Long teacherId, Long schoolId) {
+    private boolean isInScope(PendingApproval p, Long teacherId, Long schoolId, Set<Long> delegatedDelegatorIds) {
         if (isAdmin(teacherId)) {
             return true;
         }
         if (p.getAuditorId() != null && p.getAuditorId().equals(teacherId)) {
             return true;
         }
+        // 审批委托：受托人可代委托人处理其待办
+        if (p.getAuditorId() != null && delegatedDelegatorIds != null
+                && delegatedDelegatorIds.contains(p.getAuditorId())) {
+            return true;
+        }
         return studentInScope(p.getApplicantId(), teacherId, schoolId);
+    }
+
+    /** 返回当前教师作为受托人时可代审的委托人 ID 集合（生效中的委托） */
+    private Set<Long> resolveDelegatedDelegatorIds(Long teacherId) {
+        if (teacherId == null) {
+            return Set.of();
+        }
+        return approvalDelegationRepository.findActiveByDelegateeId(teacherId, LocalDateTime.now()).stream()
+                .map(ApprovalDelegation::getDelegatorId)
+                .filter(Objects::nonNull)
+                .collect(Collectors.toSet());
     }
 
     private boolean studentInScope(Long studentId, Long teacherId, Long schoolId) {
@@ -643,6 +798,49 @@ public class AuditTaskService {
         msg.setIsArchived(0);
         msg.setIsImportant(0);
         userMessageRepository.save(msg);
+    }
+
+    /** 向审批人发审核提醒（转交等场景） */
+    private void notifyAuditor(Long auditorId, String category, String title, String content, PendingApproval p) {
+        if (auditorId == null) {
+            return;
+        }
+        UserMessage msg = new UserMessage();
+        msg.setUserId(auditorId);
+        msg.setSenderType(1);
+        msg.setCategory(category);
+        msg.setTitle(title);
+        msg.setContent(content);
+        msg.setRelatedType(p.getApprovableType());
+        msg.setRelatedId(p.getApprovableId());
+        msg.setSendChannel("push");
+        msg.setIsRead(0);
+        msg.setIsArchived(0);
+        msg.setIsImportant(1);
+        userMessageRepository.save(msg);
+    }
+
+    /** 组装转交审核记录的备注（含目标审批人姓名） */
+    private String buildTransferComment(String targetName, String reason) {
+        String base = "转交给 " + (targetName != null ? targetName : "其他教师");
+        if (reason != null && !reason.isBlank()) {
+            return base + "：" + reason;
+        }
+        return base;
+    }
+
+    /** 用户是否持有启用中的审批角色（roles.is_auditor=1） */
+    private boolean isAuditor(Long userId) {
+        List<Long> roleIds = userRoleRepository.findByUserId(userId).stream()
+                .map(UserRole::getRoleId)
+                .filter(Objects::nonNull)
+                .distinct()
+                .collect(Collectors.toList());
+        if (roleIds.isEmpty()) {
+            return false;
+        }
+        return roleRepository.findByIdInAndStatus(roleIds, StatusEnum.ENABLED.getValue()).stream()
+                .anyMatch(r -> Objects.equals(r.getIsAuditor(), 1));
     }
 
     private void triggerScoreRecalc(Long schoolId, PendingApproval p, Long semesterId, Long teacherId) {
@@ -1087,6 +1285,15 @@ public class AuditTaskService {
     }
 
     @Data
+    @Builder
+    public static class TransferResult {
+        private Long taskId;
+        private Long approvableId;
+        private Long targetAuditorId;
+        private String transferredAt;
+    }
+
+    @Data
     public static class RejectTemplateItem {
         private final String templateCode;
         private final String templateContent;
@@ -1117,5 +1324,11 @@ public class AuditTaskService {
     @Data
     public static class RevokeRequest {
         private String revokeReason;
+    }
+
+    @Data
+    public static class TransferRequest {
+        private Long targetAuditorId;
+        private String comment;
     }
 }

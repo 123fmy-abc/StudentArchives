@@ -10,6 +10,7 @@ import com.example.studentarchives.exception.BusinessException;
 import com.example.studentarchives.repository.AnnouncementRepository;
 import com.example.studentarchives.repository.SystemSettingRepository;
 import com.example.studentarchives.service.common.AdminAuthService;
+import com.example.studentarchives.service.Fmy.AnnouncementNotifyService;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import jakarta.persistence.criteria.Predicate;
 import lombok.AllArgsConstructor;
@@ -55,6 +56,7 @@ public class SystemConfigManageService {
     private final SystemSettingRepository systemSettingRepository;
     private final AnnouncementRepository announcementRepository;
     private final AdminAuthService adminAuthService;
+    private final AnnouncementNotifyService announcementNotifyService;
 
     // ==================== 12.1 获取系统配置列表 ====================
 
@@ -195,6 +197,7 @@ public class SystemConfigManageService {
                 .filter(x -> schoolId.equals(x.getSchoolId()))
                 .orElseThrow(() -> new BusinessException(ResultCode.DATA_NOT_EXIST, "公告不存在"));
 
+        Integer oldStatus = a.getStatus();
         if (body.getTitle() != null) {
             a.setTitle(requireNotBlank(body.getTitle(), "title 不能为空"));
         }
@@ -221,6 +224,11 @@ public class SystemConfigManageService {
         }
 
         announcementRepository.save(a);
+
+        // 草稿/下线改为「已发布」时补发系统通知；已发布状态下重复编辑不重发（幂等）
+        if (!Integer.valueOf(1).equals(oldStatus) && Integer.valueOf(1).equals(a.getStatus())) {
+            announcementNotifyService.notifyIfPublished(a);
+        }
     }
 
     // ==================== 12.6 删除公告 ====================

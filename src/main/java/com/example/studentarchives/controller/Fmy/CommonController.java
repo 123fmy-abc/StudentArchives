@@ -24,6 +24,7 @@ import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
 import java.util.List;
+import java.util.Map;
 
 /**
  * 通用接口控制器
@@ -191,6 +192,16 @@ public class CommonController {
     public ApiResult<List<DictItemResponse>> getDict(@RequestParam("dictType") String dictType) {
         List<DictItemResponse> list = commonService.getDict(dictType);
         return ApiResult.success(list);
+    }
+
+    /**
+     * 批量获取字典数据（一次传多个 dictType，如 dictTypes=competition_level,award_level）。
+     * 返回 Map：dictType → 字典项列表，供前端一次性拉取多个下拉选项。
+     */
+    @GetMapping("/dict/batch")
+    public ApiResult<Map<String, List<DictItemResponse>>> getDicts(
+            @RequestParam("dictTypes") List<String> dictTypes) {
+        return ApiResult.success(commonService.getDicts(dictTypes));
     }
 
     // ==================== 枚举查询 ====================

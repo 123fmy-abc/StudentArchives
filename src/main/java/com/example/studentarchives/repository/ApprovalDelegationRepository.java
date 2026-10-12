@@ -47,4 +47,26 @@ public interface ApprovalDelegationRepository extends JpaRepository<ApprovalDele
 
     /** 生效中(1)且已过结束时间 → 定时任务刷为已过期(2) */
     List<ApprovalDelegation> findByStatusAndEndTimeLessThanEqual(Integer status, LocalDateTime time);
+
+    /**
+     * 查询指定委托人在当前时点「生效中」的委托（审批任务改派用）。
+     * <p>
+     * 生效口径与 {@code TeacherDelegationService.effectiveStatus} 一致：状态为待生效/生效中
+     * （status IN (0,1)），且已到开始时间、未过结束时间（含边界）。定时任务的 0→1 刷库
+     * 存在分钟级延迟，故这里同时认 status=0 但已过 start_time 的记录，避免漏改派。
+     */
+    @Query("SELECT d FROM ApprovalDelegation d WHERE d.delegatorId = :delegatorId "
+            + "AND d.status IN (0, 1) "
+            + "AND d.startTime <= :now AND d.endTime >= :now")
+    List<ApprovalDelegation> findActiveByDelegatorId(
+            @Param("delegatorId") Long delegatorId, @Param("now") LocalDateTime now);
+
+    /**
+     * 查询指定受托人在当前时点「生效中」的委托（审批放行用，受托人可代委托人处理待办）。
+     */
+    @Query("SELECT d FROM ApprovalDelegation d WHERE d.delegateeId = :delegateeId "
+            + "AND d.status IN (0, 1) "
+            + "AND d.startTime <= :now AND d.endTime >= :now")
+    List<ApprovalDelegation> findActiveByDelegateeId(
+            @Param("delegateeId") Long delegateeId, @Param("now") LocalDateTime now);
 }

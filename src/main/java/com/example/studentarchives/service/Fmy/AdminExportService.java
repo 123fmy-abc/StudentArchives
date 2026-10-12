@@ -65,7 +65,6 @@ import org.springframework.context.annotation.Lazy;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
-import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
 
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
@@ -1630,23 +1629,14 @@ public class AdminExportService {
     }
 
     /**
-     * 生成研究导出文件的后端下载地址（绝对 URL，基于当前请求的上下文路径）。
+     * 生成导出文件的后端下载相对路径（不含 Host，避免任务创建时点的隧道/域名变更后旧链接失效）。
      * <p>
-     * 指向通用文件下载端点 {@code GET /common/files/{fileId}/download}：该端点校验
-     * 文件访问权限与 7 天下载有效期（download_expire_at 与任务过期对齐），并在
-     * {@code bizType=research_export} 时补写 export_operation_logs(action=2) 下载审计。
-     */
-    /**
-     * 生成导出文件的后端下载地址（绝对 URL，基于当前请求的上下文路径）。
-     * <p>
-     * 指向通用文件下载端点 {@code GET /common/files/{fileId}/download}；包可见，
-     * 供同包 {@link TeacherExportService}（教师端 12.3 任务列表）复用。
+     * 返回 {@code /common/files/{fileId}/download} 形式的相对路径，指向通用文件下载端点；
+     * 该端点需鉴权，前端应从中取出 fileId 后自行携带 Authorization 调下载接口取 blob。
+     * 包可见，供同包 {@link TeacherExportService}（教师端 12.3 任务列表）复用。
      */
     String buildDownloadUrl(Long fileId) {
-        return ServletUriComponentsBuilder.fromCurrentContextPath()
-                .path("/common/files/{fileId}/download")
-                .buildAndExpand(fileId)
-                .toUriString();
+        return "/common/files/" + fileId + "/download";
     }
 
     // ==================== 私有辅助方法 ====================

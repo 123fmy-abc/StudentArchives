@@ -9,13 +9,20 @@ import com.example.studentarchives.config.Fmy.OssProperties;
 import com.example.studentarchives.entity.file.AttachmentRelation;
 import com.example.studentarchives.entity.org.School;
 import com.example.studentarchives.entity.org.Semester;
+import com.example.studentarchives.entity.org.SemesterImportRecord;
+import com.example.studentarchives.entity.user.User;
 import com.example.studentarchives.exception.BusinessException;
 import com.example.studentarchives.repository.AttachmentRelationRepository;
 import com.example.studentarchives.repository.SchoolRepository;
+import com.example.studentarchives.repository.SemesterImportRecordRepository;
 import com.example.studentarchives.repository.SemesterRepository;
+import com.example.studentarchives.repository.UserRepository;
 import com.example.studentarchives.service.Fmy.GradeImportFileParser;
 import com.example.studentarchives.service.common.AdminAuthService;
 import com.fasterxml.jackson.annotation.JsonInclude;
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.persistence.criteria.Predicate;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -82,12 +89,15 @@ public class SemesterManageService {
     );
 
     private final SemesterRepository semesterRepository;
+    private final SemesterImportRecordRepository semesterImportRecordRepository;
     private final SchoolRepository schoolRepository;
+    private final UserRepository userRepository;
     private final AdminAuthService adminAuthService;
     private final GradeImportFileParser fileParser;
     private final AttachmentRelationRepository attachmentRelationRepository;
     private final OSS ossClient;
     private final OssProperties ossProperties;
+    private final ObjectMapper objectMapper;
 
     // ==================== 9.1 获取学期列表 ====================
 
@@ -317,12 +327,25 @@ public class SemesterManageService {
             }
         }
 
-        return SemesterImportResponse.builder()
+        SemesterImportResponse response = SemesterImportResponse.builder()
                 .totalCount(total)
                 .successCount(success)
                 .failCount(failures.size())
                 .failures(failures)
                 .build();
+
+        // 落一条导入记录，供「本次导入结果」回看历史批次（GET /admin/semesters/import-records）
+        SemesterImportRecord record = new SemesterImportRecord();
+        record.setSchoolId(schoolId);
+        record.setOperatorId(operatorId);
+        record.setFileId(fileId);
+        record.setTotalCount(total);
+        record.setSuccessCount(success);
+        record.setFailCount(failures.size());
+        record.setFailDetails(writeFailDetails(failures));
+        semesterImportRecordRepository.save(record);
+
+        return response;
     }
 
     // ==================== 9.7 下载导入模板 ====================
@@ -335,6 +358,73 @@ public class SemesterManageService {
     public byte[] importTemplate(Long operatorId) {
         adminAuthService.requireAdminOrPermission(operatorId, IMPORT_PERMISSION);
         return buildTemplateXlsx();
+    }
+
+    // ==================== 9.8 查询导入记录 ====================
+
+    /**
+     * 分页查询学期导入记录（GET /admin/semesters/import-records）。
+     * <p>
+     * schoolId 缺省时取当前操作人所属学校；返回批次时间/操作人/成功失败数/失败明细。
+     */
+    @Transactional(readOnly = true)
+    public PageResult<SemesterImportRecordItem> listImportRecords(Long operatorId, Long schoolId, PageParam pageParam) {
+        adminAuthService.requireAdminOrPermission(operatorId, IMPORT_PERMISSION);
+        Long targetSchoolId = schoolId != null ? schoolId : adminAuthService.getOperatorSchoolId(operatorId);
+
+        Page<SemesterImportRecord> page = semesterImportRecordRepository.findBySchoolIdOrderByIdDesc(
+                targetSchoolId, PageRequest.of(pageParam.getPage() - 1, pageParam.getPerPage()));
+
+        Set<Long> operatorIds = page.getContent().stream()
+                .map(SemesterImportRecord::getOperatorId).filter(Objects::nonNull).collect(Collectors.toSet());
+        Map<Long, String> operatorNames = operatorIds.isEmpty() ? Map.of()
+                : userRepository.findByIdIn(new ArrayList<>(operatorIds)).stream()
+                        .collect(Collectors.toMap(User::getId, User::getName, (a, b) -> a));
+
+        List<SemesterImportRecordItem> items = page.getContent().stream()
+                .map(r -> toRecordItem(r, operatorNames))
+                .collect(Collectors.toList());
+
+        return PageResult.of(items, page.getTotalElements(), pageParam);
+    }
+
+    private SemesterImportRecordItem toRecordItem(SemesterImportRecord r, Map<Long, String> operatorNames) {
+        return SemesterImportRecordItem.builder()
+                .recordId(r.getId())
+                .schoolId(r.getSchoolId())
+                .operatorId(r.getOperatorId())
+                .operatorName(r.getOperatorId() != null ? operatorNames.get(r.getOperatorId()) : null)
+                .fileId(r.getFileId())
+                .totalCount(r.getTotalCount())
+                .successCount(r.getSuccessCount())
+                .failCount(r.getFailCount())
+                .failures(parseFailDetails(r.getFailDetails()))
+                .createdAt(toIso(r.getCreatedAt()))
+                .build();
+    }
+
+    private String writeFailDetails(List<SemesterImportFailItem> failures) {
+        if (failures == null || failures.isEmpty()) {
+            return null;
+        }
+        try {
+            return objectMapper.writeValueAsString(failures);
+        } catch (JsonProcessingException e) {
+            log.warn("序列化学期导入失败明细失败", e);
+            return null;
+        }
+    }
+
+    private List<SemesterImportFailItem> parseFailDetails(String json) {
+        if (json == null || json.isBlank()) {
+            return List.of();
+        }
+        try {
+            return objectMapper.readValue(json, new TypeReference<List<SemesterImportFailItem>>() {});
+        } catch (JsonProcessingException e) {
+            log.warn("解析学期导入失败明细失败", e);
+            return List.of();
+        }
     }
 
     // ==================== 查询与校验辅助 ====================
@@ -643,5 +733,24 @@ public class SemesterManageService {
         private Integer row;
         private String name;
         private String reason;
+    }
+
+    /** 9.8 导入记录列表项 */
+    @Data
+    @Builder
+    @NoArgsConstructor
+    @AllArgsConstructor
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    public static class SemesterImportRecordItem {
+        private Long recordId;
+        private Long schoolId;
+        private Long operatorId;
+        private String operatorName;
+        private Long fileId;
+        private Integer totalCount;
+        private Integer successCount;
+        private Integer failCount;
+        private List<SemesterImportFailItem> failures;
+        private String createdAt;
     }
 }

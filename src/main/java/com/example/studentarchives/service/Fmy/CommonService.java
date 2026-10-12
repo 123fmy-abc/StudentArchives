@@ -587,6 +587,26 @@ public class CommonService {
         return result;
     }
 
+    /**
+     * 批量获取字典数据（前端下拉一次取多个字典类型）。
+     * 复用 {@link #getDict(String)} 的单类型逻辑（含 archive_category 特殊来源）。
+     *
+     * @param dictTypes 字典类型集合
+     * @return dictType → 字典项列表（键与入参顺序一致）
+     */
+    public Map<String, List<DictItemResponse>> getDicts(List<String> dictTypes) {
+        Map<String, List<DictItemResponse>> result = new HashMap<>();
+        if (dictTypes == null) {
+            return result;
+        }
+        for (String t : dictTypes) {
+            if (t != null && !t.isBlank()) {
+                result.put(t.trim(), getDict(t.trim()));
+            }
+        }
+        return result;
+    }
+
     // ==================== 指标树查询 ====================
 
     /**

@@ -32,6 +32,13 @@ public interface StudentProfileRepository extends JpaRepository<StudentProfile, 
     List<StudentProfile> findByClassId(Long classId);
 
     /**
+     * 按班级批量统计学生人数（组织架构「班级学生人数」列实时统计使用）。
+     * 返回 Object[]{classId, count}。
+     */
+    @Query("SELECT sp.classId, COUNT(sp) FROM StudentProfile sp WHERE sp.classId IN :classIds GROUP BY sp.classId")
+    List<Object[]> countGroupedByClassIdIn(@Param("classIds") Collection<Long> classIds);
+
+    /**
      * 查询某学校下全部学生（评分重算 targetType=4 全量 / targetType=3 指定学期时使用）。
      * 学生归属学校由 users.school_id 决定。
      */

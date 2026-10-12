@@ -20,11 +20,13 @@ import com.example.studentarchives.dto.Fmy.approvalflow.response.ApprovalFlowSte
 import com.example.studentarchives.entity.approval.ApprovalFlow;
 import com.example.studentarchives.entity.approval.ApprovalFlowMapping;
 import com.example.studentarchives.entity.approval.ApprovalFlowStep;
+import com.example.studentarchives.entity.user.Role;
 import com.example.studentarchives.exception.BusinessException;
 import com.example.studentarchives.repository.ApprovalFlowMappingRepository;
 import com.example.studentarchives.repository.ApprovalFlowRepository;
 import com.example.studentarchives.repository.ApprovalFlowStepRepository;
 import com.example.studentarchives.repository.ApprovalInstanceRepository;
+import com.example.studentarchives.repository.RoleRepository;
 import com.example.studentarchives.repository.SchoolRepository;
 import com.example.studentarchives.service.common.AdminAuthService;
 import lombok.RequiredArgsConstructor;
@@ -86,6 +88,7 @@ public class AdminApprovalFlowService {
     private final ApprovalFlowMappingRepository approvalFlowMappingRepository;
     private final ApprovalInstanceRepository approvalInstanceRepository;
     private final SchoolRepository schoolRepository;
+    private final RoleRepository roleRepository;
 
     // ==================== 6.1 获取审批流程列表 ====================
 
@@ -185,8 +188,10 @@ public class AdminApprovalFlowService {
     public ApprovalFlowDetailResponse getFlowDetail(Long userId, Long flowId) {
         adminAuthService.requireAdminOrPermission(userId, PERMISSION);
         ApprovalFlow flow = requireFlow(flowId);
-        List<ApprovalFlowStepResponse> steps = approvalFlowStepRepository.findByFlowIdOrderByStepNoAsc(flowId).stream()
-                .map(this::toStepResponse)
+        List<ApprovalFlowStep> stepList = approvalFlowStepRepository.findByFlowIdOrderByStepNoAsc(flowId);
+        Map<Long, Role> roleMap = loadRoleMap(stepList);
+        List<ApprovalFlowStepResponse> steps = stepList.stream()
+                .map(s -> toStepResponse(s, roleMap))
                 .collect(Collectors.toList());
         return toFlowDetailResponse(flow, steps);
     }
@@ -292,8 +297,10 @@ public class AdminApprovalFlowService {
     public List<ApprovalFlowStepResponse> listSteps(Long userId, Long flowId) {
         adminAuthService.requireAdminOrPermission(userId, PERMISSION);
         requireFlow(flowId);
-        return approvalFlowStepRepository.findByFlowIdOrderByStepNoAsc(flowId).stream()
-                .map(this::toStepResponse)
+        List<ApprovalFlowStep> stepList = approvalFlowStepRepository.findByFlowIdOrderByStepNoAsc(flowId);
+        Map<Long, Role> roleMap = loadRoleMap(stepList);
+        return stepList.stream()
+                .map(s -> toStepResponse(s, roleMap))
                 .collect(Collectors.toList());
     }
 
@@ -591,9 +598,10 @@ public class AdminApprovalFlowService {
             }
         }
 
+        Map<Long, Role> roleMap = loadRoleMap(saved);
         return saved.stream()
                 .sorted(Comparator.comparing(ApprovalFlowStep::getStepNo))
-                .map(this::toStepResponse)
+                .map(s -> toStepResponse(s, roleMap))
                 .collect(Collectors.toList());
     }
 
@@ -698,12 +706,26 @@ public class AdminApprovalFlowService {
                 .build();
     }
 
-    private ApprovalFlowStepResponse toStepResponse(ApprovalFlowStep step) {
+    /** 批量加载步骤引用角色映射（roleId → Role），用于回显角色名称/编码 */
+    private Map<Long, Role> loadRoleMap(List<ApprovalFlowStep> steps) {
+        Set<Long> roleIds = steps.stream().map(ApprovalFlowStep::getRoleId)
+                .filter(Objects::nonNull).collect(Collectors.toSet());
+        if (roleIds.isEmpty()) {
+            return Map.of();
+        }
+        return roleRepository.findByIdIn(new ArrayList<>(roleIds)).stream()
+                .collect(Collectors.toMap(Role::getId, r -> r, (a, b) -> a));
+    }
+
+    private ApprovalFlowStepResponse toStepResponse(ApprovalFlowStep step, Map<Long, Role> roleMap) {
+        Role role = step.getRoleId() != null ? roleMap.get(step.getRoleId()) : null;
         return ApprovalFlowStepResponse.builder()
                 .id(step.getId())
                 .stepNo(step.getStepNo())
                 .stepName(step.getStepName())
                 .roleId(step.getRoleId())
+                .roleName(role != null ? role.getName() : null)
+                .roleCode(role != null ? role.getCode() : null)
                 .scopeType(step.getScopeType())
                 .scopeRule(step.getScopeRule())
                 .autoAssign(step.getAutoAssign())

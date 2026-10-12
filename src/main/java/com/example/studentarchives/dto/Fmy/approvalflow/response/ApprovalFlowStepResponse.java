@@ -28,6 +28,12 @@ public class ApprovalFlowStepResponse {
     /** 该节点要求的角色 ID */
     private Long roleId;
 
+    /** 该节点要求的角色名称（冗余回显，便于前端直接展示） */
+    private String roleName;
+
+    /** 该节点要求的角色编码 */
+    private String roleCode;
+
     /** 范围类型：1=学校 2=学院 3=专业 4=班级 5=课程 6=年级 */
     private Integer scopeType;
 

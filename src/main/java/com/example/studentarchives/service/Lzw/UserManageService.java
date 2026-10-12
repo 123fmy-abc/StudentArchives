@@ -388,7 +388,7 @@ public class UserManageService {
 
     // ==================== 列表查询辅助 ====================
 
-    /** 解析 roleId / grade / keyword 为候选用户 ID 集合（多条件取交集，无此类筛选返回 null） */
+    /** 解析 roleId / grade / collegeId / classId / keyword 为候选用户 ID 集合（多条件取交集，无此类筛选返回 null） */
     private Set<Long> resolveCandidateUserIds(UserListQuery query) {
         Set<Long> result = null;
         if (query.getRoleId() != null) {
@@ -396,6 +396,12 @@ public class UserManageService {
         }
         if (query.getGrade() != null && !query.getGrade().isBlank()) {
             result = intersect(result, resolveGradeUserIds(query.getGrade()));
+        }
+        if (query.getClassId() != null) {
+            result = intersect(result, resolveClassUserIds(query.getClassId()));
+        }
+        if (query.getCollegeId() != null) {
+            result = intersect(result, resolveCollegeUserIds(query.getCollegeId()));
         }
         if (query.getKeyword() != null && !query.getKeyword().isBlank()) {
             result = intersect(result, resolveKeywordUserIds(query.getKeyword()));
@@ -416,6 +422,16 @@ public class UserManageService {
         }
         return studentProfileRepository.findByClassIdIn(classIds).stream()
                 .map(StudentProfile::getUserId).filter(Objects::nonNull).collect(Collectors.toSet());
+    }
+
+    private Set<Long> resolveClassUserIds(Long classId) {
+        return studentProfileRepository.findByClassId(classId).stream()
+                .map(StudentProfile::getUserId).filter(Objects::nonNull).collect(Collectors.toSet());
+    }
+
+    private Set<Long> resolveCollegeUserIds(Long collegeId) {
+        return teacherProfileRepository.findByCollegeId(collegeId).stream()
+                .map(TeacherProfile::getUserId).filter(Objects::nonNull).collect(Collectors.toSet());
     }
 
     private Set<Long> resolveKeywordUserIds(String keyword) {
@@ -740,6 +756,8 @@ public class UserManageService {
         private Long roleId;
         private Integer status;
         private String grade;
+        private Long collegeId;
+        private Long classId;
         private String keyword;
         private Long schoolId;
     }

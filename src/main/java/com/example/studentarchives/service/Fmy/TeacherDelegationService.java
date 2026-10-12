@@ -55,7 +55,10 @@ import java.util.stream.Collectors;
  * 教师端审批委托服务（《教师端接口文档》十一、审批委托模块）
  * <p>
  * 教师因出差、请假等原因无法处理审批任务时，可将自己的审批权限临时委托给其他教师。
- * 数据来源：approval_delegations 表。委托仅对 approval_flow_steps.allow_delegate=1 的审批节点生效。
+ * 数据来源：approval_delegations 表。委托仅对 approval_flow_steps.allow_delegate=1 的审批节点生效；
+ * 生效消费点在 {@link com.example.studentarchives.service.Lzw.ApprovalSubmitService}
+ * （待办生成时按委托改派给受托人）与 {@link com.example.studentarchives.service.Lzw.AuditTaskService}
+ * （受托人代审放行）。
  * 权限码：delegate:manage — 管理自己的审批委托（创建/取消）。三个对外方法均在入口校验该码，
  * 学生/其他未授权角色调用统一返回 20005。委托人是当前登录人，只能委托自己拥有的角色与范围。
  * <p>
@@ -176,7 +179,8 @@ public class TeacherDelegationService {
      *   <li>委托时段不得与已有生效中的委托记录重叠（status IN (0,1)）；</li>
      *   <li>委托人只能委托自己拥有审批权限的角色和范围。</li>
      * </ul>
-     * 委托的审批节点必须 allow_delegate=1 的校验在审批任务分配时执行，不在本接口强制。
+     * 委托的审批节点必须 allow_delegate=1 的校验在审批任务分配时执行
+     * （见 {@link com.example.studentarchives.service.Lzw.ApprovalSubmitService}），不在本接口强制。
      *
      * @param userId  当前登录教师用户 ID（委托人）
      * @param request 委托创建请求

@@ -41,6 +41,9 @@ public interface PendingApprovalRepository extends JpaRepository<PendingApproval
     /** 查询审批人当前待审批任务（status=1 待审批），按提交时间正序（先提交先审） */
     List<PendingApproval> findByAuditorIdAndStatusOrderBySubmittedAtAsc(Long auditorId, Integer status);
 
+    /** 统计审批人当前待审批任务数（status=1），用于同角色多人时按负载均衡分配 */
+    long countByAuditorIdAndStatus(Long auditorId, Integer status);
+
     /** 查询指定学校下已超时的待审批任务（status=1 且 submittedAt < cutoff） */
     List<PendingApproval> findBySchoolIdAndStatusAndSubmittedAtBefore(Long schoolId, Integer status, LocalDateTime cutoff);
 }

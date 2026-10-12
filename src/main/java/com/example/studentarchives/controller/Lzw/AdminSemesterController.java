@@ -6,6 +6,7 @@ import com.example.studentarchives.common.PageParam;
 import com.example.studentarchives.common.PageResult;
 import com.example.studentarchives.service.Lzw.SemesterManageService;
 import com.example.studentarchives.service.Lzw.SemesterManageService.SemesterIdResponse;
+import com.example.studentarchives.service.Lzw.SemesterManageService.SemesterImportRecordItem;
 import com.example.studentarchives.service.Lzw.SemesterManageService.SemesterImportRequest;
 import com.example.studentarchives.service.Lzw.SemesterManageService.SemesterImportResponse;
 import com.example.studentarchives.service.Lzw.SemesterManageService.SemesterListItem;
@@ -131,6 +132,18 @@ public class AdminSemesterController {
                 .contentType(MediaType.parseMediaType(
                         "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"))
                 .body(data);
+    }
+
+    // ==================== 9.8 查询导入记录 ====================
+
+    @GetMapping("/semesters/import-records")
+    public ApiResult<PageResult<SemesterImportRecordItem>> listImportRecords(
+            @AuthenticationPrincipal Long operatorId,
+            @RequestParam(value = "schoolId", required = false) Long schoolId,
+            @RequestParam(value = "page", required = false, defaultValue = "1") int page,
+            @RequestParam(value = "per_page", required = false, defaultValue = "20") int perPage) {
+        return ApiResult.success(semesterManageService.listImportRecords(operatorId, schoolId,
+                buildPageParam(page, perPage)));
     }
 
     private PageParam buildPageParam(int page, int perPage) {
