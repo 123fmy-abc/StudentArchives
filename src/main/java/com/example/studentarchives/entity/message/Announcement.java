@@ -37,6 +37,9 @@ public class Announcement extends BaseEntity {
     @Column(name = "target_id")
     private Long targetId;
 
+    @Column(name = "receiver_type", length = 20, nullable = false, columnDefinition = "VARCHAR(20) DEFAULT 'all'")
+    private String receiverType = "all";
+
     @Column(name = "published_at", nullable = false)
     private LocalDateTime publishedAt;
 

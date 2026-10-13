@@ -72,7 +72,8 @@ public class AnnouncementNotifyService {
                 return;
             }
             List<Long> userIds = resolveRecipients(
-                    announcement.getTargetType(), announcement.getTargetId(), announcement.getSchoolId());
+                    announcement.getReceiverType(), announcement.getTargetType(),
+                    announcement.getTargetId(), announcement.getSchoolId());
             if (userIds.isEmpty()) {
                 return;
             }
