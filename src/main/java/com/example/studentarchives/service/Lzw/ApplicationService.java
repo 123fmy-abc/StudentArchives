@@ -5,6 +5,8 @@ import com.example.studentarchives.entity.archive.*;
 import com.example.studentarchives.entity.embed.ArchiveAuditInfo;
 import com.example.studentarchives.entity.file.AttachmentRelation;
 import com.example.studentarchives.entity.foundation.ArchiveTypeConfig;
+import com.example.studentarchives.entity.foundation.FormSubmissionSnapshot;
+import com.example.studentarchives.entity.foundation.FormTemplate;
 import com.example.studentarchives.entity.user.User;
 import com.example.studentarchives.entity.version.ModelVersion;
 import com.example.studentarchives.enums.ApplyStatusEnum;
@@ -14,6 +16,9 @@ import com.example.studentarchives.enums.FileStatusEnum;
 import com.example.studentarchives.enums.ModelVersionModelTypeEnum;
 import com.example.studentarchives.exception.BusinessException;
 import com.example.studentarchives.repository.*;
+import com.example.studentarchives.service.Fmy.FormTemplateQueryService;
+import com.example.studentarchives.service.Fmy.FormTemplateValidator;
+import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.Builder;
@@ -71,6 +76,10 @@ public class ApplicationService {
     private final ObjectMapper objectMapper;
     private final ApprovalSubmitService approvalSubmitService;
 
+    private final FormTemplateQueryService formTemplateQueryService;
+    private final FormTemplateValidator formTemplateValidator;
+    private final FormSubmissionSnapshotRepository formSubmissionSnapshotRepository;
+
     // ==================== 1. 学科竞赛 ====================
 
     @Transactional
@@ -83,6 +92,8 @@ public class ApplicationService {
         requireOnSubmit(draft, req.getCompetitionName(), "竞赛名称");
         requireOnSubmit(draft, req.getCompetitionType(), "竞赛类型");
         requireOnSubmit(draft, req.getAwardLevel(), "获奖等级");
+
+        FormTemplate template = validateByTemplate(schoolId, ArchiveTypeEnum.ACADEMIC_COMPETITION.getValue(), req, draft);
 
         Archive archive = createArchiveBase(schoolId, userId, ArchiveTypeEnum.ACADEMIC_COMPETITION.getValue(),
                 req.getCompetitionName(), req.getSemesterId(), req.getObtainTime(), draft, now);
@@ -98,6 +109,7 @@ public class ApplicationService {
 
         bindFiles(req.getEvidenceFileIds(), userId, archive.getId());
         writeArchiveVersion(archive, userId);
+        writeFormSnapshot(template, schoolId, ArchiveTypeEnum.ACADEMIC_COMPETITION.getValue(), archive.getId(), req, userId);
         generatePendingApprovalIfSubmitted(archive);
 
         return buildResponse(archive);
@@ -116,6 +128,8 @@ public class ApplicationService {
         requireOnSubmit(draft, req.getScholarshipCategory(), "奖学金类别");
         requireOnSubmit(draft, req.getAwardLevel(), "获奖等级");
 
+        FormTemplate template = validateByTemplate(schoolId, ArchiveTypeEnum.SCHOLARSHIP.getValue(), req, draft);
+
         Archive archive = createArchiveBase(schoolId, userId, ArchiveTypeEnum.SCHOLARSHIP.getValue(),
                 req.getScholarshipName(), req.getSemesterId(), req.getObtainTime(), draft, now);
         archive = archiveRepository.save(archive);
@@ -129,6 +143,7 @@ public class ApplicationService {
 
         bindFiles(req.getEvidenceFileIds(), userId, archive.getId());
         writeArchiveVersion(archive, userId);
+        writeFormSnapshot(template, schoolId, ArchiveTypeEnum.SCHOLARSHIP.getValue(), archive.getId(), req, userId);
         generatePendingApprovalIfSubmitted(archive);
 
         return buildResponse(archive);
@@ -147,6 +162,8 @@ public class ApplicationService {
         requireOnSubmit(draft, req.getIndustryType(), "行业类型");
         requireOnSubmit(draft, req.getProjectType(), "项目类型");
 
+        FormTemplate template = validateByTemplate(schoolId, ArchiveTypeEnum.INNOVATION_ENTREPRENEURSHIP.getValue(), req, draft);
+
         Archive archive = createArchiveBase(schoolId, userId, ArchiveTypeEnum.INNOVATION_ENTREPRENEURSHIP.getValue(),
                 req.getCompanyName(), req.getSemesterId(), req.getRegisteredTime(), draft, now);
         archive = archiveRepository.save(archive);
@@ -162,6 +179,7 @@ public class ApplicationService {
 
         bindFiles(req.getEvidenceFileIds(), userId, archive.getId());
         writeArchiveVersion(archive, userId);
+        writeFormSnapshot(template, schoolId, ArchiveTypeEnum.INNOVATION_ENTREPRENEURSHIP.getValue(), archive.getId(), req, userId);
         generatePendingApprovalIfSubmitted(archive);
 
         return buildResponse(archive);
@@ -180,6 +198,8 @@ public class ApplicationService {
         requireOnSubmit(draft, req.getProjectLevel(), "项目级别");
         requireOnSubmit(draft, req.getProjectType(), "项目类型");
 
+        FormTemplate template = validateByTemplate(schoolId, ArchiveTypeEnum.ACADEMIC_RESEARCH.getValue(), req, draft);
+
         Archive archive = createArchiveBase(schoolId, userId, ArchiveTypeEnum.ACADEMIC_RESEARCH.getValue(),
                 req.getProjectName(), req.getSemesterId(), req.getStartDate(), draft, now);
         archive = archiveRepository.save(archive);
@@ -196,6 +216,7 @@ public class ApplicationService {
 
         bindFiles(req.getEvidenceFileIds(), userId, archive.getId());
         writeArchiveVersion(archive, userId);
+        writeFormSnapshot(template, schoolId, ArchiveTypeEnum.ACADEMIC_RESEARCH.getValue(), archive.getId(), req, userId);
         generatePendingApprovalIfSubmitted(archive);
 
         return buildResponse(archive);
@@ -213,6 +234,8 @@ public class ApplicationService {
         requireOnSubmit(draft, req.getCertificateName(), "证书名称");
         requireOnSubmit(draft, req.getCertificateType(), "证书类型");
 
+        FormTemplate template = validateByTemplate(schoolId, ArchiveTypeEnum.HONOR_CERTIFICATE.getValue(), req, draft);
+
         Archive archive = createArchiveBase(schoolId, userId, ArchiveTypeEnum.HONOR_CERTIFICATE.getValue(),
                 req.getCertificateName(), req.getSemesterId(), req.getObtainTime(), draft, now);
         archive = archiveRepository.save(archive);
@@ -228,6 +251,7 @@ public class ApplicationService {
 
         bindFiles(req.getEvidenceFileIds(), userId, archive.getId());
         writeArchiveVersion(archive, userId);
+        writeFormSnapshot(template, schoolId, ArchiveTypeEnum.HONOR_CERTIFICATE.getValue(), archive.getId(), req, userId);
         generatePendingApprovalIfSubmitted(archive);
 
         return buildResponse(archive);
@@ -244,6 +268,8 @@ public class ApplicationService {
 
         requireOnSubmit(draft, req.getCompanyName(), "公司名称");
 
+        FormTemplate template = validateByTemplate(schoolId, ArchiveTypeEnum.INTERNSHIP.getValue(), req, draft);
+
         Archive archive = createArchiveBase(schoolId, userId, ArchiveTypeEnum.INTERNSHIP.getValue(),
                 req.getCompanyName(), req.getSemesterId(), req.getStartDate(), draft, now);
         archive = archiveRepository.save(archive);
@@ -259,6 +285,7 @@ public class ApplicationService {
 
         bindFiles(req.getEvidenceFileIds(), userId, archive.getId());
         writeArchiveVersion(archive, userId);
+        writeFormSnapshot(template, schoolId, ArchiveTypeEnum.INTERNSHIP.getValue(), archive.getId(), req, userId);
         generatePendingApprovalIfSubmitted(archive);
 
         return buildResponse(archive);
@@ -275,6 +302,8 @@ public class ApplicationService {
 
         requireOnSubmit(draft, req.getPositionTitle(), "职位名称");
 
+        FormTemplate template = validateByTemplate(schoolId, ArchiveTypeEnum.ORGANIZATION.getValue(), req, draft);
+
         Archive archive = createArchiveBase(schoolId, userId, ArchiveTypeEnum.ORGANIZATION.getValue(),
                 req.getPositionTitle(), req.getSemesterId(), req.getStartDate(), draft, now);
         archive = archiveRepository.save(archive);
@@ -290,6 +319,7 @@ public class ApplicationService {
 
         bindFiles(req.getEvidenceFileIds(), userId, archive.getId());
         writeArchiveVersion(archive, userId);
+        writeFormSnapshot(template, schoolId, ArchiveTypeEnum.ORGANIZATION.getValue(), archive.getId(), req, userId);
         generatePendingApprovalIfSubmitted(archive);
 
         return buildResponse(archive);
@@ -306,6 +336,8 @@ public class ApplicationService {
 
         requireOnSubmit(draft, req.getProjectName(), "项目名称");
 
+        FormTemplate template = validateByTemplate(schoolId, ArchiveTypeEnum.TRAINING_PROJECT.getValue(), req, draft);
+
         Archive archive = createArchiveBase(schoolId, userId, ArchiveTypeEnum.TRAINING_PROJECT.getValue(),
                 req.getProjectName(), req.getSemesterId(), req.getStartDate(), draft, now);
         archive = archiveRepository.save(archive);
@@ -320,6 +352,7 @@ public class ApplicationService {
 
         bindFiles(req.getEvidenceFileIds(), userId, archive.getId());
         writeArchiveVersion(archive, userId);
+        writeFormSnapshot(template, schoolId, ArchiveTypeEnum.TRAINING_PROJECT.getValue(), archive.getId(), req, userId);
         generatePendingApprovalIfSubmitted(archive);
 
         return buildResponse(archive);
@@ -335,6 +368,8 @@ public class ApplicationService {
         LocalDateTime now = LocalDateTime.now();
 
         requireOnSubmit(draft, req.getActivityName(), "活动名称");
+
+        FormTemplate template = validateByTemplate(schoolId, ArchiveTypeEnum.SOCIAL_PRACTICE.getValue(), req, draft);
 
         Archive archive = createArchiveBase(schoolId, userId, ArchiveTypeEnum.SOCIAL_PRACTICE.getValue(),
                 req.getActivityName(), req.getSemesterId(), req.getStartDate(), draft, now);
@@ -353,6 +388,7 @@ public class ApplicationService {
 
         bindFiles(req.getEvidenceFileIds(), userId, archive.getId());
         writeArchiveVersion(archive, userId);
+        writeFormSnapshot(template, schoolId, ArchiveTypeEnum.SOCIAL_PRACTICE.getValue(), archive.getId(), req, userId);
         generatePendingApprovalIfSubmitted(archive);
 
         return buildResponse(archive);
@@ -371,6 +407,8 @@ public class ApplicationService {
         requireOnSubmit(draft, req.getReadMonth(), "阅读时间");
         requireOnSubmit(draft, req.getReviewContent(), "心得体会");
 
+        FormTemplate template = validateByTemplate(schoolId, ArchiveTypeEnum.BOOK_REVIEW.getValue(), req, draft);
+
         Archive archive = createArchiveBase(schoolId, userId, ArchiveTypeEnum.BOOK_REVIEW.getValue(),
                 req.getBookName(), req.getSemesterId(), req.getReadMonth(), draft, now);
         archive = archiveRepository.save(archive);
@@ -384,6 +422,7 @@ public class ApplicationService {
 
         bindFiles(req.getEvidenceFileIds(), userId, archive.getId());
         writeArchiveVersion(archive, userId);
+        writeFormSnapshot(template, schoolId, ArchiveTypeEnum.BOOK_REVIEW.getValue(), archive.getId(), req, userId);
         generatePendingApprovalIfSubmitted(archive);
 
         return buildResponse(archive);
@@ -735,6 +774,49 @@ public class ApplicationService {
         mv.setStatus(archive.getStatus());
         mv.setCreatedBy(userId);
         modelVersionRepository.save(mv);
+    }
+
+    /**
+     * 按档案模板校验提交请求。草稿直接放行；无启用模板时记警告日志并放行（向后兼容）。
+     *
+     * @return 生效模板；草稿或无模板时返回 null
+     */
+    private FormTemplate validateByTemplate(Long schoolId, String code, Object req, boolean draft) {
+        if (draft) {
+            return null;
+        }
+        FormTemplate template = formTemplateQueryService.resolveDefault(schoolId, "archive", code);
+        if (template == null) {
+            log.warn("未找到启用表单模板，跳过校验: schoolId={}, category=archive, code={}", schoolId, code);
+            return null;
+        }
+        formTemplateValidator.validate(template, req);
+        return template;
+    }
+
+    /**
+     * 在业务写入成功后顺带落一份提交请求 DTO 的 JSON 快照（同一事务内）。无模板时不落快照。
+     */
+    private void writeFormSnapshot(FormTemplate template, Long schoolId, String code, Long businessId,
+                                   Object req, Long userId) {
+        if (template == null) {
+            return;
+        }
+        FormSubmissionSnapshot s = new FormSubmissionSnapshot();
+        s.setSchoolId(schoolId);
+        s.setCategory("archive");
+        s.setCode(code);
+        s.setTemplateId(template.getId());
+        s.setTemplateVersion(template.getVersion());
+        s.setBusinessType("archive");
+        s.setBusinessId(businessId);
+        s.setCreatedBy(userId);
+        try {
+            s.setData(objectMapper.writeValueAsString(req));
+        } catch (JsonProcessingException e) {
+            throw new BusinessException(ResultCode.OPERATION_FAILED, "表单快照序列化失败");
+        }
+        formSubmissionSnapshotRepository.save(s);
     }
 
     /**

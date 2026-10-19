@@ -18,6 +18,7 @@ import com.example.studentarchives.exception.BusinessException;
 import com.example.studentarchives.repository.AdminFormTemplateRepository;
 import com.example.studentarchives.repository.SchoolRepository;
 import com.example.studentarchives.repository.UserRepository;
+import com.example.studentarchives.service.Lzw.FormTemplateFieldKeyRegistry;
 import com.example.studentarchives.service.common.AdminAuthService;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -171,7 +172,7 @@ public class AdminFormTemplateService {
         schoolRepository.findById(schoolId)
                 .orElseThrow(() -> new BusinessException(ResultCode.DATA_NOT_EXIST, "学校不存在"));
         validateCategory(request.getCategory());
-        validateFields(request.getFields());
+        validateFields(request.getCategory(), request.getCode(), request.getFields());
         checkCodeUnique(schoolId, request.getCategory(), request.getCode(), null);
 
         FormTemplate template = new FormTemplate();
@@ -229,7 +230,7 @@ public class AdminFormTemplateService {
             template.setDescription(request.getDescription());
         }
         if (request.getFields() != null) {
-            validateFields(request.getFields());
+            validateFields(template.getCategory(), template.getCode(), request.getFields());
             template.setFields(writeJson(request.getFields()));
         }
         if (request.getLayoutConfig() != null) {
@@ -356,11 +357,18 @@ public class AdminFormTemplateService {
 
     /**
      * 校验字段配置数组：非空、字段 type 在组件类型白名单内、字段 key 唯一。
-     * 失败返回 10001 参数错误（文档 17.2 字段配置说明）。
+     * 当 category=archive 时，字段 key 必须为该档案类型申报 DTO 的合法属性名
+     * （见 {@link FormTemplateFieldKeyRegistry}），避免配置的字段无法被提交侧消费。
+     * 失败返回 10001/10002 参数错误（文档 17.2 字段配置说明）。
      */
-    private void validateFields(List<FormTemplateFieldItem> fields) {
+    private void validateFields(String category, String code, List<FormTemplateFieldItem> fields) {
         if (fields == null || fields.isEmpty()) {
             throw new BusinessException(ResultCode.PARAM_MISSING, "fields 至少 1 个字段");
+        }
+        boolean archive = "archive".equals(category);
+        if (archive && FormTemplateFieldKeyRegistry.dtoClass(code) == null) {
+            throw new BusinessException(ResultCode.PARAM_ERROR,
+                    "档案模板编码必须为档案类型编码（如 academic_competition），当前取值: " + code);
         }
         Set<String> keys = new HashSet<>();
         for (FormTemplateFieldItem field : fields) {
@@ -371,6 +379,12 @@ public class AdminFormTemplateService {
             }
             if (field.getKey() != null && !keys.add(field.getKey())) {
                 throw new BusinessException(ResultCode.PARAM_ERROR, "字段 key 重复: " + field.getKey());
+            }
+            if (archive && field.getKey() != null
+                    && !FormTemplateFieldKeyRegistry.isSupportedKey(code, field.getKey())) {
+                throw new BusinessException(ResultCode.PARAM_ERROR,
+                        "档案模板字段 key 必须为申报 DTO 属性名，当前非法: " + field.getKey()
+                                + "，合法字段: " + FormTemplateFieldKeyRegistry.supportedKeys(code));
             }
         }
     }

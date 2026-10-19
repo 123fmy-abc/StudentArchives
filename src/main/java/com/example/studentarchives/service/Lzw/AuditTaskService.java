@@ -608,12 +608,19 @@ public class AuditTaskService {
         if (p.getAuditorId() != null && p.getAuditorId().equals(teacherId)) {
             return true;
         }
-        // 审批委托：受托人可代委托人处理其待办
+        // 审批委托：受托人可代委托人处理其待办（仅限节点创建时快照 allow_delegate=1 的任务）
         if (p.getAuditorId() != null && delegatedDelegatorIds != null
-                && delegatedDelegatorIds.contains(p.getAuditorId())) {
+                && delegatedDelegatorIds.contains(p.getAuditorId())
+                && delegationAllowedFor(p)) {
             return true;
         }
         return studentInScope(p.getApplicantId(), teacherId, schoolId);
+    }
+
+    /** 委托代审前置校验：任务所在节点创建时对应的步骤须 allow_delegate=1（节点缺失或旧数据视为不允许） */
+    private boolean delegationAllowedFor(PendingApproval p) {
+        ApprovalNode node = approvalNodeRepository.findById(p.getNodeId()).orElse(null);
+        return node != null && Integer.valueOf(1).equals(node.getAllowDelegate());
     }
 
     /** 返回当前教师作为受托人时可代审的委托人 ID 集合（生效中的委托） */

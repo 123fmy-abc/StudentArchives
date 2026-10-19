@@ -215,6 +215,7 @@ public class ApprovalSubmitService {
         node.setScopeId(nodeScopeId);
         node.setAssignedAuditorId(effectiveAuditorId);
         node.setDelegationId(delegationId);
+        node.setAllowDelegate(step.getAllowDelegate() != null ? step.getAllowDelegate() : 0);
         node.setAssignType(assignType);
         node.setStartedAt(now);
         node.setTimeoutAt(now.plusHours(step.getTimeoutHours() != null ? step.getTimeoutHours() : 48));

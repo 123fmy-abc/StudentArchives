@@ -15,6 +15,7 @@ import com.example.studentarchives.dto.Fmy.common.response.FileUploadResponse;
 import com.example.studentarchives.dto.Fmy.common.response.IndicatorTreeResponse;
 import com.example.studentarchives.dto.Fmy.common.response.SemesterItemResponse;
 import com.example.studentarchives.dto.Fmy.common.response.AvatarUploadResponse;
+import com.example.studentarchives.dto.Fmy.formtemplate.response.FormTemplateRenderResponse;
 import com.example.studentarchives.dto.Fmy.indicator.response.AdminIndicatorTreeResponse;
 import com.example.studentarchives.entity.export.ExportOperationLog;
 import com.example.studentarchives.entity.file.AttachmentLimit;
@@ -118,6 +119,7 @@ public class CommonService {
     private final RoleScopeRepository roleScopeRepository;
     private final ExportOperationLogRepository exportOperationLogRepository;
     private final ObjectMapper objectMapper;
+    private final FormTemplateQueryService formTemplateQueryService;
 
     /**
      * 接口传入 type → 数据库 file_category 映射
@@ -605,6 +607,26 @@ public class CommonService {
             }
         }
         return result;
+    }
+
+    // ==================== 表单模板查询 ====================
+
+    /**
+     * 获取当前用户所属学校的生效表单模板（GET /common/form-templates）
+     * <p>
+     * 学校范围由当前登录用户推导（单学校场景兜底 schoolId=1）；无生效模板时返回 {@code null}，
+     * 前端可回退默认表单。
+     *
+     * @param userId   当前登录用户 ID
+     * @param category 适用类别（如 archive）
+     * @param code     模板编码（如 academic_competition）
+     * @return 渲染响应 DTO，无生效模板时 null
+     */
+    @Transactional(readOnly = true)
+    public FormTemplateRenderResponse getFormTemplate(Long userId, String category, String code) {
+        User user = userId != null ? userRepository.findById(userId).orElse(null) : null;
+        Long schoolId = (user != null && user.getSchoolId() != null) ? user.getSchoolId() : 1L;
+        return formTemplateQueryService.resolveRenderTemplate(schoolId, category, code);
     }
 
     // ==================== 指标树查询 ====================

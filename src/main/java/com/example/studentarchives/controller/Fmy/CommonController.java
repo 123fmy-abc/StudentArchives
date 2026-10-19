@@ -8,6 +8,7 @@ import com.example.studentarchives.dto.Fmy.common.response.FilePreviewResponse;
 import com.example.studentarchives.dto.Fmy.common.response.FileUploadResponse;
 import com.example.studentarchives.dto.Fmy.common.response.IndicatorTreeResponse;
 import com.example.studentarchives.dto.Fmy.common.response.SemesterItemResponse;
+import com.example.studentarchives.dto.Fmy.formtemplate.response.FormTemplateRenderResponse;
 import com.example.studentarchives.service.Fmy.CommonService;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
@@ -152,6 +153,28 @@ public class CommonController {
 
         AvatarUploadResponse response = commonService.uploadAvatar(file, userId);
         return ApiResult.success("头像上传成功", response);
+    }
+
+    // ==================== 表单模板查询 ====================
+
+    /**
+     * 获取表单模板（GET /common/form-templates）
+     * <p>
+     * 按当前登录用户所属学校 + 适用类别 + 模板编码解析生效模板（默认模板优先，否则取最新启用模板），
+     * 供学生端/教师端按模板渲染表单。模板不存在时返回 {@code data=null}，前端可回退默认表单。
+     *
+     * @param category 适用类别（如 archive）
+     * @param code     模板编码（如 academic_competition）
+     * @param userId   当前登录用户 ID（用于推导所属学校）
+     * @return 模板渲染信息，无生效模板时为 null
+     */
+    @GetMapping("/form-templates")
+    public ApiResult<FormTemplateRenderResponse> getFormTemplate(
+            @RequestParam("category") String category,
+            @RequestParam("code") String code,
+            @AuthenticationPrincipal Long userId) {
+        FormTemplateRenderResponse response = commonService.getFormTemplate(userId, category, code);
+        return ApiResult.success(response);
     }
 
     // ==================== 学期下拉选项 ====================

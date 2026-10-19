@@ -179,8 +179,10 @@ public class TeacherDelegationService {
      *   <li>委托时段不得与已有生效中的委托记录重叠（status IN (0,1)）；</li>
      *   <li>委托人只能委托自己拥有审批权限的角色和范围。</li>
      * </ul>
-     * 委托的审批节点必须 allow_delegate=1 的校验在审批任务分配时执行
-     * （见 {@link com.example.studentarchives.service.Lzw.ApprovalSubmitService}），不在本接口强制。
+     * 委托的审批节点必须 allow_delegate=1：任务分配时按步骤 gate 改派
+     * （{@link com.example.studentarchives.service.Lzw.ApprovalSubmitService#createStepNode}，
+     * 节点创建时把 allow_delegate 快照到 approval_nodes），受托人代审放行时再按快照校验
+     * （{@link com.example.studentarchives.service.Lzw.AuditTaskService#isInScope}），不在本接口强制。
      *
      * @param userId  当前登录教师用户 ID（委托人）
      * @param request 委托创建请求

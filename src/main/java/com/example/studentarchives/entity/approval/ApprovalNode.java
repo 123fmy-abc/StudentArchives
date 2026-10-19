@@ -48,6 +48,9 @@ public class ApprovalNode extends BaseEntity {
     @Column(name = "delegation_id")
     private Long delegationId;
 
+    @Column(name = "allow_delegate", nullable = false, columnDefinition = "TINYINT")
+    private Integer allowDelegate = 0;
+
     @Column(name = "action")
     private Integer action;
 

@@ -7,6 +7,7 @@ import com.example.studentarchives.entity.user.StudentProfile;
 import com.example.studentarchives.entity.user.TeacherProfile;
 import com.example.studentarchives.entity.user.User;
 import com.example.studentarchives.entity.user.UserRole;
+import com.example.studentarchives.enums.AnnouncementReceiverTypeEnum;
 import com.example.studentarchives.enums.StatusEnum;
 import com.example.studentarchives.repository.ClazzRepository;
 import com.example.studentarchives.repository.MajorRepository;
@@ -86,14 +87,26 @@ public class AnnouncementNotifyService {
         }
     }
 
-    /** 接收人 = 学生 ∪ 教职工（教师/管理员），去重 */
-    private List<Long> resolveRecipients(String targetType, Long targetId, Long schoolId) {
+    /** 按接收对象（receiver_type）+ 接收范围（target_type）解析接收人，去重 */
+    private List<Long> resolveRecipients(String receiverType, String targetType, Long targetId, Long schoolId) {
         if (targetType == null) {
             return Collections.emptyList();
         }
+        AnnouncementReceiverTypeEnum type = AnnouncementReceiverTypeEnum.of(receiverType);
+        if (type == null) {
+            type = AnnouncementReceiverTypeEnum.ALL;
+        }
         Set<Long> userIds = new LinkedHashSet<>();
-        userIds.addAll(resolveStudentUserIds(targetType, targetId, schoolId));
-        userIds.addAll(resolveStaffUserIds(targetType, targetId, schoolId));
+        switch (type) {
+            case STUDENT -> userIds.addAll(resolveStudentUserIds(targetType, targetId, schoolId));
+            case STAFF -> userIds.addAll(resolveTeacherUserIds(targetType, targetId, schoolId));
+            case ADMIN -> userIds.addAll(resolveAdminUserIds(schoolId));
+            case ALL -> {
+                userIds.addAll(resolveStudentUserIds(targetType, targetId, schoolId));
+                userIds.addAll(resolveTeacherUserIds(targetType, targetId, schoolId));
+                userIds.addAll(resolveAdminUserIds(schoolId));
+            }
+        }
         return new ArrayList<>(userIds);
     }
 
@@ -147,14 +160,6 @@ public class AnnouncementNotifyService {
                 .filter(Objects::nonNull)
                 .distinct()
                 .toList();
-    }
-
-    /** 教职工 = 管理员（全校）+ 教师（按学院范围） */
-    private List<Long> resolveStaffUserIds(String targetType, Long targetId, Long schoolId) {
-        Set<Long> staff = new LinkedHashSet<>();
-        staff.addAll(resolveAdminUserIds(schoolId));
-        staff.addAll(resolveTeacherUserIds(targetType, targetId, schoolId));
-        return new ArrayList<>(staff);
     }
 
     /** 本校 admin 角色用户（全校范围，始终可见） */
