@@ -820,25 +820,21 @@ public class ApplicationService {
     }
 
     /**
-     * 提交后生成教师端待审核任务（纯内部联动，失败不阻塞提交）。
+     * 提交后生成教师端待审核任务（与业务提交同一事务，失败使提交回滚）。
      * 仅当申报状态为待审批(1)时触发；草稿(0)不触发。
      */
     private void generatePendingApprovalIfSubmitted(Archive archive) {
         if (archive.getStatus() == null || archive.getStatus() != ApplyStatusEnum.PENDING.getValue()) {
             return;
         }
-        try {
-            User user = loadUser(archive.getUserId());
-            ArchiveTypeEnum typeEnum = ArchiveTypeEnum.of(archive.getArchiveType());
-            String categoryLabel = typeEnum != null ? typeEnum.getLabel() : archive.getArchiveType();
-            LocalDateTime submittedAt = archive.getAuditInfo() != null ? archive.getAuditInfo().getSubmittedAt() : null;
-            approvalSubmitService.createOnSubmit(
-                    archive.getSchoolId(), "Archive", archive.getArchiveType(), archive.getId(),
-                    archive.getUserId(), user.getName(), user.getUserNo(), archive.getTitle(),
-                    categoryLabel, submittedAt);
-        } catch (Exception e) {
-            log.warn("生成待审核任务失败（不阻塞提交）: archiveId={}, err={}", archive.getId(), e.getMessage());
-        }
+        User user = loadUser(archive.getUserId());
+        ArchiveTypeEnum typeEnum = ArchiveTypeEnum.of(archive.getArchiveType());
+        String categoryLabel = typeEnum != null ? typeEnum.getLabel() : archive.getArchiveType();
+        LocalDateTime submittedAt = archive.getAuditInfo() != null ? archive.getAuditInfo().getSubmittedAt() : null;
+        approvalSubmitService.createOnSubmit(
+                archive.getSchoolId(), "Archive", archive.getArchiveType(), archive.getId(),
+                archive.getUserId(), user.getName(), user.getUserNo(), archive.getTitle(),
+                categoryLabel, submittedAt);
     }
 
     @SuppressWarnings("unchecked")

@@ -78,6 +78,7 @@ public enum ResultCode {
     BIZ_COMPLETED_NOT_MODIFIABLE(40008, "已完成不可修改", 409),
     BIZ_DUPLICATE_SUBMISSION(40009, "重复提交", 409),
     BIZ_RULE_LIMIT(40010, "超出业务规则限制", 400),
+    APPROVAL_TASK_CREATE_FAILED(40011, "提交失败，请稍后重试", 500),
 
     // ========== 管理端业务（《管理端接口文档》补充错误码） ==========
     // 编码规则：错误码与学生端/教师端共用同一体系。20006 在学生端已定义为「账号被禁用」，

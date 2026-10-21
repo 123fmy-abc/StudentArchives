@@ -260,17 +260,13 @@ public class ProfileCareerPlanService {
                 .build();
     }
 
-    /** 提交（非草稿）后生成待审核任务，失败不抛出、不影响提交。 */
+    /** 提交（非草稿）后生成待审核任务，与业务提交同一事务，失败使提交回滚。 */
     private void generatePendingApproval(CareerPlan plan, User user) {
-        try {
-            LocalDateTime submittedAt = plan.getAuditInfo() != null ? plan.getAuditInfo().getSubmittedAt() : null;
-            approvalSubmitService.createOnSubmit(
-                    plan.getSchoolId(), "CareerPlan", null, plan.getId(),
-                    plan.getUserId(), user.getName(), user.getUserNo(), plan.getTitle(),
-                    "职业生涯规划", submittedAt);
-        } catch (Exception e) {
-            log.warn("生成待审核任务失败（不阻塞提交）: careerPlanId={}, err={}", plan.getId(), e.getMessage());
-        }
+        LocalDateTime submittedAt = plan.getAuditInfo() != null ? plan.getAuditInfo().getSubmittedAt() : null;
+        approvalSubmitService.createOnSubmit(
+                plan.getSchoolId(), "CareerPlan", null, plan.getId(),
+                plan.getUserId(), user.getName(), user.getUserNo(), plan.getTitle(),
+                "职业生涯规划", submittedAt);
     }
 
     // ==================== 下载（4.5） ====================

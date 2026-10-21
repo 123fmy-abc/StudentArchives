@@ -1,5 +1,6 @@
 package com.example.studentarchives.service.Lzw;
 
+import com.example.studentarchives.common.ResultCode;
 import com.example.studentarchives.entity.approval.ApprovalDelegation;
 import com.example.studentarchives.entity.approval.ApprovalFlow;
 import com.example.studentarchives.entity.approval.ApprovalFlowMapping;
@@ -10,6 +11,7 @@ import com.example.studentarchives.entity.approval.PendingApproval;
 import com.example.studentarchives.entity.message.UserMessage;
 import com.example.studentarchives.entity.user.RoleScope;
 import com.example.studentarchives.entity.user.UserRole;
+import com.example.studentarchives.exception.BusinessException;
 import com.example.studentarchives.repository.ApprovalDelegationRepository;
 import com.example.studentarchives.repository.ApprovalFlowMappingRepository;
 import com.example.studentarchives.repository.ApprovalFlowRepository;
@@ -48,7 +50,7 @@ import java.util.stream.Collectors;
  * 且授权处于生效期内的教师；同角色多人时按「当前待办最少者优先」分配，保证负载均衡与确定性。
  * <p>
  * 解析不到审批人时<strong>回退到校级管理员</strong>（持有学校级授权），避免申报「无人审核」；
- * 仍解析不到（连校级管理员都不存在）才记 ERROR 并放弃，此时<strong>不阻塞提交</strong>。
+ * 仍解析不到（连校级管理员都不存在）时抛出业务异常使提交回滚，避免「已提交但无待办」的不一致。
  * 该服务同时提供 {@link #createStepNode} 供多级审批流转（{@code AuditTaskService} 在审批通过后
  * 推进到下一步）复用同一套解析口径。
  */
@@ -71,7 +73,7 @@ public class ApprovalSubmitService {
     private final TeacherScopeValidator scopeValidator;
 
     /**
-     * 提交后生成待审核任务（失败不抛出，不影响提交）。
+     * 提交后生成待审核任务（失败抛出 BusinessException，使调用方提交事务回滚）。
      *
      * @param schoolId        申报人所属学校
      * @param approvableType  模型类型：Archive / AwardApplication / CareerPlan
@@ -91,9 +93,12 @@ public class ApprovalSubmitService {
         try {
             doCreate(schoolId, approvableType, businessSubType, approvableId, applicantId,
                     applicantName, applicantNo, title, categoryLabel, submittedAt);
+        } catch (BusinessException e) {
+            throw e;
         } catch (Exception e) {
-            log.error("生成待审核任务失败（不阻塞提交）: approvableType={}, approvableId={}, err={}",
+            log.error("生成待审核任务失败，本次提交回滚: approvableType={}, approvableId={}, err={}",
                     approvableType, approvableId, e.getMessage(), e);
+            throw new BusinessException(ResultCode.APPROVAL_TASK_CREATE_FAILED);
         }
     }
 
@@ -103,14 +108,14 @@ public class ApprovalSubmitService {
                           LocalDateTime submittedAt) {
         ApprovalFlow flow = resolveFlow(schoolId, approvableType, businessSubType);
         if (flow == null) {
-            log.warn("未配置审批流程，跳过待办生成（请管理员为该学校/类型配置流程或默认流程）: schoolId={}, approvableType={}, subType={}",
+            log.error("未配置审批流程，提交失败（请管理员为该学校/类型配置流程或默认流程）: schoolId={}, approvableType={}, subType={}",
                     schoolId, approvableType, businessSubType);
-            return;
+            throw new BusinessException(ResultCode.APPROVAL_TASK_CREATE_FAILED);
         }
         List<ApprovalFlowStep> steps = flowStepRepository.findByFlowIdOrderByStepNoAsc(flow.getId());
         if (steps.isEmpty()) {
-            log.warn("审批流程无步骤，跳过待办生成（请管理员为流程配置步骤）: flowId={}", flow.getId());
-            return;
+            log.error("审批流程无步骤，提交失败（请管理员为流程配置步骤）: flowId={}", flow.getId());
+            throw new BusinessException(ResultCode.APPROVAL_TASK_CREATE_FAILED);
         }
         ApprovalFlowStep first = steps.get(0);
 
@@ -129,9 +134,14 @@ public class ApprovalSubmitService {
 
         ApprovalNode node = createStepNode(inst, first, schoolId, applicantId, applicantName,
                 applicantNo, title, categoryLabel, submittedAt, null);
+        if (node == null) {
+            log.error("审批人解析失败，提交失败（该申报无人可审核）: approvableType={}, approvableId={}",
+                    approvableType, approvableId);
+            throw new BusinessException(ResultCode.APPROVAL_TASK_CREATE_FAILED);
+        }
 
         log.info("生成待审核任务: approvableType={}, approvableId={}, nodeId={}",
-                approvableType, approvableId, node != null ? node.getId() : null);
+                approvableType, approvableId, node.getId());
     }
 
     /**
