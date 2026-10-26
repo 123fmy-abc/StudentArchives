@@ -30,6 +30,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -153,17 +154,18 @@ public class TeacherExportService {
         Page<ExportJob> page = exportJobRepository.findByOperatorId(userId, pageable);
 
         // 批量加载模板名称（templateId → export_templates.template_name）
+        // 使用可变 HashMap 避免对 null templateId 调用不可变 Map.get(null) 抛 NPE
         Set<Long> templateIds = page.getContent().stream()
                 .map(ExportJob::getTemplateId)
                 .filter(Objects::nonNull)
                 .collect(Collectors.toSet());
         Map<Long, String> templateNames = templateIds.isEmpty()
-                ? Map.of()
+                ? new HashMap<>()
                 : exportTemplateRepository.findAllById(templateIds).stream()
-                        .collect(Collectors.toMap(ExportTemplate::getId, ExportTemplate::getTemplateName, (a, b) -> a));
+                        .collect(Collectors.toMap(ExportTemplate::getId, ExportTemplate::getTemplateName, (a, b) -> a, HashMap::new));
 
         List<TeacherExportJobItem> list = page.getContent().stream()
-                .map(job -> toJobItem(job, templateNames.get(job.getTemplateId())))
+                .map(job -> toJobItem(job, job.getTemplateId() != null ? templateNames.get(job.getTemplateId()) : null))
                 .collect(Collectors.toList());
         return PageResult.of(list, page.getTotalElements(), pageParam);
     }

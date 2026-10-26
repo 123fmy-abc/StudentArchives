@@ -168,6 +168,14 @@ public class AdminExportService {
     /** PDF 模板栏目可映射的数据类型；audits/ai 在 student_archive 模板中无对应栏目 */
     private static final Set<String> PDF_ARCHIVE_DATA_TYPES = Set.of("archives", "scores", "career");
 
+    /** dataTypes → 中文标签映射（文件名展示用） */
+    private static final Map<String, String> DATA_TYPE_LABELS = Map.of(
+            "archives", "档案",
+            "scores", "成绩",
+            "audits", "考勤",
+            "ai", "AI画像",
+            "career", "职业规划");
+
     private static final DateTimeFormatter ISO_WITH_ZONE =
             DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ssXXX");
     private static final DateTimeFormatter FILE_DATE_FORMAT =
@@ -520,6 +528,25 @@ public class AdminExportService {
     }
 
     /**
+     * 构建导出文件基础名（含日期）：dataTypes 为空时保持旧命名；单值用中文标签；多值用"多类型"。
+     *
+     * @param request 导出请求（含 dataTypes）
+     * @return 如 "学生档案批量导出-考勤-20261026"（无扩展名）
+     */
+    private String buildArchiveBaseName(ArchiveExportRequest request) {
+        String datePart = LocalDate.now().format(FILE_DATE_FORMAT);
+        if (request.getDataTypes() == null || request.getDataTypes().isEmpty()) {
+            return "学生档案批量导出-" + datePart;
+        }
+        List<String> dataTypes = request.getDataTypes();
+        if (dataTypes.size() == 1) {
+            String label = DATA_TYPE_LABELS.getOrDefault(dataTypes.get(0), dataTypes.get(0));
+            return "学生档案批量导出-" + label + "-" + datePart;
+        }
+        return "学生档案批量导出-多类型-" + datePart;
+    }
+
+    /**
      * 异步执行一键导出学生档案任务（由 submitArchiveExport 经 @Async 代理提交）。
      * <p>
      * 流程：任务置为执行中 → 解析目标学生 → 按 fileType 生成 PDF（逐学生渲染后合并）或 XLSX
@@ -560,13 +587,14 @@ public class AdminExportService {
             byte[] fileBytes;
             String originalName;
             String mimeType;
+            String baseName = buildArchiveBaseName(request);
             if (pdf) {
                 fileBytes = buildArchivePdf(request, schoolId, studentIds);
-                originalName = "学生档案批量导出-" + LocalDate.now().format(FILE_DATE_FORMAT) + ".pdf";
+                originalName = baseName + ".pdf";
                 mimeType = "application/pdf";
             } else {
                 fileBytes = buildArchiveXlsx(request, schoolId, studentIds);
-                originalName = "学生档案批量导出-" + LocalDate.now().format(FILE_DATE_FORMAT) + ".xlsx";
+                originalName = baseName + ".xlsx";
                 mimeType = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
             }
 

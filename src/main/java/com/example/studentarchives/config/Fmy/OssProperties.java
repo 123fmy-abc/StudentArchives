@@ -36,6 +36,9 @@ public class OssProperties {
     /** 存储空间名称 */
     private String bucketName;
 
+    /** 存储空间所在地域 ID，如 cn-chengdu（V4 签名必需） */
+    private String region;
+
     /** 文件上传最大大小（字节），默认 10MB */
     private long maxFileSize = 10485760;
 

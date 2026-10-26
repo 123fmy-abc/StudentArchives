@@ -1,7 +1,10 @@
 package com.example.studentarchives.config.Fmy;
 
+import com.aliyun.oss.ClientBuilderConfiguration;
 import com.aliyun.oss.OSS;
 import com.aliyun.oss.OSSClientBuilder;
+import com.aliyun.oss.common.auth.DefaultCredentialProvider;
+import com.aliyun.oss.common.comm.SignVersion;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.annotation.Bean;
@@ -24,12 +27,16 @@ public class OssConfig {
 
     @Bean
     public OSS ossClient() {
-        log.info("初始化 OSS 客户端: endpoint={}, bucket={}",
-                ossProperties.getEndpoint(), ossProperties.getBucketName());
-        return new OSSClientBuilder().build(
-                ossProperties.getEndpoint(),
-                ossProperties.getAccessKeyId(),
-                ossProperties.getAccessKeySecret()
-        );
+        log.info("初始化 OSS 客户端: endpoint={}, bucket={}, region={}",
+                ossProperties.getEndpoint(), ossProperties.getBucketName(), ossProperties.getRegion());
+        // 阿里云 OSS 已停用 V1 签名，必须显式启用 V4 签名（SignVersion.V4 + 地域 ID）
+        ClientBuilderConfiguration configuration = new ClientBuilderConfiguration();
+        configuration.setSignatureVersion(SignVersion.V4);
+        return OSSClientBuilder.create()
+                .endpoint(ossProperties.getEndpoint())
+                .credentialsProvider(new DefaultCredentialProvider(ossProperties.getAccessKeyId(), ossProperties.getAccessKeySecret()))
+                .clientConfiguration(configuration)
+                .region(ossProperties.getRegion())
+                .build();
     }
 }
