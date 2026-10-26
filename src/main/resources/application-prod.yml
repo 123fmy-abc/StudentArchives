@@ -47,6 +47,8 @@ jwt:
 # 因此即使有人用 -DskipCodeVerify=true 或环境变量覆盖下面的开关也不会生效。
 auth:
   captcha:
+    # 图形验证码有效期（秒），前端倒计时读取接口返回的 expiresIn，调整后自动跟随
+    ttl-seconds: 180
     skip-code-verify: false
     skip-allowed-profiles: []
     skip-users: []

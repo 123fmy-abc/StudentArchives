@@ -1,5 +1,6 @@
 package com.example.studentarchives.support;
 
+import com.example.studentarchives.config.Fmy.AuthCaptchaProperties;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import org.springframework.stereotype.Component;
@@ -17,16 +18,21 @@ import java.util.UUID;
  * 验证码内存缓存
  * <p>
  * 使用 ConcurrentHashMap 存储验证码的 SHA-256 哈希值，
- * 支持 5 分钟 TTL、校验通过后一次性使用、错误次数上限、定时清理过期条目。
+ * 支持可配置 TTL（默认 180 秒）、校验通过后一次性使用、错误次数上限、定时清理过期条目。
  */
 @Component
 public class CaptchaStore {
 
-    /** 验证码过期时间：5 分钟 */
-    private static final long TTL_MILLIS = 5 * 60 * 1000L;
+    /** 默认验证码有效期：180 秒（可由 auth.captcha.ttl-seconds 覆盖） */
+    private static final int DEFAULT_TTL_SECONDS = 180;
+
+    /** 过期条目额外的保留时间，让上层能区分「已过期」与「输错」 */
+    private static final long RETENTION_EXTRA_MILLIS = 5 * 60 * 1000L;
+
+    private final long ttlMillis;
 
     /** 过期（或已使用）条目的保留时间：让上层能区分「已过期」与「输错」，而非一律「查无此 key」 */
-    private static final long RETENTION_MILLIS = TTL_MILLIS + 5 * 60 * 1000L;
+    private final long retentionMillis;
 
     /**
      * 同一个验证码允许的最大错误次数，达到后立即作废。
@@ -38,6 +44,12 @@ public class CaptchaStore {
     private static final int MAX_WRONG_ATTEMPTS = 3;
 
     private final ConcurrentHashMap<String, CaptchaEntry> store = new ConcurrentHashMap<>();
+
+    public CaptchaStore(AuthCaptchaProperties properties) {
+        int seconds = properties.getTtlSeconds() > 0 ? properties.getTtlSeconds() : DEFAULT_TTL_SECONDS;
+        this.ttlMillis = seconds * 1000L;
+        this.retentionMillis = this.ttlMillis + RETENTION_EXTRA_MILLIS;
+    }
 
     /**
      * 验证码校验结果
@@ -59,7 +71,7 @@ public class CaptchaStore {
      * 验证码有效期（秒），供接口返回 expiresIn 使用
      */
     public int getTtlSeconds() {
-        return (int) (TTL_MILLIS / 1000);
+        return (int) (ttlMillis / 1000);
     }
 
     /**
@@ -103,7 +115,7 @@ public class CaptchaStore {
         }
 
         // 已过期（条目仍在保留期内，可明确判定为过期）
-        if (Instant.now().toEpochMilli() - entry.getCreatedAt().toEpochMilli() > TTL_MILLIS) {
+        if (Instant.now().toEpochMilli() - entry.getCreatedAt().toEpochMilli() > ttlMillis) {
             return VerifyResult.EXPIRED;
         }
 
@@ -160,12 +172,12 @@ public class CaptchaStore {
     /**
      * 清理超出保留期的条目（使用 forEach + remove 避免 ConcurrentHashMap.removeIf 的迭代不原子问题）
      * <p>
-     * 过期条目本身已不可用，保留 {@link #RETENTION_MILLIS} 仅用于向调用方反馈过期原因。
+     * 过期条目本身已不可用，保留 {@link #retentionMillis} 仅用于向调用方反馈过期原因。
      */
     private void evictExpired() {
         long now = Instant.now().toEpochMilli();
         store.forEach((key, entry) -> {
-            if (now - entry.getCreatedAt().toEpochMilli() > RETENTION_MILLIS) {
+            if (now - entry.getCreatedAt().toEpochMilli() > retentionMillis) {
                 store.remove(key, entry);
             }
         });

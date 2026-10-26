@@ -62,6 +62,14 @@ public class AuthCaptchaProperties {
     private String skipSecret = "";
 
     /**
+     * 图形验证码有效期（秒），默认 180。
+     * <p>
+     * 前端倒计时直接使用 {@code GET /auth/captcha} 返回的 {@code expiresIn}，
+     * 调整该配置即可同步生效，无需改前端代码。
+     */
+    private int ttlSeconds = 180;
+
+    /**
      * 启动时若开关处于打开状态，打印一条醒目的 WARN，方便审计确认实例状态。
      */
     @PostConstruct

@@ -38,6 +38,12 @@ public class ArchiveExportRequest {
     /** 档案组成部分：basic_info/academicInfo/dimensionScores/awards/practices/careerPlans；为空时导出全部 */
     private List<String> sections;
 
+    /**
+     * 导出数据类型：archives/scores/audits/ai/career（与《管理端接口文档》5.1 研究导出一致）；
+     * 为空时按旧口径导出全部档案栏目，兼容既有调用
+     */
+    private List<String> dataTypes;
+
     /** 档案状态筛选：1在读 2休学 3毕业 4退学；为空时导出全部 */
     private Integer archiveStatus;
 

@@ -40,6 +40,9 @@ public interface CareerPlanRepository extends JpaRepository<CareerPlan, Long> {
     /** 取用户指定学期最近一条规划（复制场景） */
     Optional<CareerPlan> findFirstByUserIdAndSemesterIdOrderByIdDesc(Long userId, Long semesterId);
 
+    /** 幂等判断：用户是否已将某条 AI 建议(source=2)采纳为计划 */
+    boolean existsByUserIdAndSourceAndAiSuggestionId(Long userId, Integer source, Long aiSuggestionId);
+
     /** 软删除（通过 native query 绕过 updatable=false 限制） */
     @Modifying
     @Query(value = "UPDATE career_plans SET deleted_at = :deletedAt WHERE id = :id", nativeQuery = true)

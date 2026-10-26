@@ -19,6 +19,9 @@
 
 auth:
   captcha:
+    # 图形验证码有效期（秒），前端倒计时读取接口返回的 expiresIn，调整后自动跟随
+    ttl-seconds: 180
+
     # 免验证码总开关（对应需求中的 skipCodeVerify）
     skip-code-verify: true
 

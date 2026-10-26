@@ -1324,12 +1324,18 @@ public class ProfileCareerPlanService {
     public AiPlanCreateResponse aiAddPlan(Long userId, AiPlanCreateRequest request) {
         ImprovementSuggestion suggestion = improvementSuggestionRepository.findById(request.getAiSuggestionId())
                 .orElseThrow(() -> new BusinessException(ResultCode.DATA_NOT_EXIST, "AI建议不存在"));
-        // 归属校验：经 weakness_id → weakness_analyses.user_id；weaknessId 为空时跳过严格校验
-        if (suggestion.getWeaknessId() != null) {
-            WeaknessAnalysis weakness = weaknessAnalysisRepository.findById(suggestion.getWeaknessId()).orElse(null);
-            if (weakness != null && !userId.equals(weakness.getUserId())) {
-                throw new BusinessException(ResultCode.FORBIDDEN, "无访问权限");
-            }
+        // 幂等：同一学生不可将同一 AI 建议重复采纳为计划
+        if (careerPlanRepository.existsByUserIdAndSourceAndAiSuggestionId(userId, 2, suggestion.getId())) {
+            throw new BusinessException(ResultCode.BIZ_OPERATION_FAILED, "该AI建议已被采纳为计划，请勿重复添加");
+        }
+        // 归属校验（方案B）：仅信任经 weakness_id → weakness_analyses.user_id 可溯源归属的建议；
+        // 未关联任何短板分析时无法确认归属，拒绝采纳以防越权
+        if (suggestion.getWeaknessId() == null) {
+            throw new BusinessException(ResultCode.FORBIDDEN, "该AI建议未关联短板分析，无法确认归属，不能采纳");
+        }
+        WeaknessAnalysis weakness = weaknessAnalysisRepository.findById(suggestion.getWeaknessId()).orElse(null);
+        if (weakness != null && !userId.equals(weakness.getUserId())) {
+            throw new BusinessException(ResultCode.FORBIDDEN, "无访问权限");
         }
         semesterRepository.findById(request.getSemesterId())
                 .orElseThrow(() -> new BusinessException(ResultCode.DATA_NOT_EXIST, "目标学期不存在"));
@@ -1749,8 +1755,8 @@ public class ProfileCareerPlanService {
                 .rejectedReason(audit != null ? audit.getRejectedReason() : null)
                 .auditorName(audit != null && audit.getAuditorId() != null
                         ? auditorNameMap.get(audit.getAuditorId()) : null)
-                .teacherFeedback(feedbackMap.get(plan.getId()))
-                .reflection(reflectionMap.get(plan.getId()))
+                .teacherFeedback(feedbackMap.getOrDefault(plan.getId(), ""))
+                .reflection(reflectionMap.getOrDefault(plan.getId(), ""))
                 .build();
     }
 

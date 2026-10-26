@@ -114,6 +114,7 @@ public class ProfileGrowthTimelineService {
     private final GrowthTimelineAbilityRepository growthTimelineAbilityRepository;
     private final GrowthTimelineTagRepository growthTimelineTagRepository;
     private final EntityManager entityManager;
+    private final GrowthTimelineStatusResolver growthTimelineStatusResolver;
 
     /**
      * 新增成长时间轴事件（POST /profile/growth-timeline）
@@ -466,6 +467,8 @@ public class ProfileGrowthTimelineService {
         List<GrowthTimelineTag> tags =
                 growthTimelineTagRepository.findByTimelineIdIn(Collections.singletonList(timeline.getId()));
         EventTypeEnum eventTypeEnum = EventTypeEnum.of(timeline.getEventType());
+        Integer effectiveStatus = growthTimelineStatusResolver.resolve(
+                timeline.getSourceId(), timeline.getSourceType(), timeline.getStatus());
         return GrowthTimelineDetailResponse.builder()
                 .id(timeline.getId())
                 .semesterId(timeline.getSemesterId())
@@ -475,8 +478,8 @@ public class ProfileGrowthTimelineService {
                 .content(timeline.getContent())
                 .eventType(timeline.getEventType())
                 .eventTypeLabel(eventTypeEnum != null ? eventTypeEnum.getLabel() : null)
-                .status(timeline.getStatus())
-                .statusLabel(ApplyStatusEnum.of(timeline.getStatus()).getLabel())
+                .status(effectiveStatus)
+                .statusLabel(ApplyStatusEnum.of(effectiveStatus).getLabel())
                 .coverImage(timeline.getCoverImage())
                 .sourceId(timeline.getSourceId())
                 .sourceType(timeline.getSourceType())

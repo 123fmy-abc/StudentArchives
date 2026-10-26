@@ -175,6 +175,7 @@ public class ProfileService {
     private final DictionaryRepository dictionaryRepository;
     private final DataCompletenessService dataCompletenessService;
     private final ObjectMapper objectMapper;
+    private final GrowthTimelineStatusResolver growthTimelineStatusResolver;
 
     /**
      * 获取个人档案信息（GET /profile/info）
@@ -866,6 +867,8 @@ public class ProfileService {
         List<TimelineItem> items = timelines.stream()
                 .map(t -> {
                     EventTypeEnum eventTypeEnum = EventTypeEnum.of(t.getEventType());
+                    Integer effectiveStatus = growthTimelineStatusResolver.resolve(
+                            t.getSourceId(), t.getSourceType(), t.getStatus());
                     return TimelineItem.builder()
                             .id(t.getId())
                             .semesterId(t.getSemesterId())
@@ -875,8 +878,8 @@ public class ProfileService {
                             .content(t.getContent())
                             .eventType(t.getEventType())
                             .eventTypeLabel(eventTypeEnum != null ? eventTypeEnum.getLabel() : null)
-                            .status(t.getStatus())
-                            .statusLabel(ApplyStatusEnum.of(t.getStatus()).getLabel())
+                            .status(effectiveStatus)
+                            .statusLabel(ApplyStatusEnum.of(effectiveStatus).getLabel())
                             .coverImage(t.getCoverImage())
                             .sourceId(t.getSourceId())
                             .sourceType(t.getSourceType())

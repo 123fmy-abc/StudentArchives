@@ -161,6 +161,13 @@ public class AdminExportService {
     private static final List<String> DEFAULT_ARCHIVE_SECTIONS = List.of(
             "basic_info", "academicInfo", "dimensionScores", "awards", "practices", "careerPlans");
 
+    /** 一键导出学生档案支持的数据类型（与 5.1 研究导出枚举一致） */
+    private static final Set<String> ALLOWED_ARCHIVE_DATA_TYPES = Set.of(
+            "archives", "scores", "audits", "ai", "career");
+
+    /** PDF 模板栏目可映射的数据类型；audits/ai 在 student_archive 模板中无对应栏目 */
+    private static final Set<String> PDF_ARCHIVE_DATA_TYPES = Set.of("archives", "scores", "career");
+
     private static final DateTimeFormatter ISO_WITH_ZONE =
             DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ssXXX");
     private static final DateTimeFormatter FILE_DATE_FORMAT =
@@ -460,6 +467,35 @@ public class AdminExportService {
                                 + "，支持：basic_info/academicInfo/dimensionScores/awards/practices/careerPlans");
             }
         }
+        // 数据类型校验（可选；为空时按旧口径导出全部档案栏目）
+        List<String> dataTypes = request.getDataTypes();
+        if (dataTypes != null) {
+            if (dataTypes.isEmpty()) {
+                throw new BusinessException(ResultCode.PARAM_MISSING, "dataTypes 不能为空（不限制数据类型时可不传）");
+            }
+            List<String> invalidTypes = dataTypes.stream()
+                    .filter(t -> !ALLOWED_ARCHIVE_DATA_TYPES.contains(t))
+                    .collect(Collectors.toList());
+            if (!invalidTypes.isEmpty()) {
+                throw new BusinessException(ResultCode.PARAM_ERROR,
+                        "数据类型不支持：" + String.join("、", invalidTypes)
+                                + "，支持：archives/scores/audits/ai/career");
+            }
+            if ("pdf".equals(fileType)) {
+                List<String> unsupported = dataTypes.stream()
+                        .filter(t -> !PDF_ARCHIVE_DATA_TYPES.contains(t))
+                        .collect(Collectors.toList());
+                if (!unsupported.isEmpty()) {
+                    throw new BusinessException(ResultCode.PARAM_ERROR,
+                            "PDF 导出不支持数据类型：" + String.join("、", unsupported)
+                                    + "，请改用 xlsx 或移除该类型");
+                }
+                if (request.getSections() != null && !request.getSections().isEmpty()
+                        && Collections.disjoint(sectionsForDataTypes(dataTypes), request.getSections())) {
+                    throw new BusinessException(ResultCode.PARAM_ERROR, "dataTypes 与 sections 无交集，无法生成导出文件");
+                }
+            }
+        }
         validateScopeBelongsToSchool(scopeType, request.getScopeId(), schoolId);
     }
 
@@ -574,7 +610,7 @@ public class AdminExportService {
             throw new BusinessException(ResultCode.DATA_NOT_EXIST, "未配置默认导出模板");
         }
         boolean watermarkEnabled = resolveWatermarkEnabled(request);
-        List<String> sections = effectiveSections(request.getSections());
+        List<String> sections = effectiveArchiveSections(request);
 
         List<byte[]> pdfs = new ArrayList<>();
         for (Long studentId : studentIds) {
@@ -730,109 +766,93 @@ public class AdminExportService {
     // ==================== 学生档案 XLSX 生成（无 POI，手写 OOXML） ====================
 
     /**
-     * 生成批量学生档案 Excel（xlsx）：两个工作表——「学生基本信息」（学号/姓名/性别/学院/专业/
-     * 班级/年级/政治面貌/邮箱/手机/档案数）与「档案列表」（按 archiveStatus 过滤）。纯 JVM
-     * 手写 OOXML（ZIP + inlineStr），不引入 POI 依赖。
+     * 生成批量学生档案 Excel（xlsx）：按请求的 dataTypes 动态生成工作表——
+     * 「学生基本信息」+「档案列表」（archives）、「画像分数」（scores）、「审核记录」（audits）、
+     * 「AI对话」（ai）、「成长规划」（career）。纯 JVM 手写 OOXML（ZIP + inlineStr），不引入 POI 依赖。
      * <p>
+     * dataTypes 为空时保持旧口径：仅「学生基本信息」与「档案列表」两张表；
      * includeMetadata=true（默认）时在基本信息表首行写入数据版本与导出时间说明。
      */
     private byte[] buildArchiveXlsx(ArchiveExportRequest request, Long schoolId, List<Long> studentIds) {
         try (ByteArrayOutputStream out = new ByteArrayOutputStream();
              ZipOutputStream zip = new ZipOutputStream(out)) {
 
-            // 批量加载组织与联系数据
+            Set<String> typeSet = request.getDataTypes() == null ? null : new HashSet<>(request.getDataTypes());
+            boolean legacy = typeSet == null;
+            boolean includeArchives = legacy || typeSet.contains("archives");
+            boolean includeScores = typeSet != null && typeSet.contains("scores");
+            boolean includeAudits = typeSet != null && typeSet.contains("audits");
+            boolean includeAi = typeSet != null && typeSet.contains("ai");
+            boolean includeCareer = typeSet != null && typeSet.contains("career");
+
             Map<Long, User> userById = userRepository.findByIdIn(studentIds).stream()
                     .collect(Collectors.toMap(User::getId, Function.identity(), (a, b) -> a));
-            Map<Long, StudentProfile> profileByUser = studentProfileRepository.findByUserIdIn(studentIds).stream()
-                    .collect(Collectors.toMap(StudentProfile::getUserId, Function.identity(), (a, b) -> a));
-            Map<Long, UserContactInfo> contactByUser = userContactInfoRepository.findByUserIdIn(studentIds).stream()
-                    .collect(Collectors.toMap(UserContactInfo::getUserId, Function.identity(), (a, b) -> a));
 
-            Set<Long> classIds = profileByUser.values().stream()
-                    .map(StudentProfile::getClassId).filter(Objects::nonNull).collect(Collectors.toSet());
-            Map<Long, Clazz> clazzById = clazzRepository.findAllById(classIds).stream()
-                    .collect(Collectors.toMap(Clazz::getId, Function.identity(), (a, b) -> a));
-            Set<Long> majorIds = clazzById.values().stream()
-                    .map(Clazz::getMajorId).filter(Objects::nonNull).collect(Collectors.toSet());
-            Map<Long, Major> majorById = majorRepository.findAllById(majorIds).stream()
-                    .collect(Collectors.toMap(Major::getId, Function.identity(), (a, b) -> a));
-            Set<Long> collegeIds = majorById.values().stream()
-                    .map(Major::getCollegeId).filter(Objects::nonNull).collect(Collectors.toSet());
-            Map<Long, College> collegeById = collegeRepository.findAllById(collegeIds).stream()
-                    .collect(Collectors.toMap(College::getId, Function.identity(), (a, b) -> a));
-
-            // 档案列表（archiveStatus 过滤）与每个学生的档案数
+            // 档案记录（archiveStatus 过滤）：档案列表与审核记录共用
             List<Archive> allArchives = archiveRepository.findByUserIdIn(studentIds);
             List<Archive> archives = (request.getArchiveStatus() == null)
                     ? allArchives
                     : allArchives.stream()
                             .filter(a -> Objects.equals(a.getStatus(), request.getArchiveStatus()))
                             .collect(Collectors.toList());
-            Map<Long, Long> archiveCountByUser = allArchives.stream()
-                    .filter(a -> request.getArchiveStatus() == null || Objects.equals(a.getStatus(), request.getArchiveStatus()))
-                    .collect(Collectors.groupingBy(Archive::getUserId, Collectors.counting()));
-            Set<Long> semesterIds = archives.stream().map(Archive::getSemesterId)
-                    .filter(Objects::nonNull).collect(Collectors.toSet());
+
+            // 成长规划（career 类型）
+            List<CareerPlan> careerPlans = includeCareer
+                    ? careerPlanRepository.findByUserIdIn(studentIds) : Collections.emptyList();
+
+            // 学期名称（档案列表与成长规划共用）
+            Set<Long> semesterIds = new HashSet<>();
+            archives.stream().map(Archive::getSemesterId).filter(Objects::nonNull).forEach(semesterIds::add);
+            careerPlans.stream().map(CareerPlan::getSemesterId).filter(Objects::nonNull).forEach(semesterIds::add);
             Map<Long, Semester> semesterById = semesterRepository.findAllById(semesterIds).stream()
                     .collect(Collectors.toMap(Semester::getId, Function.identity(), (a, b) -> a));
 
-            boolean includeMetadata = request.getIncludeMetadata() == null || request.getIncludeMetadata();
-            Integer dataVersion = resolveDataVersion(schoolId);
-            String exportTime = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm"));
+            List<ArchiveSheet> sheets = new ArrayList<>();
 
-            // Sheet1 学生基本信息
-            List<String[]> sheet1 = new ArrayList<>();
-            if (includeMetadata) {
-                sheet1.add(new String[]{"数据版本：v" + (dataVersion != null ? dataVersion : 1)
-                        + " · 导出时间：" + exportTime});
-            }
-            sheet1.add(new String[]{"学号", "姓名", "性别", "学院", "专业", "班级", "年级",
-                    "政治面貌", "邮箱", "手机", "档案数"});
-            for (Long studentId : studentIds) {
-                User u = userById.get(studentId);
-                StudentProfile p = profileByUser.get(studentId);
-                UserContactInfo c = contactByUser.get(studentId);
-                Clazz clazz = p != null ? clazzById.get(p.getClassId()) : null;
-                Major major = clazz != null ? majorById.get(clazz.getMajorId()) : null;
-                College college = major != null ? collegeById.get(major.getCollegeId()) : null;
-                sheet1.add(new String[]{
-                        u != null ? u.getUserNo() : "",
-                        u != null ? u.getName() : "",
-                        GenderEnum.of(u != null ? u.getGender() : null).getLabel(),
-                        college != null ? college.getName() : "",
-                        major != null ? major.getName() : "",
-                        clazz != null ? clazz.getName() : "",
-                        clazz != null ? clazz.getGrade() : "",
-                        p != null ? p.getPoliticalStatus() : "",
-                        c != null ? c.getEmail() : "",
-                        c != null ? c.getPhone() : "",
-                        String.valueOf(archiveCountByUser.getOrDefault(studentId, 0L))
-                });
+            // Sheet 学生基本信息 + 档案列表（archives 或旧口径）
+            if (includeArchives) {
+                sheets.add(new ArchiveSheet("学生基本信息",
+                        buildBasicInfoRows(request, schoolId, studentIds, userById, allArchives)));
+                List<String[]> rows = new ArrayList<>();
+                rows.add(new String[]{"学号", "姓名", "档案类型", "标题", "学期", "获得时间", "状态"});
+                for (Archive a : archives) {
+                    User u = userById.get(a.getUserId());
+                    Semester sem = a.getSemesterId() != null ? semesterById.get(a.getSemesterId()) : null;
+                    rows.add(new String[]{
+                            u != null ? u.getUserNo() : "",
+                            u != null ? u.getName() : "",
+                            a.getArchiveType(),
+                            a.getTitle(),
+                            sem != null ? sem.getName() : "",
+                            a.getObtainedAt() != null ? String.valueOf(a.getObtainedAt()) : "",
+                            archiveStatusLabel(a.getStatus())
+                    });
+                }
+                sheets.add(new ArchiveSheet("档案列表", rows));
             }
 
-            // Sheet2 档案列表
-            List<String[]> sheet2 = new ArrayList<>();
-            sheet2.add(new String[]{"学号", "姓名", "档案类型", "标题", "学期", "获得时间", "状态"});
-            for (Archive a : archives) {
-                User u = userById.get(a.getUserId());
-                Semester sem = a.getSemesterId() != null ? semesterById.get(a.getSemesterId()) : null;
-                sheet2.add(new String[]{
-                        u != null ? u.getUserNo() : "",
-                        u != null ? u.getName() : "",
-                        a.getArchiveType(),
-                        a.getTitle(),
-                        sem != null ? sem.getName() : "",
-                        a.getObtainedAt() != null ? String.valueOf(a.getObtainedAt()) : "",
-                        archiveStatusLabel(a.getStatus())
-                });
+            if (includeScores) {
+                sheets.add(new ArchiveSheet("画像分数",
+                        buildScoreRows(request, schoolId, studentIds, userById)));
+            }
+            if (includeAudits) {
+                sheets.add(new ArchiveSheet("审核记录", buildAuditRows(archives, userById)));
+            }
+            if (includeAi) {
+                sheets.add(new ArchiveSheet("AI对话", buildAiRows(studentIds, userById)));
+            }
+            if (includeCareer) {
+                sheets.add(new ArchiveSheet("成长规划", buildCareerRows(careerPlans, userById, semesterById)));
             }
 
-            writeZipEntry(zip, "[Content_Types].xml", buildContentTypes());
+            writeZipEntry(zip, "[Content_Types].xml", buildContentTypes(sheets.size()));
             writeZipEntry(zip, "_rels/.rels", buildRootRels());
-            writeZipEntry(zip, "xl/workbook.xml", buildWorkbookXml());
-            writeZipEntry(zip, "xl/_rels/workbook.xml.rels", buildWorkbookRels());
-            writeZipEntry(zip, "xl/worksheets/sheet1.xml", buildWorksheetXml(sheet1));
-            writeZipEntry(zip, "xl/worksheets/sheet2.xml", buildWorksheetXml(sheet2));
+            writeZipEntry(zip, "xl/workbook.xml", buildWorkbookXml(sheets));
+            writeZipEntry(zip, "xl/_rels/workbook.xml.rels", buildWorkbookRels(sheets.size()));
+            for (int i = 0; i < sheets.size(); i++) {
+                writeZipEntry(zip, "xl/worksheets/sheet" + (i + 1) + ".xml",
+                        buildWorksheetXml(sheets.get(i).rows()));
+            }
             zip.finish();
             return out.toByteArray();
         } catch (IOException e) {
@@ -841,21 +861,210 @@ public class AdminExportService {
         }
     }
 
+    /** 学生基本信息工作表（学号/姓名/性别/学院/专业/班级/年级/政治面貌/邮箱/手机/档案数） */
+    private List<String[]> buildBasicInfoRows(ArchiveExportRequest request, Long schoolId, List<Long> studentIds,
+                                              Map<Long, User> userById, List<Archive> allArchives) {
+        Map<Long, StudentProfile> profileByUser = studentProfileRepository.findByUserIdIn(studentIds).stream()
+                .collect(Collectors.toMap(StudentProfile::getUserId, Function.identity(), (a, b) -> a));
+        Map<Long, UserContactInfo> contactByUser = userContactInfoRepository.findByUserIdIn(studentIds).stream()
+                .collect(Collectors.toMap(UserContactInfo::getUserId, Function.identity(), (a, b) -> a));
+
+        Set<Long> classIds = profileByUser.values().stream()
+                .map(StudentProfile::getClassId).filter(Objects::nonNull).collect(Collectors.toSet());
+        Map<Long, Clazz> clazzById = clazzRepository.findAllById(classIds).stream()
+                .collect(Collectors.toMap(Clazz::getId, Function.identity(), (a, b) -> a));
+        Set<Long> majorIds = clazzById.values().stream()
+                .map(Clazz::getMajorId).filter(Objects::nonNull).collect(Collectors.toSet());
+        Map<Long, Major> majorById = majorRepository.findAllById(majorIds).stream()
+                .collect(Collectors.toMap(Major::getId, Function.identity(), (a, b) -> a));
+        Set<Long> collegeIds = majorById.values().stream()
+                .map(Major::getCollegeId).filter(Objects::nonNull).collect(Collectors.toSet());
+        Map<Long, College> collegeById = collegeRepository.findAllById(collegeIds).stream()
+                .collect(Collectors.toMap(College::getId, Function.identity(), (a, b) -> a));
+
+        Map<Long, Long> archiveCountByUser = allArchives.stream()
+                .filter(a -> request.getArchiveStatus() == null || Objects.equals(a.getStatus(), request.getArchiveStatus()))
+                .collect(Collectors.groupingBy(Archive::getUserId, Collectors.counting()));
+
+        boolean includeMetadata = request.getIncludeMetadata() == null || request.getIncludeMetadata();
+        Integer dataVersion = resolveDataVersion(schoolId);
+        String exportTime = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm"));
+
+        List<String[]> rows = new ArrayList<>();
+        if (includeMetadata) {
+            rows.add(new String[]{"数据版本：v" + (dataVersion != null ? dataVersion : 1)
+                    + " · 导出时间：" + exportTime});
+        }
+        rows.add(new String[]{"学号", "姓名", "性别", "学院", "专业", "班级", "年级",
+                "政治面貌", "邮箱", "手机", "档案数"});
+        for (Long studentId : studentIds) {
+            User u = userById.get(studentId);
+            StudentProfile p = profileByUser.get(studentId);
+            UserContactInfo c = contactByUser.get(studentId);
+            Clazz clazz = p != null ? clazzById.get(p.getClassId()) : null;
+            Major major = clazz != null ? majorById.get(clazz.getMajorId()) : null;
+            College college = major != null ? collegeById.get(major.getCollegeId()) : null;
+            rows.add(new String[]{
+                    u != null ? u.getUserNo() : "",
+                    u != null ? u.getName() : "",
+                    GenderEnum.of(u != null ? u.getGender() : null).getLabel(),
+                    college != null ? college.getName() : "",
+                    major != null ? major.getName() : "",
+                    clazz != null ? clazz.getName() : "",
+                    clazz != null ? clazz.getGrade() : "",
+                    p != null ? p.getPoliticalStatus() : "",
+                    c != null ? c.getEmail() : "",
+                    c != null ? c.getPhone() : "",
+                    String.valueOf(archiveCountByUser.getOrDefault(studentId, 0L))
+            });
+        }
+        return rows;
+    }
+
+    /** 画像分数工作表（指定学期，未传取学校当前学期；维度名称取启用维度字典） */
+    private List<String[]> buildScoreRows(ArchiveExportRequest request, Long schoolId, List<Long> studentIds,
+                                          Map<Long, User> userById) {
+        Long semesterId = request.getSemesterId();
+        if (semesterId == null) {
+            semesterId = semesterRepository.findCurrentBySchoolId(schoolId).map(Semester::getId).orElse(null);
+        }
+        List<PortraitEvaluationScore> scores = semesterId == null ? Collections.emptyList()
+                : portraitEvaluationScoreRepository.findByUserIdInAndSemesterId(studentIds, semesterId);
+        Map<String, String> dimensionNameMap = abilityDimensionRepository.findAllActive().stream()
+                .collect(Collectors.toMap(AbilityDimension::getDimensionCode,
+                        AbilityDimension::getDimensionName, (a, b) -> a));
+        List<String[]> rows = new ArrayList<>();
+        rows.add(new String[]{"学号", "姓名", "维度", "得分", "目标分", "差距", "规则版本", "评估时间"});
+        for (PortraitEvaluationScore s : scores) {
+            User u = userById.get(s.getUserId());
+            rows.add(new String[]{
+                    u != null ? u.getUserNo() : "",
+                    u != null ? u.getName() : "",
+                    dimensionNameMap.getOrDefault(s.getDimensionCode(), s.getDimensionCode()),
+                    decimalText(s.getScore()),
+                    decimalText(s.getTargetScore()),
+                    decimalText(s.getGap()),
+                    String.valueOf(s.getRuleVersion()),
+                    s.getEvaluatedAt() != null ? String.valueOf(s.getEvaluatedAt()) : ""
+            });
+        }
+        return rows;
+    }
+
+    /** 审核记录工作表（提交/审核/通过/退回/撤销时间与驳回原因） */
+    private List<String[]> buildAuditRows(List<Archive> archives, Map<Long, User> userById) {
+        List<String[]> rows = new ArrayList<>();
+        rows.add(new String[]{"学号", "姓名", "档案类型", "标题", "状态", "提交时间", "审核时间",
+                "通过时间", "退回时间", "撤销时间", "驳回原因"});
+        for (Archive a : archives) {
+            User u = userById.get(a.getUserId());
+            rows.add(new String[]{
+                    u != null ? u.getUserNo() : "",
+                    u != null ? u.getName() : "",
+                    a.getArchiveType(),
+                    a.getTitle(),
+                    archiveStatusLabel(a.getStatus()),
+                    toIso(a.getAuditInfo().getSubmittedAt()),
+                    toIso(a.getAuditInfo().getAuditedAt()),
+                    toIso(a.getAuditInfo().getPassedAt()),
+                    toIso(a.getAuditInfo().getReturnedAt()),
+                    toIso(a.getAuditInfo().getRevokedAt()),
+                    a.getAuditInfo().getRejectedReason()
+            });
+        }
+        return rows;
+    }
+
+    /** AI 对话工作表：正常状态会话（最近 200 个）及其消息时间线，逐条消息一行 */
+    private List<String[]> buildAiRows(List<Long> studentIds, Map<Long, User> userById) {
+        List<String[]> rows = new ArrayList<>();
+        rows.add(new String[]{"学号", "姓名", "会话ID", "会话标题", "角色", "内容", "模型", "时间"});
+        for (Long studentId : studentIds) {
+            User u = userById.get(studentId);
+            String userNo = u != null ? u.getUserNo() : "";
+            String userName = u != null ? u.getName() : "";
+            for (Map<String, Object> conv : buildAiItems(studentId)) {
+                String convId = String.valueOf(conv.get("conversationId"));
+                String title = conv.get("title") != null ? String.valueOf(conv.get("title")) : "";
+                Object rawMessages = conv.get("messages");
+                List<?> messages = rawMessages instanceof List<?> list ? list : Collections.emptyList();
+                if (messages.isEmpty()) {
+                    rows.add(new String[]{userNo, userName, convId, title, "", "", "", ""});
+                    continue;
+                }
+                for (Object rawMessage : messages) {
+                    if (!(rawMessage instanceof Map<?, ?> m)) {
+                        continue;
+                    }
+                    rows.add(new String[]{
+                            userNo,
+                            userName,
+                            convId,
+                            title,
+                            textOf(m.get("role")),
+                            textOf(m.get("content")),
+                            textOf(m.get("modelName")),
+                            textOf(m.get("createdAt"))
+                    });
+                }
+            }
+        }
+        return rows;
+    }
+
+    /** 成长规划工作表 */
+    private List<String[]> buildCareerRows(List<CareerPlan> plans, Map<Long, User> userById,
+                                           Map<Long, Semester> semesterById) {
+        List<String[]> rows = new ArrayList<>();
+        rows.add(new String[]{"学号", "姓名", "标题", "内容", "学期", "进度", "状态", "更新时间"});
+        for (CareerPlan p : plans) {
+            User u = userById.get(p.getUserId());
+            Semester sem = p.getSemesterId() != null ? semesterById.get(p.getSemesterId()) : null;
+            rows.add(new String[]{
+                    u != null ? u.getUserNo() : "",
+                    u != null ? u.getName() : "",
+                    p.getTitle(),
+                    p.getContent(),
+                    sem != null ? sem.getName() : "",
+                    p.getProgressRate() != null ? String.valueOf(p.getProgressRate()) : "0",
+                    archiveStatusLabel(p.getStatus()),
+                    toIso(p.getUpdatedAt())
+            });
+        }
+        return rows;
+    }
+
+    /** xlsx 工作表定义：名称 + 行数据（首行为表头） */
+    private record ArchiveSheet(String name, List<String[]> rows) {
+    }
+
+    private String textOf(Object value) {
+        return value != null ? String.valueOf(value) : "";
+    }
+
+    private String decimalText(BigDecimal value) {
+        return value != null ? cleanDecimal(value).toPlainString() : "";
+    }
+
     private void writeZipEntry(ZipOutputStream zip, String name, String content) throws IOException {
         zip.putNextEntry(new ZipEntry(name));
         zip.write(content.getBytes(StandardCharsets.UTF_8));
         zip.closeEntry();
     }
 
-    private String buildContentTypes() {
-        return "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>"
-                + "<Types xmlns=\"http://schemas.openxmlformats.org/package/2006/content-types\">"
-                + "<Default Extension=\"rels\" ContentType=\"application/vnd.openxmlformats-package.relationships+xml\"/>"
-                + "<Default Extension=\"xml\" ContentType=\"application/xml\"/>"
-                + "<Override PartName=\"/xl/workbook.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml\"/>"
-                + "<Override PartName=\"/xl/worksheets/sheet1.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml\"/>"
-                + "<Override PartName=\"/xl/worksheets/sheet2.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml\"/>"
-                + "</Types>";
+    private String buildContentTypes(int sheetCount) {
+        StringBuilder sb = new StringBuilder();
+        sb.append("<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>")
+                .append("<Types xmlns=\"http://schemas.openxmlformats.org/package/2006/content-types\">")
+                .append("<Default Extension=\"rels\" ContentType=\"application/vnd.openxmlformats-package.relationships+xml\"/>")
+                .append("<Default Extension=\"xml\" ContentType=\"application/xml\"/>")
+                .append("<Override PartName=\"/xl/workbook.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml\"/>");
+        for (int i = 1; i <= sheetCount; i++) {
+            sb.append("<Override PartName=\"/xl/worksheets/sheet").append(i)
+                    .append(".xml\" ContentType=\"application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml\"/>");
+        }
+        sb.append("</Types>");
+        return sb.toString();
     }
 
     private String buildRootRels() {
@@ -865,22 +1074,33 @@ public class AdminExportService {
                 + "</Relationships>";
     }
 
-    private String buildWorkbookXml() {
-        return "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>"
-                + "<workbook xmlns=\"http://schemas.openxmlformats.org/spreadsheetml/2006/main\""
-                + " xmlns:r=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships\">"
-                + "<sheets>"
-                + "<sheet name=\"学生基本信息\" sheetId=\"1\" r:id=\"rId1\"/>"
-                + "<sheet name=\"档案列表\" sheetId=\"2\" r:id=\"rId2\"/>"
-                + "</sheets></workbook>";
+    private String buildWorkbookXml(List<ArchiveSheet> sheets) {
+        StringBuilder sb = new StringBuilder();
+        sb.append("<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>")
+                .append("<workbook xmlns=\"http://schemas.openxmlformats.org/spreadsheetml/2006/main\"")
+                .append(" xmlns:r=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships\">")
+                .append("<sheets>");
+        for (int i = 0; i < sheets.size(); i++) {
+            int id = i + 1;
+            sb.append("<sheet name=\"").append(xmlEscape(sheets.get(i).name()))
+                    .append("\" sheetId=\"").append(id)
+                    .append("\" r:id=\"rId").append(id).append("\"/>");
+        }
+        sb.append("</sheets></workbook>");
+        return sb.toString();
     }
 
-    private String buildWorkbookRels() {
-        return "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>"
-                + "<Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\">"
-                + "<Relationship Id=\"rId1\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet\" Target=\"worksheets/sheet1.xml\"/>"
-                + "<Relationship Id=\"rId2\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet\" Target=\"worksheets/sheet2.xml\"/>"
-                + "</Relationships>";
+    private String buildWorkbookRels(int sheetCount) {
+        StringBuilder sb = new StringBuilder();
+        sb.append("<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>")
+                .append("<Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\">");
+        for (int i = 1; i <= sheetCount; i++) {
+            sb.append("<Relationship Id=\"rId").append(i)
+                    .append("\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet\" Target=\"worksheets/sheet")
+                    .append(i).append(".xml\"/>");
+        }
+        sb.append("</Relationships>");
+        return sb.toString();
     }
 
     /** 生成工作表 XML（inlineStr 单元格，全部文本类型，保证中文与特殊字符安全） */
@@ -973,6 +1193,9 @@ public class AdminExportService {
         }
         Map<String, Object> desc = new LinkedHashMap<>();
         desc.put("fileType", request.getFileType());
+        desc.put("dataTypes", request.getDataTypes() != null
+                ? request.getDataTypes()
+                : "全部（archives/scores/audits/ai/career）");
         desc.put("scopeType", request.getScopeType());
         desc.put("scopeId", request.getScopeId());
         desc.put("grade", request.getGrade());
@@ -998,6 +1221,40 @@ public class AdminExportService {
     /** sections 不传或为空时返回默认全栏目 */
     private List<String> effectiveSections(List<String> sections) {
         return (sections == null || sections.isEmpty()) ? DEFAULT_ARCHIVE_SECTIONS : sections;
+    }
+
+    /**
+     * PDF 导出实际栏目：dataTypes 为空时沿用 sections 口径（兼容旧调用）；
+     * 否则按所选数据类型映射到模板栏目，并与显式传入的 sections 取交集（进一步收窄）。
+     */
+    private List<String> effectiveArchiveSections(ArchiveExportRequest request) {
+        if (request.getDataTypes() == null || request.getDataTypes().isEmpty()) {
+            return effectiveSections(request.getSections());
+        }
+        List<String> sections = sectionsForDataTypes(request.getDataTypes());
+        if (request.getSections() != null && !request.getSections().isEmpty()) {
+            sections.retainAll(request.getSections());
+        }
+        return sections;
+    }
+
+    /** 数据类型 → PDF 模板栏目映射（archives 含学籍信息与档案内容；audits/ai 无模板栏目） */
+    private List<String> sectionsForDataTypes(List<String> dataTypes) {
+        Set<String> typeSet = new HashSet<>(dataTypes);
+        List<String> sections = new ArrayList<>();
+        if (typeSet.contains("archives")) {
+            sections.add("basic_info");
+            sections.add("academicInfo");
+            sections.add("awards");
+            sections.add("practices");
+        }
+        if (typeSet.contains("scores")) {
+            sections.add("dimensionScores");
+        }
+        if (typeSet.contains("career")) {
+            sections.add("careerPlans");
+        }
+        return sections;
     }
 
     /** 清理 BigDecimal 尾部零 */

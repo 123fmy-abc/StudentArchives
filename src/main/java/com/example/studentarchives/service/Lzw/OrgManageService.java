@@ -31,6 +31,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -88,11 +89,14 @@ public class OrgManageService {
             return cb.and(predicates.toArray(new Predicate[0]));
         };
         List<College> colleges = collegeRepository.findAll(spec, Sort.by(Sort.Direction.ASC, "id"));
+        // 学生人数实时按 student_profiles.class_id → 专业 → 学院 逐级汇总
+        Map<Long, Integer> studentCountMap = loadStudentCountsByCollege(colleges);
         return colleges.stream().map(c -> CollegeItem.builder()
                 .collegeId(c.getId())
                 .collegeName(c.getName())
                 .code(c.getCode())
                 .schoolId(c.getSchoolId())
+                .studentCount(studentCountMap.getOrDefault(c.getId(), 0))
                 .status(c.getStatus())
                 .build()).toList();
     }
@@ -132,11 +136,14 @@ public class OrgManageService {
             return cb.and(predicates.toArray(new Predicate[0]));
         };
         List<Major> majors = majorRepository.findAll(spec, Sort.by(Sort.Direction.ASC, "id"));
+        // 学生人数实时按 student_profiles.class_id → 专业 汇总
+        Map<Long, Integer> studentCountMap = loadStudentCountsByMajor(majors);
         return majors.stream().map(m -> MajorItem.builder()
                 .majorId(m.getId())
                 .majorName(m.getName())
                 .code(m.getCode())
                 .collegeId(m.getCollegeId())
+                .studentCount(studentCountMap.getOrDefault(m.getId(), 0))
                 .status(m.getStatus())
                 .build()).toList();
     }
@@ -323,6 +330,46 @@ public class OrgManageService {
                 .collect(Collectors.toMap(row -> (Long) row[0], row -> (Long) row[1], (a, b) -> a));
     }
 
+    /** 批量统计各专业学生人数：专业 → 班级 → student_profiles.class_id 逐级汇总 */
+    private Map<Long, Integer> loadStudentCountsByMajor(List<Major> majors) {
+        List<Long> majorIds = majors.stream().map(Major::getId)
+                .filter(Objects::nonNull).collect(Collectors.toList());
+        if (majorIds.isEmpty()) {
+            return Map.of();
+        }
+        List<Clazz> classes = clazzRepository.findByMajorIdIn(majorIds);
+        Map<Long, Long> classToMajor = classes.stream()
+                .collect(Collectors.toMap(Clazz::getId, Clazz::getMajorId, (a, b) -> a));
+        Map<Long, Integer> countByMajor = new HashMap<>();
+        loadStudentCounts(classes).forEach((classId, count) -> {
+            Long majorId = classToMajor.get(classId);
+            if (majorId != null) {
+                countByMajor.merge(majorId, count.intValue(), Integer::sum);
+            }
+        });
+        return countByMajor;
+    }
+
+    /** 批量统计各学院学生人数：学院 → 专业 → 班级 → student_profiles.class_id 逐级汇总 */
+    private Map<Long, Integer> loadStudentCountsByCollege(List<College> colleges) {
+        List<Long> collegeIds = colleges.stream().map(College::getId)
+                .filter(Objects::nonNull).collect(Collectors.toList());
+        if (collegeIds.isEmpty()) {
+            return Map.of();
+        }
+        List<Major> majors = majorRepository.findByCollegeIdIn(collegeIds);
+        Map<Long, Long> majorToCollege = majors.stream()
+                .collect(Collectors.toMap(Major::getId, Major::getCollegeId, (a, b) -> a));
+        Map<Long, Integer> countByCollege = new HashMap<>();
+        loadStudentCountsByMajor(majors).forEach((majorId, count) -> {
+            Long collegeId = majorToCollege.get(majorId);
+            if (collegeId != null) {
+                countByCollege.merge(collegeId, count, Integer::sum);
+            }
+        });
+        return countByCollege;
+    }
+
     // ==================== 通用辅助 ====================
 
     private String requireNotBlank(String value, String message) {
@@ -364,6 +411,8 @@ public class OrgManageService {
         private String collegeName;
         private String code;
         private Long schoolId;
+        /** 学生人数（实时按 student_profiles.class_id 逐级汇总） */
+        private Integer studentCount;
         private Integer status;
     }
 
@@ -378,6 +427,8 @@ public class OrgManageService {
         private String majorName;
         private String code;
         private Long collegeId;
+        /** 学生人数（实时按 student_profiles.class_id 逐级汇总） */
+        private Integer studentCount;
         private Integer status;
     }
 
