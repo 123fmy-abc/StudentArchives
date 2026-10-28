@@ -61,8 +61,13 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.time.LocalDateTime;
 import java.time.ZoneId;
@@ -96,6 +101,8 @@ public class AuditTaskService {
     private static final DateTimeFormatter ISO_WITH_ZONE =
             DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ssXXX");
     private static final ZoneId ZONE = ZoneId.of("Asia/Shanghai");
+    /** 单次批量审核上限，防止单个请求长时间占用连接与行锁 */
+    private static final int MAX_BATCH_APPROVE_SIZE = 100;
 
     private final PendingApprovalRepository pendingApprovalRepository;
     private final ApprovalNodeRepository approvalNodeRepository;
@@ -126,6 +133,11 @@ public class AuditTaskService {
     private final TeacherScopeValidator scopeValidator;
     private final AdminScoreService adminScoreService;
     private final ObjectMapper objectMapper;
+
+    /** 自引用代理（@Lazy 避免循环依赖）：批量审核时逐条开启独立事务（REQUIRES_NEW） */
+    @Lazy
+    @Autowired
+    private AuditTaskService self;
 
     // ==================== 4.1 获取待审核列表 ====================
 
@@ -285,7 +297,7 @@ public class AuditTaskService {
         ApprovableRef ref = approveApprovable(p, now, teacherId);
         writeAuditLog(p, AuditActionEnum.APPROVE.getValue(), comment, null, teacherId, ref.version(), null);
         notifyStudent(p, "audit_remind", "申报审核通过", "您的申报「" + p.getTitle() + "」已审核通过。");
-        triggerScoreRecalc(schoolId, p, ref.semesterId(), teacherId);
+        runAfterCommit(() -> triggerScoreRecalc(schoolId, p, ref.semesterId(), teacherId));
 
         return ApproveResult.builder()
                 .taskId(p.getId())
@@ -375,27 +387,64 @@ public class AuditTaskService {
 
     // ==================== 4.5 批量审核通过 ====================
 
-    /** 批量审核通过（POST /teacher/audits/batch/approve）：逐条处理，单条失败不影响其它（部分成功）。 */
-    @Transactional
+    /**
+     * 批量审核通过（POST /teacher/audits/batch/approve）：逐条独立事务，单条失败仅回滚该条（部分成功）。
+     * <p>
+     * 外层不开启事务（NOT_SUPPORTED），每条经 {@link #self} 代理进入 REQUIRES_NEW 事务：
+     * 业务异常回滚该条且不残留半成品数据；任何异常都被收敛为该条失败，不影响其它条目。
+     */
+    @Transactional(propagation = Propagation.NOT_SUPPORTED)
     public BatchResult batchApprove(Long teacherId, List<Long> taskIds, String comment) {
-        Long schoolId = adminAuthService.getOperatorSchoolId(teacherId);
         if (taskIds == null || taskIds.isEmpty()) {
             throw new BusinessException(ResultCode.PARAM_MISSING, "taskIds 不能为空");
         }
-        List<BatchResultItem> results = new ArrayList<>();
+        adminAuthService.requireAdminOrPermission(teacherId, "audit:batch");
+
+        List<Long> distinctIds = taskIds.stream()
+                .filter(Objects::nonNull)
+                .distinct()
+                .collect(Collectors.toList());
+        if (distinctIds.isEmpty()) {
+            throw new BusinessException(ResultCode.PARAM_MISSING, "taskIds 不能为空");
+        }
+        if (distinctIds.size() > MAX_BATCH_APPROVE_SIZE) {
+            throw new BusinessException(ResultCode.PARAM_ERROR,
+                    "单次批量审核不能超过 " + MAX_BATCH_APPROVE_SIZE + " 条");
+        }
+
+        List<BatchResultItem> results = new ArrayList<>(distinctIds.size());
         int success = 0;
         int failed = 0;
-        for (Long taskId : taskIds) {
+        for (Long taskId : distinctIds) {
             try {
-                ApproveResult r = approveInternal(taskId, comment, null, teacherId, schoolId);
-                results.add(new BatchResultItem(taskId, true, r.getStatus()));
+                ApproveResult r = self.approveInNewTransaction(teacherId, taskId, comment);
+                results.add(new BatchResultItem(taskId, true, r.getStatus(), null, null));
                 success++;
             } catch (BusinessException e) {
-                results.add(new BatchResultItem(taskId, false, null));
+                log.warn("批量审核失败: teacherId={}, taskId={}, code={}, msg={}",
+                        teacherId, taskId, e.getCode(), e.getMessage());
+                results.add(new BatchResultItem(taskId, false, null, e.getCode(), e.getMessage()));
+                failed++;
+            } catch (Exception e) {
+                log.error("批量审核异常: teacherId={}, taskId={}", teacherId, taskId, e);
+                results.add(new BatchResultItem(taskId, false, null,
+                        ResultCode.SYSTEM_ERROR.getCode(), ResultCode.SYSTEM_ERROR.getMessage()));
                 failed++;
             }
         }
-        return new BatchResult(taskIds.size(), success, failed, results);
+        return new BatchResult(distinctIds.size(), success, failed, results);
+    }
+
+    /**
+     * 批量审核的单条事务入口（REQUIRES_NEW）。
+     * <p>
+     * 必须经 {@link #self} 代理调用，@Transactional 才会生效；单条提交/回滚，
+     * 失败项不会把已写入的节点/待办带进最终提交。
+     */
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public ApproveResult approveInNewTransaction(Long teacherId, Long taskId, String comment) {
+        Long schoolId = adminAuthService.getOperatorSchoolId(teacherId);
+        return approveInternal(taskId, comment, null, teacherId, schoolId);
     }
 
     // ==================== 4.6 撤销已审核记录 ====================
@@ -862,6 +911,23 @@ public class AuditTaskService {
         }
     }
 
+    /**
+     * 事务提交后执行（评分重算需读取已提交的审批结果，必须在提交后触发）；
+     * 无活动事务同步时直接执行。
+     */
+    private void runAfterCommit(Runnable action) {
+        if (TransactionSynchronizationManager.isSynchronizationActive()) {
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override
+                public void afterCommit() {
+                    action.run();
+                }
+            });
+        } else {
+            action.run();
+        }
+    }
+
     private void incrementTemplateUsage(Long schoolId, String templateCode) {
         auditCommentTemplateRepository.findBySchoolIdAndStatus(schoolId, 1).stream()
                 .filter(t -> templateCode.equals(t.getTemplateCode()))
@@ -1278,6 +1344,8 @@ public class AuditTaskService {
         private final Long taskId;
         private final boolean success;
         private final Integer status;
+        private final Integer errorCode;
+        private final String errorMessage;
     }
 
     @Data
