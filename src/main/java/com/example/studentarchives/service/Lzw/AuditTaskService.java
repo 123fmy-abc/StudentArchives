@@ -266,18 +266,21 @@ public class AuditTaskService {
                     p.getApplicantId(), p.getApplicantName(), p.getApplicantNo(), p.getTitle(),
                     p.getCategoryLabel(), p.getSubmittedAt(), designated);
 
-            writeAuditLog(p, AuditActionEnum.APPROVE.getValue(), comment, null, teacherId, 1, null);
-
-            if (nextNode != null) {
-                inst.setCurrentStep(nextStep.getStepNo());
-                approvalInstanceRepository.save(inst);
-                notifyStudent(p, "audit_remind", "申报进入下一级审批",
-                        "您的申报「" + p.getTitle() + "」已通过当前审核，等待下一级审批。");
-            } else {
-                // 下一步审批人解析失败（无校级管理员兜底），保持实例审批中，等待管理员配置
-                log.error("多级审批推进失败，下一步无审批人: taskId={}, instanceId={}, nextStepNo={}",
+            // 下一步节点/待办必须与本节点通过同生共死：创建失败则整体回滚，
+            // 否则会出现「当前任务已通过、但无人持有下一级待办」的永久停滞
+            if (nextNode == null) {
+                log.error("多级审批推进失败，下一步无审批人，本次审批回滚: taskId={}, instanceId={}, nextStepNo={}",
                         taskId, p.getInstanceId(), nextStep.getStepNo());
+                throw new BusinessException(ResultCode.APPROVAL_TASK_CREATE_FAILED,
+                        "审批推进失败：无法解析下一级审批人，请检查审批流程配置后重试");
             }
+
+            inst.setCurrentStep(nextStep.getStepNo());
+            approvalInstanceRepository.save(inst);
+            writeAuditLog(p, AuditActionEnum.APPROVE.getValue(), comment, null, teacherId, 1, null);
+            notifyStudent(p, "audit_remind", "申报进入下一级审批",
+                    "您的申报「" + p.getTitle() + "」已通过当前审核，等待下一级审批。");
+
             return ApproveResult.builder()
                     .taskId(p.getId())
                     .approvableId(p.getApprovableId())
