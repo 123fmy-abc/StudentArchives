@@ -31,7 +31,7 @@ public class StudentArchiveDimensionController {
     /**
      * 获取多维度能力画像（GET /archive/dimensions，《学生端接口文档》4.1.7）
      *
-     * @param semesterId 学期 ID，不传表示全部学期累计（与 GET /messages/unified 的 archive 参数口径一致）
+     * @param semesterId 学期 ID，不传表示全部学期累计（不按学期过滤）
      * @param userId     当前登录用户 ID
      */
     @GetMapping("/dimensions")
