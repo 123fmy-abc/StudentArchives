@@ -8,14 +8,17 @@ import com.example.studentarchives.dto.Lzw.activity.response.ActivityDetailRespo
 import com.example.studentarchives.dto.Lzw.activity.response.ActivityListItemResponse;
 import com.example.studentarchives.dto.Lzw.activity.response.ActivityStatusResponse;
 import com.example.studentarchives.entity.archive.*;
+import com.example.studentarchives.entity.approval.PendingApproval;
 import com.example.studentarchives.entity.award.AwardApplication;
 import com.example.studentarchives.entity.career.CareerPlan;
 import com.example.studentarchives.entity.embed.ArchiveAuditInfo;
 import com.example.studentarchives.entity.file.AttachmentRelation;
 import com.example.studentarchives.entity.foundation.Dictionary;
+import com.example.studentarchives.entity.user.User;
 import com.example.studentarchives.entity.version.ModelVersion;
 import com.example.studentarchives.enums.ActivityTypeEnum;
 import com.example.studentarchives.enums.ApplyStatusEnum;
+import com.example.studentarchives.enums.ApprovalInstanceStatusEnum;
 import com.example.studentarchives.enums.ArchiveTypeEnum;
 import com.example.studentarchives.enums.AwardTypeEnum;
 import com.example.studentarchives.enums.ModelVersionModelTypeEnum;
@@ -54,6 +57,9 @@ public class ActivityService {
     private final ModelVersionRepository modelVersionRepository;
     private final UserRepository userRepository;
     private final DictionaryRepository dictionaryRepository;
+    private final ApprovalSubmitService approvalSubmitService;
+    private final PendingApprovalRepository pendingApprovalRepository;
+    private final ApprovalInstanceRepository approvalInstanceRepository;
 
     // Archive extension repositories
     private final ArchiveCompetitionRepository competitionRepository;
@@ -231,11 +237,13 @@ public class ActivityService {
                 a.setStatus(ApplyStatusEnum.REVOKED.getValue());
                 a.getAuditInfo().setRevokedAt(LocalDateTime.now());
                 archiveRepository.save(a);
+                List<Long> closedTaskIds = closeOpenApprovalTasks("Archive", a.getId());
                 yield ActivityStatusResponse.builder()
                         .id(a.getId()).type("archive")
                         .status(ApplyStatusEnum.REVOKED.getValue()).statusLabel("已撤销")
                         .currentVersion(a.getAuditInfo().getCurrentVersion())
-                        .submitCount(a.getAuditInfo().getSubmitCount()).build();
+                        .submitCount(a.getAuditInfo().getSubmitCount())
+                        .closedTaskIds(closedTaskIds).build();
             }
             case AWARD -> {
                 AwardApplication a = awardApplicationRepository.findById(activityId)
@@ -245,11 +253,13 @@ public class ActivityService {
                 a.setStatus(ApplyStatusEnum.REVOKED.getValue());
                 a.getAuditInfo().setRevokedAt(LocalDateTime.now());
                 awardApplicationRepository.save(a);
+                List<Long> closedTaskIds = closeOpenApprovalTasks("AwardApplication", a.getId());
                 yield ActivityStatusResponse.builder()
                         .id(a.getId()).type("award")
                         .status(ApplyStatusEnum.REVOKED.getValue()).statusLabel("已撤销")
                         .currentVersion(a.getAuditInfo().getCurrentVersion())
-                        .submitCount(a.getAuditInfo().getSubmitCount()).build();
+                        .submitCount(a.getAuditInfo().getSubmitCount())
+                        .closedTaskIds(closedTaskIds).build();
             }
             case CAREER_PLAN -> {
                 CareerPlan p = careerPlanRepository.findById(activityId)
@@ -259,13 +269,45 @@ public class ActivityService {
                 p.setStatus(ApplyStatusEnum.REVOKED.getValue());
                 p.getAuditInfo().setRevokedAt(LocalDateTime.now());
                 careerPlanRepository.save(p);
+                List<Long> closedTaskIds = closeOpenApprovalTasks("CareerPlan", p.getId());
                 yield ActivityStatusResponse.builder()
                         .id(p.getId()).type("career_plan")
                         .status(ApplyStatusEnum.REVOKED.getValue()).statusLabel("已撤销")
                         .currentVersion(p.getAuditInfo().getCurrentVersion())
-                        .submitCount(p.getAuditInfo().getSubmitCount()).build();
+                        .submitCount(p.getAuditInfo().getSubmitCount())
+                        .closedTaskIds(closedTaskIds).build();
             }
         };
+    }
+
+    /**
+     * 关闭指定申报下所有未完成（status=1）的审批任务及其流程实例（与撤回同一事务）。
+     * 已处理的待办保留历史，不在此处修改。
+     */
+    private List<Long> closeOpenApprovalTasks(String approvableType, Long approvableId) {
+        List<PendingApproval> openTasks = pendingApprovalRepository
+                .findByApprovableTypeAndApprovableIdAndStatus(
+                        approvableType, approvableId, ApplyStatusEnum.PENDING.getValue());
+        if (openTasks.isEmpty()) {
+            return Collections.emptyList();
+        }
+        LocalDateTime now = LocalDateTime.now();
+        List<Long> closedTaskIds = new ArrayList<>(openTasks.size());
+        Set<Long> instanceIds = new HashSet<>();
+        for (PendingApproval task : openTasks) {
+            task.setStatus(ApplyStatusEnum.REVOKED.getValue());
+            pendingApprovalRepository.save(task);
+            closedTaskIds.add(task.getId());
+            instanceIds.add(task.getInstanceId());
+        }
+        for (Long instanceId : instanceIds) {
+            approvalInstanceRepository.findById(instanceId).ifPresent(inst -> {
+                inst.setStatus(ApprovalInstanceStatusEnum.REVOKED.getValue());
+                inst.setCompletedAt(now);
+                approvalInstanceRepository.save(inst);
+            });
+        }
+        return closedTaskIds;
     }
 
     // ==================== 私有：筛选匹配 ====================
@@ -471,6 +513,7 @@ public class ActivityService {
         a.getAuditInfo().setSubmitCount(a.getAuditInfo().getSubmitCount() + 1);
         a.getAuditInfo().setCurrentVersion(a.getAuditInfo().getCurrentVersion() + 1);
         archiveRepository.save(a);
+        generatePendingApprovalIfSubmitted(a);
 
         return ActivityStatusResponse.builder()
                 .id(a.getId()).type("archive")
@@ -499,6 +542,7 @@ public class ActivityService {
         a.getAuditInfo().setSubmitCount(a.getAuditInfo().getSubmitCount() + 1);
         a.getAuditInfo().setCurrentVersion(a.getAuditInfo().getCurrentVersion() + 1);
         awardApplicationRepository.save(a);
+        generatePendingApprovalIfSubmitted(a);
 
         return ActivityStatusResponse.builder()
                 .id(a.getId()).type("award")
@@ -525,12 +569,64 @@ public class ActivityService {
         p.getAuditInfo().setSubmitCount(p.getAuditInfo().getSubmitCount() + 1);
         p.getAuditInfo().setCurrentVersion(p.getAuditInfo().getCurrentVersion() + 1);
         careerPlanRepository.save(p);
+        generatePendingApprovalIfSubmitted(p);
 
         return ActivityStatusResponse.builder()
                 .id(p.getId()).type("career_plan")
                 .status(1).statusLabel("待审批")
                 .currentVersion(p.getAuditInfo().getCurrentVersion())
                 .submitCount(p.getAuditInfo().getSubmitCount()).build();
+    }
+
+    // ==================== 私有：审批任务生成 ====================
+
+    /**
+     * 编辑重新提交后生成教师端待审核任务（与编辑同一事务，失败使编辑回滚）。
+     * 仅当状态为待审批(1)时触发；草稿(0)不触发。
+     */
+    private void generatePendingApprovalIfSubmitted(Archive archive) {
+        if (archive.getStatus() == null || archive.getStatus() != ApplyStatusEnum.PENDING.getValue()) {
+            return;
+        }
+        User user = loadUser(archive.getUserId());
+        ArchiveTypeEnum typeEnum = ArchiveTypeEnum.of(archive.getArchiveType());
+        String categoryLabel = typeEnum != null ? typeEnum.getLabel() : archive.getArchiveType();
+        LocalDateTime submittedAt = archive.getAuditInfo() != null ? archive.getAuditInfo().getSubmittedAt() : null;
+        approvalSubmitService.createOnSubmit(
+                archive.getSchoolId(), "Archive", archive.getArchiveType(), archive.getId(),
+                archive.getUserId(), user.getName(), user.getUserNo(), archive.getTitle(),
+                categoryLabel, submittedAt);
+    }
+
+    private void generatePendingApprovalIfSubmitted(AwardApplication app) {
+        if (app.getStatus() == null || app.getStatus() != ApplyStatusEnum.PENDING.getValue()) {
+            return;
+        }
+        User user = loadUser(app.getUserId());
+        AwardTypeEnum typeEnum = AwardTypeEnum.of(app.getAwardType());
+        String categoryLabel = typeEnum != null ? typeEnum.getLabel() : app.getAwardType();
+        LocalDateTime submittedAt = app.getAuditInfo() != null ? app.getAuditInfo().getSubmittedAt() : null;
+        approvalSubmitService.createOnSubmit(
+                app.getSchoolId(), "AwardApplication", app.getAwardType(), app.getId(),
+                app.getUserId(), user.getName(), user.getUserNo(), app.getTitle(),
+                categoryLabel, submittedAt);
+    }
+
+    private void generatePendingApprovalIfSubmitted(CareerPlan plan) {
+        if (plan.getStatus() == null || plan.getStatus() != ApplyStatusEnum.PENDING.getValue()) {
+            return;
+        }
+        User user = loadUser(plan.getUserId());
+        LocalDateTime submittedAt = plan.getAuditInfo() != null ? plan.getAuditInfo().getSubmittedAt() : null;
+        approvalSubmitService.createOnSubmit(
+                plan.getSchoolId(), "CareerPlan", null, plan.getId(),
+                plan.getUserId(), user.getName(), user.getUserNo(), plan.getTitle(),
+                "职业生涯规划", submittedAt);
+    }
+
+    private User loadUser(Long userId) {
+        return userRepository.findById(userId)
+                .orElseThrow(() -> new BusinessException(ResultCode.TOKEN_INVALID, "用户不存在"));
     }
 
     // ==================== 私有：权限与状态校验 ====================

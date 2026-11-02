@@ -29,6 +29,10 @@ public interface PendingApprovalRepository extends JpaRepository<PendingApproval
     Optional<PendingApproval> findTopByApprovableTypeAndApprovableIdAndStatusOrderByIdDesc(
             String approvableType, Long approvableId, Integer status);
 
+    /** 按模型类型 + 模型 ID + 状态查询全部待办（撤回时批量关闭未完成任务用） */
+    List<PendingApproval> findByApprovableTypeAndApprovableIdAndStatus(
+            String approvableType, Long approvableId, Integer status);
+
     /**
      * 按模型类型 + 模型 ID + 状态批量反查待办，按 ID 倒序（审核历史 taskId 关联用）。
      * <p>
