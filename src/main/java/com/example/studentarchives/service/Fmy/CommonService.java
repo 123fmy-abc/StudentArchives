@@ -3,6 +3,7 @@ package com.example.studentarchives.service.Fmy;
 import com.example.studentarchives.common.ResultCode;
 import com.example.studentarchives.config.Fmy.OssProperties;
 import com.example.studentarchives.enums.ApplyStatusEnum;
+import com.example.studentarchives.enums.AttachmentBizTypeEnum;
 import com.example.studentarchives.enums.AuditActionEnum;
 import com.example.studentarchives.enums.EventTypeEnum;
 import com.example.studentarchives.enums.GenderEnum;
@@ -143,6 +144,17 @@ public class CommonService {
     /** 管理员角色编码 */
     private static final String ADMIN_ROLE_CODE = "admin";
 
+    /**
+     * 需要校验 download_expire_at 的导出类业务类型。
+     * 仅研究数据导出、学生档案导出、简历导出等限时文件受有效期约束；
+     * 普通业务附件该字段保持 NULL（永久可下载），每次下载时即时签名。
+     */
+    private static final Set<String> DOWNLOAD_EXPIRY_BIZ_TYPES = Set.of(
+            AdminExportService.FILE_BIZ_TYPE,
+            AttachmentBizTypeEnum.STUDENT_ARCHIVE_EXPORT.getValue(),
+            AttachmentBizTypeEnum.RESUME_EXPORT.getValue()
+    );
+
     private static DictItemResponse item(String value, String label, int sort) {
         return DictItemResponse.builder().value(value).label(label).sort(sort).build();
     }
@@ -223,7 +235,8 @@ public class CommonService {
         relation.setDisk("oss");
         relation.setFileStatus(1); // 暂存
         relation.setTempExpireAt(LocalDateTime.now().plusHours(ossProperties.getTempExpireHours()));
-        relation.setDownloadExpireAt(LocalDateTime.now().plusMinutes(ossProperties.getUrlExpireMinutes()));
+        // 普通附件的 download_expire_at 保持 NULL（永久可下载）：该字段仅用于导出等限时文件，
+        // 不能把短期签名 URL 的有效期当作附件失效时间，否则历史档案将在上传 30 分钟后永久不可下载。
         relation.setConvertStatus(0);
         relation.setSortOrder(0);
         attachmentRelationRepository.save(relation);
@@ -300,8 +313,10 @@ public class CommonService {
             throw new BusinessException(ResultCode.ACCESS_DENIED, "无访问权限");
         }
 
-        // 校验下载有效期：download_expire_at 非空且已过期时拒绝下载
-        if (relation.getDownloadExpireAt() != null
+        // 仅导出类文件校验下载有效期；普通附件 download_expire_at 为 NULL（永久），
+        // 过期后仍可凭 fileId 重新签名下载，避免历史证明材料因短期 URL 过期而永久不可访问。
+        if (DOWNLOAD_EXPIRY_BIZ_TYPES.contains(relation.getBizType())
+                && relation.getDownloadExpireAt() != null
                 && LocalDateTime.now().isAfter(relation.getDownloadExpireAt())) {
             throw new BusinessException(ResultCode.DATA_LOCKED, "文件下载链接已过期");
         }
