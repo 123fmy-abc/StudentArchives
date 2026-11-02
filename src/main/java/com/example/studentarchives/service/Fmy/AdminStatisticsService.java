@@ -299,8 +299,26 @@ public class AdminStatisticsService {
         Long schoolId = adminAuthService.getOperatorSchoolId(userId);
 
         // 指定 scopeId：必须在教师授权范围内（学校级授权覆盖）；scopeType 为空时 scopeId 无下钻语义（引擎忽略），走行过滤
-        if (scopeId != null && scopeType != null) {
+        if (scopeId != null && scopeId > 0 && scopeType != null) {
             scopeValidator.ensureOrgInScope(userId, scopeType, scopeId, schoolId);
+            if (Objects.equals(scopeType, ORG_GRADE)) {
+                if (grade != null && !grade.isBlank()) {
+                    scopeValidator.ensureGradeInScope(userId, grade, schoolId);
+                }
+                // 年级维度引擎忽略 scopeId 并展开全部年级行，需再按授权年级文本收敛
+                StatsResult<OrgOverviewResponse> gradeResult =
+                        overviewInternal(schoolId, semesterId, scopeType, scopeId, grade);
+                Set<String> authorizedGrades = scopeValidator.authorizedGradeTexts(userId, schoolId);
+                if (authorizedGrades != null && gradeResult.data() != null) {
+                    List<OrgOverviewRow> gradeRows = gradeResult.data().getRows() == null
+                            ? List.of() : gradeResult.data().getRows();
+                    gradeRows = gradeRows.stream()
+                            .filter(r -> r.getOrgName() != null && authorizedGrades.contains(r.getOrgName()))
+                            .collect(Collectors.toList());
+                    gradeResult.data().setRows(gradeRows);
+                }
+                return gradeResult;
+            }
             return overviewInternal(schoolId, semesterId, scopeType, scopeId, grade);
         }
 
@@ -310,19 +328,21 @@ public class AdminStatisticsService {
             return result;
         }
         int rowScopeType = result.data().getScopeType() == null ? ORG_COLLEGE : result.data().getScopeType();
-        Set<Long> authorized = scopeValidator.authorizedOrgIds(userId, rowScopeType, schoolId);
-        if (authorized == null) {
-            return result;
-        }
         List<OrgOverviewRow> rows = result.data().getRows() == null ? List.of() : result.data().getRows();
         if (rowScopeType == ORG_GRADE) {
-            // 年级行 orgId 恒为 0（resolveOverviewScopes 用 0L 占位），且年级授权为粗粒度
-            // （有任意年级授权即放行），authorizedOrgIds(6) 返回的是年级 scopeId 而非组织 id，
-            // 无法按 orgId 过滤，故此处仅在有年级/学校级授权（authorized 非空）时放行全部年级行。
-            if (authorized.isEmpty()) {
-                rows = List.of();
+            // 年级行 orgId 恒为 0（resolveOverviewScopes 用 0L 占位），orgName 即年级文本；
+            // 按教师授权的年级文本过滤行（null=管理员/学校级不限制，空集=无年级授权）
+            Set<String> authorizedGrades = scopeValidator.authorizedGradeTexts(userId, schoolId);
+            if (authorizedGrades != null) {
+                rows = rows.stream()
+                        .filter(r -> r.getOrgName() != null && authorizedGrades.contains(r.getOrgName()))
+                        .collect(Collectors.toList());
             }
         } else {
+            Set<Long> authorized = scopeValidator.authorizedOrgIds(userId, rowScopeType, schoolId);
+            if (authorized == null) {
+                return result;
+            }
             rows = rows.stream()
                     .filter(r -> r.getOrgId() != null && authorized.contains(r.getOrgId()))
                     .collect(Collectors.toList());
@@ -483,7 +503,8 @@ public class AdminStatisticsService {
         if (orgType == null) {
             orgType = ORG_CLASS;
         }
-        if (grade == null || grade.isBlank()) {
+        boolean gradeProvided = grade != null && !grade.isBlank();
+        if (!gradeProvided) {
             grade = resolvePrimaryGrade(userId, schoolId);
         }
 
@@ -493,6 +514,15 @@ public class AdminStatisticsService {
         if (!TEACHER_HEATMAP_METRICS.contains(metric)) {
             throw new BusinessException(ResultCode.PARAM_ERROR,
                     "metric 仅支持 gpa/award/practice/archive");
+        }
+
+        // 年级筛选：仅校验前端显式传入的 grade；默认年级由主职授权推导（可能来自班级/专业授权），
+        // 不做年级授权校验，避免教师同时持班级授权时默认年级被误拒。
+        // 教师持年级授权时，显式请求年级必须命中授权年级（无年级授权的教师不额外限制，
+        // 其可见行已由 authorizedOrgIds 限定）。
+        Set<String> gradeScopes = scopeValidator.authorizedGradeTexts(userId, schoolId);
+        if (gradeProvided && gradeScopes != null && !gradeScopes.isEmpty()) {
+            scopeValidator.ensureGradeInScope(userId, grade, schoolId);
         }
 
         // 指定 orgId：必须在教师授权范围内（学校级授权覆盖）
@@ -521,7 +551,7 @@ public class AdminStatisticsService {
      * 教师主职授权范围内主要年级（《教师端接口文档》11.3/12.5.4：grade 不传时的默认值）。
      * <p>
      * 取主职授权（is_primary=1，否则首个生效授权）推导：
-     * 班级(4) → 该班 grade；年级(6) → scopeId + "级"；
+     * 班级(4) → 该班 grade；年级(6) → scopeId 解析出的年级字典文本；
      * 专业(3)/学院(2)/学校(1) → 其下班级数量最多的年级，并列取年级较大者。
      * 无生效授权或无法推导返回 {@code null}（不按年级筛选）。
      */
@@ -539,7 +569,7 @@ public class AdminStatisticsService {
         }
         switch (primary.getScopeType()) {
             case ORG_GRADE:
-                return primary.getScopeId() + "级";
+                return scopeValidator.resolveGradeText(primary.getScopeId());
             case ORG_CLASS:
                 return clazzRepository.findById(primary.getScopeId()).map(Clazz::getGrade).orElse(null);
             case ORG_MAJOR:

@@ -3,14 +3,7 @@ package com.example.studentarchives.service.Lzw;
 import com.example.studentarchives.common.PageParam;
 import com.example.studentarchives.common.PageResult;
 import com.example.studentarchives.entity.log.SystemLog;
-import com.example.studentarchives.entity.org.Clazz;
-import com.example.studentarchives.entity.org.Major;
-import com.example.studentarchives.entity.user.RoleScope;
-import com.example.studentarchives.entity.user.StudentProfile;
 import com.example.studentarchives.entity.user.User;
-import com.example.studentarchives.repository.ClazzRepository;
-import com.example.studentarchives.repository.MajorRepository;
-import com.example.studentarchives.repository.StudentProfileRepository;
 import com.example.studentarchives.repository.SystemLogRepository;
 import com.example.studentarchives.repository.UserRepository;
 import com.example.studentarchives.service.Fmy.TeacherScopeValidator;
@@ -36,7 +29,6 @@ import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Collections;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -63,9 +55,6 @@ public class TeacherLogService {
 
     private final SystemLogRepository systemLogRepository;
     private final UserRepository userRepository;
-    private final StudentProfileRepository studentProfileRepository;
-    private final ClazzRepository clazzRepository;
-    private final MajorRepository majorRepository;
     private final AdminAuthService adminAuthService;
     private final TeacherScopeValidator scopeValidator;
     private final ObjectMapper objectMapper;
@@ -79,7 +68,7 @@ public class TeacherLogService {
 
         // null = admin 或学校级授权（不限定范围）
         Set<Long> authorized = resolveAuthorizedStudentIds(teacherId, schoolId);
-        Set<Long> gradeIds = resolveGradeStudentIds(query.getGrade());
+        Set<Long> gradeIds = resolveGradeStudentIds(query.getGrade(), schoolId);
         Set<Long> keywordUserIds = resolveKeywordUserIds(query.getKeyword());
 
         Specification<SystemLog> spec = buildSpec(query, teacherId, authorized, gradeIds, keywordUserIds);
@@ -94,68 +83,15 @@ public class TeacherLogService {
 
     /** 解析教师授权范围内学生 userId 集合；null=不限定（admin 或学校级授权），空集合=无授权 */
     private Set<Long> resolveAuthorizedStudentIds(Long teacherId, Long schoolId) {
-        if (isAdmin(teacherId)) {
-            return null;
-        }
-        List<RoleScope> scopes = scopeValidator.effectiveScopes(teacherId);
-        if (scopes.isEmpty()) {
-            return Set.of();
-        }
-        boolean schoolLevel = scopes.stream().anyMatch(s ->
-                Objects.equals(s.getScopeType(), 1) && Objects.equals(s.getScopeId(), schoolId));
-        if (schoolLevel) {
-            return null;
-        }
-        Set<Long> result = new HashSet<>();
-        for (RoleScope s : scopes) {
-            if (s.getScopeType() == null || s.getScopeId() == null) {
-                continue;
-            }
-            result.addAll(resolveScopeStudentIds(s.getScopeType(), s.getScopeId()));
-        }
-        return result;
-    }
-
-    /** 解析某范围类型下的学生 userId 列表（2=学院 3=专业 4=班级 6=年级） */
-    private List<Long> resolveScopeStudentIds(Integer scopeType, Long scopeId) {
-        List<Long> classIds;
-        switch (scopeType) {
-            case 2 -> {
-                List<Long> majorIds = majorRepository.findByCollegeIdIn(Set.of(scopeId)).stream()
-                        .map(Major::getId).filter(Objects::nonNull).toList();
-                classIds = majorIds.isEmpty() ? List.of()
-                        : clazzRepository.findByMajorIdIn(majorIds).stream()
-                                .map(Clazz::getId).filter(Objects::nonNull).toList();
-            }
-            case 3 -> classIds = clazzRepository.findByMajorId(scopeId).stream()
-                    .map(Clazz::getId).filter(Objects::nonNull).toList();
-            case 4 -> {
-                return studentProfileRepository.findByClassId(scopeId).stream()
-                        .map(StudentProfile::getUserId).filter(Objects::nonNull).toList();
-            }
-            case 6 -> classIds = clazzRepository.findByGrade(String.valueOf(scopeId)).stream()
-                    .map(Clazz::getId).filter(Objects::nonNull).toList();
-            default -> {
-                return List.of();
-            }
-        }
-        return classIds.isEmpty() ? List.of()
-                : studentProfileRepository.findByClassIdIn(classIds).stream()
-                        .map(StudentProfile::getUserId).filter(Objects::nonNull).toList();
+        return scopeValidator.authorizedStudentIds(teacherId, schoolId);
     }
 
     /** 年级筛选：解析年级对应的学生 userId 集合；null=无年级筛选 */
-    private Set<Long> resolveGradeStudentIds(String grade) {
+    private Set<Long> resolveGradeStudentIds(String grade, Long schoolId) {
         if (grade == null || grade.isBlank()) {
             return null;
         }
-        List<Long> classIds = clazzRepository.findByGrade(grade.trim()).stream()
-                .map(Clazz::getId).filter(Objects::nonNull).toList();
-        if (classIds.isEmpty()) {
-            return Set.of();
-        }
-        return studentProfileRepository.findByClassIdIn(classIds).stream()
-                .map(StudentProfile::getUserId).filter(Objects::nonNull).collect(Collectors.toSet());
+        return scopeValidator.gradeStudentIds(grade.trim(), schoolId);
     }
 
     /** 关键词筛选：解析姓名/学号命中的学生 userId 集合；null=无关键词筛选 */
@@ -166,11 +102,6 @@ public class TeacherLogService {
         String kw = keyword.trim();
         return userRepository.findByNameContainingOrUserNoContaining(kw, kw).stream()
                 .map(User::getId).filter(Objects::nonNull).collect(Collectors.toSet());
-    }
-
-    private boolean isAdmin(Long userId) {
-        AdminAuthService.OperatorRole role = adminAuthService.resolveOperatorRole(userId);
-        return role != null && role.isAdmin();
     }
 
     // ==================== Specification 构建 ====================

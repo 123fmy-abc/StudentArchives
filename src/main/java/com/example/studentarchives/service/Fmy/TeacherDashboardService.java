@@ -75,6 +75,7 @@ public class TeacherDashboardService {
     private static final int SCOPE_COLLEGE = 2;
     private static final int SCOPE_MAJOR = 3;
     private static final int SCOPE_CLASS = 4;
+    private static final int SCOPE_GRADE = 6;
 
     /** ISO 8601 带时区格式：2026-07-01T10:00:00+08:00 */
     private static final DateTimeFormatter ISO_WITH_ZONE =
@@ -147,7 +148,7 @@ public class TeacherDashboardService {
 
     /**
      * 授权范围 → 响应项：按 scopeType+scopeId 去重（同一范围多角色只展示一次），
-     * 解析范围名称（班级/专业/学院），学校级与年级级授权不在此展开。
+     * 解析范围名称（班级/专业/学院/年级），学校级授权不在此展开。
      */
     private List<ScopeItem> buildScopeItems(List<RoleScope> scopes) {
         Map<String, RoleScope> deduped = new LinkedHashMap<>();
@@ -168,7 +169,7 @@ public class TeacherDashboardService {
         return items;
     }
 
-    /** 按范围类型解析范围名称（班级/专业/学院；其他类型返回 null） */
+    /** 按范围类型解析范围名称（班级/专业/学院/年级；其他类型返回 null） */
     private String resolveScopeName(RoleScope scope) {
         Long scopeId = scope.getScopeId();
         if (scopeId == null) {
@@ -178,6 +179,7 @@ public class TeacherDashboardService {
             case SCOPE_COLLEGE -> collegeRepository.findById(scopeId).map(College::getName).orElse(null);
             case SCOPE_MAJOR -> majorRepository.findById(scopeId).map(Major::getName).orElse(null);
             case SCOPE_CLASS -> clazzRepository.findById(scopeId).map(Clazz::getName).orElse(null);
+            case SCOPE_GRADE -> scopeValidator.resolveGradeText(scopeId);
             default -> null;
         };
     }

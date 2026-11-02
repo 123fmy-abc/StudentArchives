@@ -33,6 +33,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 import java.util.Set;
@@ -96,8 +97,8 @@ public class TeacherStatisticsService {
      * @param scopeType  范围类型：1/2/3/4/6
      * @param scopeId    范围 ID（scopeType=2/3/4 时必填；scopeType=6 时可不填，用 grade 定位年级）
      * @param semesterId 学期 ID（不传取当前学期）
-     * @param grade      年级（scopeType=6 时必填，如 {@code 2024级}；与 7.1/12.4.2 的 grade 口径一致。
-     *                   未传时按 role_scopes 推导，scopeId 视为年级数字拼 {@code N级}）
+     * @param grade      年级（scopeType=6 时可空，如 {@code 2024级}；与 7.1/12.4.2 的 grade 口径一致。
+     *                   未传时按 role_scopes 的年级授权解析：scopeId 指向 grade 字典项，dict_code 即年级文本）
      * @return 看板数据（cacheHit 标记快照来源，响应头 X-Cache-Hit 使用）
      */
     @Transactional(readOnly = true)
@@ -117,15 +118,13 @@ public class TeacherStatisticsService {
         }
         scopeValidator.ensureOrgInScope(userId, scopeType, scopeId, schoolId);
 
-        // 年级范围：grade 字符串优先（与 7.1/12.4.2 一致，精确匹配 classes.grade 如 "2024级"）；
-        // 未传时按 role_scopes 推导，scopeId 视为年级数字拼 "N级"。
+        // 年级范围：grade 字符串优先（精确匹配 classes.grade 如 "2024级"）；
+        // 未传时按 role_scopes 的年级授权解析（scopeId 指向 grade 字典项）。
         if (scopeType == SCOPE_GRADE) {
             if (grade == null || grade.isBlank()) {
-                grade = scopeId != null ? scopeId + "级" : null;
+                grade = scopeValidator.resolveGradeText(scopeId);
             }
-            if (grade == null || grade.isBlank()) {
-                throw new BusinessException(ResultCode.PARAM_MISSING, "scopeType=6(年级) 时 grade 必填");
-            }
+            scopeValidator.ensureGradeInScope(userId, grade, schoolId);
         }
 
         Long effSemesterId = semesterId;
@@ -268,11 +267,8 @@ public class TeacherStatisticsService {
                                 .map(Clazz::getId).collect(Collectors.toList());
                 break;
             case SCOPE_GRADE:
-                // 年级：按班级 grade 精确匹配（如 "2024级"），多个班级共享同一年级
-                classIds = (grade == null || grade.isBlank()) ? List.of()
-                        : clazzRepository.findByGrade(grade).stream()
-                                .map(Clazz::getId).collect(Collectors.toList());
-                break;
+                // 年级：按班级 grade 精确匹配（如 "2024级"），统一走 TeacherScopeValidator（限定本校）
+                return new ArrayList<>(scopeValidator.gradeStudentIds(grade, schoolId));
             case SCOPE_CLASS:
                 return scopeId == null ? List.of()
                         : studentProfileRepository.findByClassId(scopeId).stream()
@@ -338,7 +334,7 @@ public class TeacherStatisticsService {
                 return scopeId != null ? clazzRepository.findById(scopeId).map(Clazz::getName).orElse(null) : null;
             case SCOPE_GRADE:
                 return grade != null && !grade.isBlank() ? grade
-                        : scopeId != null ? scopeId + "级" : "年级";
+                        : scopeId != null ? scopeValidator.resolveGradeText(scopeId) : "年级";
             default:
                 return null;
         }

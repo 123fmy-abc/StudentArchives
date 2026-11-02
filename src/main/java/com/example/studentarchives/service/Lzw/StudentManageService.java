@@ -99,7 +99,7 @@ public class StudentManageService {
 
         // 年级筛选
         if (grade != null && !grade.isBlank()) {
-            Set<Long> gradeSet = new HashSet<>(resolveGradeStudentIds(grade));
+            Set<Long> gradeSet = new HashSet<>(resolveGradeStudentIds(grade, schoolId));
             candidate = candidate == null ? gradeSet : intersect(candidate, gradeSet);
         }
 
@@ -167,74 +167,19 @@ public class StudentManageService {
 
     // ==================== 私有：范围解析 ====================
 
-    /** 解析教师授权范围内学生 userId 集合；null=不限定（admin 或学校级授权），空集合=无授权 */
+    /** 解析教师授权范围内学生 userId 集合；统一走 {@link TeacherScopeValidator}，null=不限定 */
     private Set<Long> resolveAuthorizedStudentIds(Long teacherId, Long schoolId) {
-        if (isAdmin(teacherId)) {
-            return null;
-        }
-        List<RoleScope> scopes = scopeValidator.effectiveScopes(teacherId);
-        if (scopes.isEmpty()) {
-            return Set.of();
-        }
-        boolean schoolLevel = scopes.stream().anyMatch(s ->
-                Objects.equals(s.getScopeType(), 1) && Objects.equals(s.getScopeId(), schoolId));
-        if (schoolLevel) {
-            return null;
-        }
-        Set<Long> result = new HashSet<>();
-        for (RoleScope s : scopes) {
-            if (s.getScopeType() == null || s.getScopeId() == null) {
-                continue;
-            }
-            result.addAll(resolveScopeStudentIds(s.getScopeType(), s.getScopeId(), schoolId));
-        }
-        return result;
+        return scopeValidator.authorizedStudentIds(teacherId, schoolId);
     }
 
-    /** 解析某范围类型下的学生 userId 列表（1=学校 2=学院 3=专业 4=班级 6=年级） */
+    /** 解析某范围类型下的学生 userId 列表（统一走 {@link TeacherScopeValidator}） */
     private List<Long> resolveScopeStudentIds(Integer scopeType, Long scopeId, Long schoolId) {
-        if (scopeType == null || scopeId == null) {
-            return List.of();
-        }
-        List<Long> classIds;
-        switch (scopeType) {
-            case 1 -> {
-                return studentProfileRepository.findBySchoolId(schoolId).stream()
-                        .map(StudentProfile::getUserId).filter(Objects::nonNull).toList();
-            }
-            case 2 -> {
-                List<Long> majorIds = majorRepository.findByCollegeIdIn(Set.of(scopeId)).stream()
-                        .map(Major::getId).filter(Objects::nonNull).toList();
-                classIds = majorIds.isEmpty() ? List.of()
-                        : clazzRepository.findByMajorIdIn(majorIds).stream()
-                                .map(Clazz::getId).filter(Objects::nonNull).toList();
-            }
-            case 3 -> classIds = clazzRepository.findByMajorId(scopeId).stream()
-                    .map(Clazz::getId).filter(Objects::nonNull).toList();
-            case 4 -> {
-                return studentProfileRepository.findByClassId(scopeId).stream()
-                        .map(StudentProfile::getUserId).filter(Objects::nonNull).toList();
-            }
-            case 6 -> classIds = clazzRepository.findByGrade(String.valueOf(scopeId)).stream()
-                    .map(Clazz::getId).filter(Objects::nonNull).toList();
-            default -> {
-                return List.of();
-            }
-        }
-        return classIds.isEmpty() ? List.of()
-                : studentProfileRepository.findByClassIdIn(classIds).stream()
-                        .map(StudentProfile::getUserId).filter(Objects::nonNull).toList();
+        return new ArrayList<>(scopeValidator.scopeStudentIds(scopeType, scopeId, schoolId));
     }
 
-    /** 年级筛选：解析年级对应的学生 userId 列表 */
-    private List<Long> resolveGradeStudentIds(String grade) {
-        List<Long> classIds = clazzRepository.findByGrade(grade.trim()).stream()
-                .map(Clazz::getId).filter(Objects::nonNull).toList();
-        if (classIds.isEmpty()) {
-            return List.of();
-        }
-        return studentProfileRepository.findByClassIdIn(classIds).stream()
-                .map(StudentProfile::getUserId).filter(Objects::nonNull).toList();
+    /** 年级筛选：解析本校该年级对应的学生 userId 列表 */
+    private List<Long> resolveGradeStudentIds(String grade, Long schoolId) {
+        return new ArrayList<>(scopeValidator.gradeStudentIds(grade, schoolId));
     }
 
     private boolean isAdmin(Long userId) {

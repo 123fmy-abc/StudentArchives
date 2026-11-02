@@ -22,7 +22,6 @@ import com.example.studentarchives.entity.org.College;
 import com.example.studentarchives.entity.org.Major;
 import com.example.studentarchives.entity.org.School;
 import com.example.studentarchives.entity.org.Semester;
-import com.example.studentarchives.entity.user.RoleScope;
 import com.example.studentarchives.entity.user.StudentProfile;
 import com.example.studentarchives.entity.user.User;
 import com.example.studentarchives.entity.user.UserContactInfo;
@@ -47,7 +46,6 @@ import com.example.studentarchives.repository.ExportTemplateRepository;
 import com.example.studentarchives.repository.IndicatorRuleVersionRepository;
 import com.example.studentarchives.repository.MajorRepository;
 import com.example.studentarchives.repository.PortraitEvaluationScoreRepository;
-import com.example.studentarchives.repository.RoleScopeRepository;
 import com.example.studentarchives.repository.SchoolRepository;
 import com.example.studentarchives.repository.SemesterRepository;
 import com.example.studentarchives.repository.StudentProfileRepository;
@@ -182,7 +180,7 @@ public class AdminExportService {
             DateTimeFormatter.ofPattern("yyyyMMdd");
 
     private final AdminAuthService adminAuthService;
-    private final RoleScopeRepository roleScopeRepository;
+    private final TeacherScopeValidator scopeValidator;
     private final ExportJobRepository exportJobRepository;
     private final ExportOperationLogRepository exportOperationLogRepository;
     private final AnonymizationMapRepository anonymizationMapRepository;
@@ -321,7 +319,7 @@ public class AdminExportService {
     public ArchiveExportResponse submitArchiveExportByTeacher(Long userId, ArchiveExportRequest request) {
         adminAuthService.requireAdminOrPermission(userId, PERMISSION_EXPORT_EXECUTE);
         Long schoolId = adminAuthService.getOperatorSchoolId(userId);
-        validateTeacherExportScope(userId, request.getScopeType(), request.getScopeId(), schoolId);
+        validateTeacherExportScope(userId, request, schoolId);
         return doSubmitArchiveExport(userId, schoolId, request);
     }
 
@@ -377,60 +375,22 @@ public class AdminExportService {
     /**
      * 校验教师端导出的请求范围在教师 {@code role_scopes} 授权范围内，越权返回 20005 无访问权限。
      * <p>
-     * 范围匹配口径复用 {@code CommonService#canAccessFile}：仅启用状态 + 生效期内
-     * （valid_from/valid_until）的 role_scopes。规则：
+     * 统一收敛到 {@link TeacherScopeValidator}（仅启用状态 + 生效期内的 role_scopes）：
      * <ul>
      *   <li>学校级授权（scopeType=1，scopeId=学校）：覆盖校内全部范围；</li>
      *   <li>学院(2)/专业(3)/班级(4)：按同类型 scopeId 严格匹配；</li>
-     *   <li>年级(6)：粗粒度校验——持有生效中的年级级授权即放行（与系统既有年级范围处理口径一致）。</li>
+     *   <li>年级(6)：请求 grade 必须命中教师授权的年级（scopeId 指向 grade 字典项），
+     *       不再“存在年级授权即放行”。</li>
      * </ul>
      * 学期维度（semester_id）不在导出范围校验中强制匹配——导出是跨学期聚合操作，
      * 学期作为筛选条件而非授权维度。
      */
-    private void validateTeacherExportScope(Long userId, Integer scopeType, Long scopeId, Long schoolId) {
-        List<RoleScope> scopes = roleScopeRepository.findByUserIdAndStatus(userId, 1);
-        LocalDate today = LocalDate.now();
-        for (RoleScope scope : scopes) {
-            if (scope.getScopeType() == null || scope.getScopeId() == null) {
-                continue;
-            }
-            if (!isScopeInEffect(scope, today)) {
-                continue;
-            }
-            // 学校级授权：scopeId 匹配学校即覆盖校内全部范围
-            if (Objects.equals(scope.getScopeType(), SCOPE_SCHOOL)
-                    && Objects.equals(scope.getScopeId(), schoolId)) {
-                return;
-            }
-            // 学院/专业/班级：按同类型 scopeId 严格匹配
-            if ((Objects.equals(scope.getScopeType(), SCOPE_COLLEGE)
-                    || Objects.equals(scope.getScopeType(), SCOPE_MAJOR)
-                    || Objects.equals(scope.getScopeType(), SCOPE_CLASS))
-                    && Objects.equals(scope.getScopeType(), scopeType)
-                    && Objects.equals(scope.getScopeId(), scopeId)) {
-                return;
-            }
+    private void validateTeacherExportScope(Long userId, ArchiveExportRequest request, Long schoolId) {
+        if (Objects.equals(request.getScopeType(), SCOPE_GRADE)) {
+            scopeValidator.ensureGradeInScope(userId, request.getGrade(), schoolId);
+            return;
         }
-        // 年级（6）：粗粒度校验（存在生效中的年级级授权即放行）
-        if (Objects.equals(scopeType, SCOPE_GRADE)) {
-            boolean hasGradeScope = scopes.stream().anyMatch(s ->
-                    Objects.equals(s.getScopeType(), SCOPE_GRADE) && isScopeInEffect(s, today));
-            if (hasGradeScope) {
-                return;
-            }
-        }
-        throw new BusinessException(ResultCode.ACCESS_DENIED, "无访问权限");
-    }
-
-    /** 授权生效期校验：valid_from/valid_until 未设置视为永久有效 */
-    private boolean isScopeInEffect(RoleScope scope, LocalDate today) {
-        if (scope.getValidFrom() != null && today.isBefore(scope.getValidFrom())) {
-            return false;
-        }
-        if (scope.getValidUntil() != null && today.isAfter(scope.getValidUntil())) {
-            return false;
-        }
-        return true;
+        scopeValidator.ensureOrgInScope(userId, request.getScopeType(), request.getScopeId(), schoolId);
     }
 
     /**
@@ -576,6 +536,13 @@ public class AdminExportService {
             // 1. 解析目标学生
             List<Long> studentIds = resolveStudentIds(schoolId, request.getScopeType(),
                     request.getScopeId(), request.getGrade());
+
+            // 授权兜底：执行期按操作人当前授权学生集合求交，防止提交后授权变更或绕过提交校验
+            Set<Long> authorizedIds = scopeValidator.authorizedStudentIds(job.getOperatorId(), schoolId);
+            if (authorizedIds != null) {
+                studentIds = studentIds.stream().filter(authorizedIds::contains).collect(Collectors.toList());
+            }
+
             if (studentIds.isEmpty()) {
                 throw new BusinessException(ResultCode.DATA_NOT_EXIST, "目标范围内没有可导出的学生");
             }
@@ -1325,6 +1292,13 @@ public class AdminExportService {
 
             // 1. 解析目标学生
             List<Long> studentIds = resolveStudentIds(schoolId, request);
+
+            // 授权兜底：执行期按操作人当前授权学生集合求交（admin/学校级为 null，不限制）
+            Set<Long> authorizedIds = scopeValidator.authorizedStudentIds(job.getOperatorId(), schoolId);
+            if (authorizedIds != null) {
+                studentIds = studentIds.stream().filter(authorizedIds::contains).collect(Collectors.toList());
+            }
+
             if (studentIds.isEmpty()) {
                 throw new BusinessException(ResultCode.DATA_NOT_EXIST, "目标范围内没有可导出的学生");
             }

@@ -25,7 +25,7 @@ import java.util.Set;
  * <ul>
  *   <li>学校由当前登录用户推导（{@code getOperatorSchoolId}），不接受前端传入 schoolId；</li>
  *   <li>授权学生范围由 {@link TeacherScopeValidator#authorizedStudentIds} 按 {@code role_scopes}
- *       展开（学院/专业/班级按组织链下沉到学生；学校级/年级级授权为全校；admin 不限制）；</li>
+ *       展开（学院/专业/班级按组织链下沉到学生；年级按 classes.grade 精确匹配并限定本校；学校级授权为全校；admin 不限制）；</li>
  *   <li>前端传入的 grade/collegeId/majorId/classId 只作为**缩小**条件，与授权学生集合求交，
  *       无法借组织参数越权看到范围外学生。</li>
  * </ul>
@@ -109,7 +109,7 @@ public class TeacherArchiveService {
     /**
      * 取教师授权学生集合，无任何生效授权时抛 20005。
      * <p>
-     * {@code null} 表示不限制（admin 或学校级/年级级授权），此时不拦截。
+     * {@code null} 表示不限制（admin 或学校级授权），此时不拦截。
      *
      * @return 授权学生 userId 集合；null=不限制（全校）
      */

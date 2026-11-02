@@ -1,12 +1,16 @@
 package com.example.studentarchives.service.Fmy;
 
 import com.example.studentarchives.common.ResultCode;
+import com.example.studentarchives.entity.foundation.Dictionary;
 import com.example.studentarchives.entity.org.Clazz;
+import com.example.studentarchives.entity.org.College;
 import com.example.studentarchives.entity.org.Major;
 import com.example.studentarchives.entity.user.RoleScope;
 import com.example.studentarchives.entity.user.StudentProfile;
 import com.example.studentarchives.exception.BusinessException;
 import com.example.studentarchives.repository.ClazzRepository;
+import com.example.studentarchives.repository.CollegeRepository;
+import com.example.studentarchives.repository.DictionaryRepository;
 import com.example.studentarchives.repository.MajorRepository;
 import com.example.studentarchives.repository.RoleScopeRepository;
 import com.example.studentarchives.repository.StudentProfileRepository;
@@ -29,7 +33,8 @@ import java.util.stream.Collectors;
  * <ul>
  *   <li>学校级授权（scopeType=1，scopeId=学校）：覆盖校内全部范围；</li>
  *   <li>学院(2)/专业(3)/班级(4)：按同类型 scopeId 严格匹配；</li>
- *   <li>年级(6)：粗粒度校验——存在生效中的年级级授权即放行（与 {@code AdminExportService} 导出范围校验口径一致）。</li>
+ *   <li>年级(6)：scopeId 指向 grade 字典项（dict_type=grade），按 dict_code 精确匹配
+ *       {@code classes.grade}（如 "2024级"），并限定在本校班级内，不做全校放行。</li>
  * </ul>
  * admin 角色绕过范围校验（由调用方 {@code AdminAuthService#requireAdminOrPermission} 先行放行）。
  * 越权统一返回 20005 无访问权限。
@@ -45,11 +50,16 @@ public class TeacherScopeValidator {
     private static final int SCOPE_CLASS = 4;
     private static final int SCOPE_GRADE = 6;
 
+    /** 年级字典类型：scope_type=6 时 scope_id 指向该类型字典项的主键 */
+    private static final String GRADE_DICT_TYPE = "grade";
+
     private final AdminAuthService adminAuthService;
     private final RoleScopeRepository roleScopeRepository;
     private final StudentProfileRepository studentProfileRepository;
     private final ClazzRepository clazzRepository;
     private final MajorRepository majorRepository;
+    private final CollegeRepository collegeRepository;
+    private final DictionaryRepository dictionaryRepository;
 
     /**
      * 校验教师授权范围内是否存在指定学生（studentId），越权返回 20005。
@@ -67,16 +77,18 @@ public class TeacherScopeValidator {
         }
         StudentContext ctx = resolveStudentContext(studentId);
         List<RoleScope> scopes = effectiveScopes(teacherId);
-        // 年级授权（粗粒度）：存在生效中的年级级授权即放行
-        if (scopes.stream().anyMatch(s -> Objects.equals(s.getScopeType(), SCOPE_GRADE))) {
-            return;
-        }
         for (RoleScope s : scopes) {
             if (s.getScopeType() == null || s.getScopeId() == null) {
                 continue;
             }
             // 学校级授权：scopeId 匹配学校即覆盖校内全部学生
             if (Objects.equals(s.getScopeType(), SCOPE_SCHOOL) && Objects.equals(s.getScopeId(), schoolId)) {
+                return;
+            }
+            // 年级：授权年级与该学生所在班级的 grade 精确匹配，且学生必须属于当前学校
+            if (Objects.equals(s.getScopeType(), SCOPE_GRADE) && ctx.classGrade() != null
+                    && Objects.equals(ctx.schoolId(), schoolId)
+                    && Objects.equals(resolveGradeText(s.getScopeId()), ctx.classGrade())) {
                 return;
             }
             // 班级
@@ -101,8 +113,9 @@ public class TeacherScopeValidator {
     /**
      * 校验指定组织范围（scopeType / scopeId）在教师授权范围内，越权返回 20005。
      * <p>
-     * scopeType=1（学校）需持有匹配学校的学校级授权；2/3/4 按同类型 scopeId 严格匹配；
-     * 6（年级）粗粒度放行。scopeType 为空视为不限定（调用方自行决定默认范围）。
+     * scopeType=2/3/4 按同类型 scopeId 严格匹配；6（年级）在 scopeId 有值时按授权 scopeId
+     * 严格匹配，scopeId 为空（仅传 grade 字符串）时由 {@link #ensureGradeInScope} 校验。
+     * scopeType 为空视为不限定（调用方自行决定默认范围）。
      *
      * @param teacherId 当前教师用户 ID
      * @param scopeType 范围类型：1/2/3/4/6
@@ -118,8 +131,14 @@ public class TeacherScopeValidator {
         }
         List<RoleScope> scopes = effectiveScopes(teacherId);
         if (Objects.equals(scopeType, SCOPE_GRADE)) {
-            boolean hasGrade = scopes.stream().anyMatch(s -> Objects.equals(s.getScopeType(), SCOPE_GRADE));
-            if (hasGrade) {
+            // 未指定具体年级（仅传 grade 字符串）时，由 ensureGradeInScope 做字符串级校验
+            if (scopeId == null || scopeId <= 0) {
+                return;
+            }
+            boolean matched = scopes.stream().anyMatch(s ->
+                    Objects.equals(s.getScopeType(), SCOPE_GRADE)
+                            && Objects.equals(s.getScopeId(), scopeId));
+            if (matched) {
                 return;
             }
             throw new BusinessException(ResultCode.ACCESS_DENIED, "无访问权限");
@@ -194,10 +213,10 @@ public class TeacherScopeValidator {
      * 返回教师在授权范围内的全部学生 userId 集合。
      * <p>
      * 用于教师端列表/汇总按 {@code role_scopes} 限定可见学生：
-     * 返回 {@code null} 表示不限制（admin 或学校级/年级级授权，覆盖全校）；
+     * 返回 {@code null} 表示不限制（admin 或学校级授权，覆盖全校）；
      * 返回空集合表示无任何授权；否则为各条生效授权的学生并集。
-     * 口径与 {@code ensureStudentInScope} 一致（学院/专业/班级按组织链展开，
-     * 年级授权为粗粒度，无法按 id 精确圈定，按全校处理）。
+     * 口径与 {@code ensureStudentInScope} 一致：学院/专业/班级按组织链展开，
+     * 年级按 {@code classes.grade} 精确匹配并限定本校。
      *
      * @param teacherId 当前教师用户 ID
      * @param schoolId  操作人所属学校 ID
@@ -213,9 +232,7 @@ public class TeacherScopeValidator {
         }
         boolean schoolLevel = scopes.stream().anyMatch(s ->
                 Objects.equals(s.getScopeType(), SCOPE_SCHOOL) && Objects.equals(s.getScopeId(), schoolId));
-        // 年级授权为粗粒度（与 ensureStudentInScope 的年级放行一致），无法按 id 圈定，按全校处理
-        boolean gradeLevel = scopes.stream().anyMatch(s -> Objects.equals(s.getScopeType(), SCOPE_GRADE));
-        if (schoolLevel || gradeLevel) {
+        if (schoolLevel) {
             return null;
         }
         Set<Long> result = new LinkedHashSet<>();
@@ -223,13 +240,82 @@ public class TeacherScopeValidator {
             if (s.getScopeType() == null || s.getScopeId() == null) {
                 continue;
             }
-            result.addAll(resolveScopeStudentIds(s.getScopeType(), s.getScopeId()));
+            if (Objects.equals(s.getScopeType(), SCOPE_GRADE)) {
+                result.addAll(gradeStudentIds(resolveGradeText(s.getScopeId()), schoolId));
+                continue;
+            }
+            result.addAll(scopeStudentIds(s.getScopeType(), s.getScopeId(), schoolId));
         }
         return result;
     }
 
-    /** 解析单条授权范围（学院/专业/班级）下的学生 userId 集合 */
-    private Set<Long> resolveScopeStudentIds(Integer scopeType, Long scopeId) {
+    /**
+     * 校验请求年级在教师授权年级内：管理员/学校级授权放行，否则必须命中某条年级授权。
+     *
+     * @param teacherId 当前教师用户 ID
+     * @param grade     请求年级文本（如 {@code 2024级}）
+     * @param schoolId  操作人所属学校 ID
+     */
+    public void ensureGradeInScope(Long teacherId, String grade, Long schoolId) {
+        if (isAdmin(teacherId)) {
+            return;
+        }
+        if (grade == null || grade.isBlank()) {
+            throw new BusinessException(ResultCode.PARAM_MISSING, "年级不能为空");
+        }
+        List<RoleScope> scopes = effectiveScopes(teacherId);
+        boolean schoolLevel = scopes.stream().anyMatch(s ->
+                Objects.equals(s.getScopeType(), SCOPE_SCHOOL) && Objects.equals(s.getScopeId(), schoolId));
+        if (schoolLevel) {
+            return;
+        }
+        Set<String> authorizedGrades = authorizedGradeTexts(teacherId, schoolId);
+        if (authorizedGrades != null && authorizedGrades.contains(grade.trim())) {
+            return;
+        }
+        throw new BusinessException(ResultCode.ACCESS_DENIED, "无访问权限");
+    }
+
+    /**
+     * 返回教师年级授权的年级文本集合。
+     *
+     * @param teacherId 当前教师用户 ID
+     * @param schoolId  操作人所属学校 ID
+     * @return null=不限制（管理员/学校级授权）；空集合=无年级授权
+     */
+    public Set<String> authorizedGradeTexts(Long teacherId, Long schoolId) {
+        if (isAdmin(teacherId)) {
+            return null;
+        }
+        List<RoleScope> scopes = effectiveScopes(teacherId);
+        boolean schoolLevel = scopes.stream().anyMatch(s ->
+                Objects.equals(s.getScopeType(), SCOPE_SCHOOL) && Objects.equals(s.getScopeId(), schoolId));
+        if (schoolLevel) {
+            return null;
+        }
+        return scopes.stream()
+                .filter(s -> Objects.equals(s.getScopeType(), SCOPE_GRADE) && s.getScopeId() != null)
+                .map(s -> resolveGradeText(s.getScopeId()))
+                .filter(Objects::nonNull)
+                .collect(Collectors.toSet());
+    }
+
+    /**
+     * 解析单条授权范围下的学生 userId 集合（1=学校 2=学院 3=专业 4=班级 6=年级）。
+     * 学校级按 schoolId 取全校；年级按 scopeId 解析为年级文本后匹配本校班级。
+     */
+    public Set<Long> scopeStudentIds(Integer scopeType, Long scopeId, Long schoolId) {
+        if (scopeType == null || scopeId == null) {
+            return Set.of();
+        }
+        if (Objects.equals(scopeType, SCOPE_SCHOOL)) {
+            return studentProfileRepository.findBySchoolId(schoolId).stream()
+                    .map(StudentProfile::getUserId)
+                    .collect(Collectors.toSet());
+        }
+        if (Objects.equals(scopeType, SCOPE_GRADE)) {
+            return gradeStudentIds(resolveGradeText(scopeId), schoolId);
+        }
         List<Long> classIds;
         switch (scopeType) {
             case SCOPE_COLLEGE -> {
@@ -251,6 +337,57 @@ public class TeacherScopeValidator {
                 .collect(Collectors.toSet());
     }
 
+    /** 解析年级文本（如 "2024级"）在本校对应的学生 userId 集合 */
+    public Set<Long> gradeStudentIds(String grade, Long schoolId) {
+        Set<Long> classIds = resolveGradeClassIds(grade, schoolId);
+        if (classIds.isEmpty()) {
+            return Set.of();
+        }
+        return studentProfileRepository.findByClassIdIn(classIds).stream()
+                .map(StudentProfile::getUserId)
+                .collect(Collectors.toSet());
+    }
+
+    /**
+     * 解析年级授权 scopeId → {@code classes.grade} 文本。
+     * <p>
+     * 口径：scopeId 指向 {@code dictionaries} 中 dict_type=grade 的主键，dict_code 即年级文本
+     * （如 "2024级"，见 sql/seed_grade_dict.sql）。兼容历史数据：字典未命中时按
+     * “年份数字 → N级” 兜底（如 scopeId=2024 → "2024级"）。
+     */
+    public String resolveGradeText(Long scopeId) {
+        if (scopeId == null) {
+            return null;
+        }
+        Dictionary dict = dictionaryRepository.findById(scopeId).orElse(null);
+        if (dict != null && GRADE_DICT_TYPE.equals(dict.getDictType())
+                && Integer.valueOf(1).equals(dict.getStatus())) {
+            return dict.getDictCode();
+        }
+        return scopeId + "级";
+    }
+
+    /** 解析年级文本在本校对应的班级 id 集合（经 major → college → school 限定，避免跨校串数据） */
+    public Set<Long> resolveGradeClassIds(String grade, Long schoolId) {
+        if (grade == null || grade.isBlank() || schoolId == null) {
+            return Set.of();
+        }
+        List<Long> collegeIds = collegeRepository.findBySchoolId(schoolId).stream()
+                .map(College::getId).toList();
+        if (collegeIds.isEmpty()) {
+            return Set.of();
+        }
+        List<Long> majorIds = majorRepository.findByCollegeIdIn(collegeIds).stream()
+                .map(Major::getId).toList();
+        if (majorIds.isEmpty()) {
+            return Set.of();
+        }
+        return clazzRepository.findByGrade(grade.trim()).stream()
+                .filter(c -> c.getMajorId() != null && majorIds.contains(c.getMajorId()))
+                .map(Clazz::getId)
+                .collect(Collectors.toSet());
+    }
+
     /** 教师生效中的授权范围快照（status=1 + 生效期内） */
     public List<RoleScope> effectiveScopes(Long teacherId) {
         List<RoleScope> scopes = roleScopeRepository.findByUserIdAndStatus(teacherId, 1);
@@ -266,13 +403,15 @@ public class TeacherScopeValidator {
         Clazz clazz = classId != null ? clazzRepository.findById(classId).orElse(null) : null;
         Long majorId = clazz != null ? clazz.getMajorId() : null;
         Major major = majorId != null ? majorRepository.findById(majorId).orElse(null) : null;
-        return new StudentContext(classId, majorId,
-                major != null ? major.getCollegeId() : null,
+        Long collegeId = major != null ? major.getCollegeId() : null;
+        College college = collegeId != null ? collegeRepository.findById(collegeId).orElse(null) : null;
+        return new StudentContext(classId, majorId, collegeId,
+                college != null ? college.getSchoolId() : null,
                 clazz != null ? clazz.getGrade() : null);
     }
 
     /** 学生组织归属上下文 */
-    public record StudentContext(Long classId, Long majorId, Long collegeId, String classGrade) {
+    public record StudentContext(Long classId, Long majorId, Long collegeId, Long schoolId, String classGrade) {
     }
 
     private boolean isAdmin(Long userId) {

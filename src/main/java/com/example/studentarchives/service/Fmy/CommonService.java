@@ -116,6 +116,7 @@ public class CommonService {
     private final StudentProfileRepository studentProfileRepository;
     private final ClazzRepository clazzRepository;
     private final MajorRepository majorRepository;
+    private final TeacherScopeValidator scopeValidator;
     private final RoleScopeRepository roleScopeRepository;
     private final ExportOperationLogRepository exportOperationLogRepository;
     private final ObjectMapper objectMapper;
@@ -843,7 +844,16 @@ public class CommonService {
                 case 4 -> { // 班级
                     if (scopeId.equals(classId)) return true;
                 }
-                default -> { // 课程(5)/年级(6) 暂不据此放行
+                case 6 -> { // 年级：授权年级与归属学生班级的 grade 精确匹配，且学生须与操作人同校
+                    User operator = userRepository.findById(operatorId).orElse(null);
+                    Clazz gradeClazz = classId != null ? clazzRepository.findById(classId).orElse(null) : null;
+                    if (operator != null && Objects.equals(operator.getSchoolId(), schoolId)
+                            && gradeClazz != null
+                            && Objects.equals(scopeValidator.resolveGradeText(scopeId), gradeClazz.getGrade())) {
+                        return true;
+                    }
+                }
+                default -> { // 课程(5) 暂不据此放行
                 }
             }
         }

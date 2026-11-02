@@ -4,6 +4,7 @@ import com.example.studentarchives.common.PageParam;
 import com.example.studentarchives.common.PageResult;
 import com.example.studentarchives.common.ResultCode;
 import com.example.studentarchives.entity.log.LoginLog;
+import com.example.studentarchives.entity.foundation.Dictionary;
 import com.example.studentarchives.entity.org.Clazz;
 import com.example.studentarchives.entity.org.College;
 import com.example.studentarchives.entity.org.Major;
@@ -20,6 +21,7 @@ import com.example.studentarchives.enums.ScopeTypeEnum;
 import com.example.studentarchives.exception.BusinessException;
 import com.example.studentarchives.repository.ClazzRepository;
 import com.example.studentarchives.repository.CollegeRepository;
+import com.example.studentarchives.repository.DictionaryRepository;
 import com.example.studentarchives.repository.LoginLogRepository;
 import com.example.studentarchives.repository.MajorRepository;
 import com.example.studentarchives.repository.RoleRepository;
@@ -102,6 +104,7 @@ public class UserManageService {
     private final ClazzRepository clazzRepository;
     private final MajorRepository majorRepository;
     private final CollegeRepository collegeRepository;
+    private final DictionaryRepository dictionaryRepository;
     private final SchoolRepository schoolRepository;
     private final LoginLogRepository loginLogRepository;
     private final PasswordEncoder passwordEncoder;
@@ -576,6 +579,9 @@ public class UserManageService {
             case 2 -> collegeMap.containsKey(scopeId) ? collegeMap.get(scopeId).getName() : null;
             case 3 -> majorMap.containsKey(scopeId) ? majorMap.get(scopeId).getName() : null;
             case 4 -> clazzMap.containsKey(scopeId) ? clazzMap.get(scopeId).getName() : null;
+            case 6 -> dictionaryRepository.findById(scopeId)
+                    .filter(d -> "grade".equals(d.getDictType()))
+                    .map(Dictionary::getDictCode).orElse(null);
             default -> null;
         };
     }
@@ -612,7 +618,7 @@ public class UserManageService {
         return scopeRoleIds;
     }
 
-    /** 校验数据范围存在且启用（scopeType 仅支持 2学院/3专业/4班级） */
+    /** 校验数据范围存在且启用（scopeType 支持 2学院/3专业/4班级/6年级） */
     private void validateScope(ScopeConfigItem item) {
         if (item.getScopeType() == null || item.getScopeId() == null) {
             throw new BusinessException(ResultCode.PARAM_MISSING, "scopeType 与 scopeId 不能为空");
@@ -624,7 +630,11 @@ public class UserManageService {
                     .map(m -> Integer.valueOf(1).equals(m.getStatus())).orElse(false);
             case 4 -> clazzRepository.findById(item.getScopeId())
                     .map(c -> Integer.valueOf(1).equals(c.getStatus())).orElse(false);
-            default -> throw new BusinessException(ResultCode.PARAM_ERROR, "scopeType 只能为 2(学院)/3(专业)/4(班级)");
+            case 6 -> dictionaryRepository.findById(item.getScopeId())
+                    .filter(d -> "grade".equals(d.getDictType()))
+                    .map(d -> Integer.valueOf(1).equals(d.getStatus())).orElse(false);
+            default -> throw new BusinessException(ResultCode.PARAM_ERROR,
+                    "scopeType 只能为 2(学院)/3(专业)/4(班级)/6(年级)");
         };
         if (!enabled) {
             throw new BusinessException(ResultCode.DATA_NOT_EXIST, "数据范围不存在或已停用");
