@@ -291,6 +291,7 @@ public class AuditTaskService {
                     .status(ApplyStatusEnum.APPROVED.getValue())
                     .statusLabel("已通过（进入下一级）")
                     .auditedAt(format(now))
+                    .scoreRecalcStatus("SKIPPED")
                     .build();
         }
 
@@ -304,15 +305,22 @@ public class AuditTaskService {
         ApprovableRef ref = approveApprovable(p, now, teacherId);
         writeAuditLog(p, AuditActionEnum.APPROVE.getValue(), comment, null, teacherId, ref.version(), null);
         notifyStudent(p, "audit_remind", "申报审核通过", "您的申报「" + p.getTitle() + "」已审核通过。");
-        runAfterCommit(() -> triggerScoreRecalc(schoolId, p, ref.semesterId(), teacherId));
 
-        return ApproveResult.builder()
+        ApproveResult result = ApproveResult.builder()
                 .taskId(p.getId())
                 .approvableId(p.getApprovableId())
                 .status(ApplyStatusEnum.APPROVED.getValue())
                 .statusLabel(ApplyStatusEnum.APPROVED.getLabel())
                 .auditedAt(format(now))
+                .scoreRecalcStatus("PENDING")
                 .build();
+        // 重算需读取已提交的审批结果，事务提交后再提交任务；回执写入响应，失败不再静默
+        runAfterCommit(() -> {
+            ScoreRecalcDispatch recalc = triggerScoreRecalc(schoolId, p, ref.semesterId(), teacherId);
+            result.setScoreRecalcStatus(recalc.status());
+            result.setScoreRecalcTaskId(recalc.taskId());
+        });
+        return result;
     }
 
     /** 解析流程实例中指定步骤号的步骤配置（无实例/步骤号返回 null） */
@@ -381,16 +389,23 @@ public class AuditTaskService {
         ApprovableRef ref = rejectApprovable(p, comment, now, teacherId);
         writeAuditLog(p, AuditActionEnum.REJECT.getValue(), comment, null, teacherId, ref.version(), null);
         notifyStudent(p, "audit_remind", "申报被退回", "您的申报「" + p.getTitle() + "」被退回：" + comment);
-        triggerScoreRecalc(p.getSchoolId(), p, ref.semesterId(), teacherId);
 
-        return RejectResult.builder()
+        RejectResult result = RejectResult.builder()
                 .taskId(p.getId())
                 .approvableId(p.getApprovableId())
                 .status(ApplyStatusEnum.REJECTED.getValue())
                 .statusLabel(ApplyStatusEnum.REJECTED.getLabel())
                 .returnedAt(format(now))
                 .rejectedReason(comment)
+                .scoreRecalcStatus("PENDING")
                 .build();
+        // 与通过一致：提交后再重算，避免异步线程读到未提交的退回状态
+        runAfterCommit(() -> {
+            ScoreRecalcDispatch recalc = triggerScoreRecalc(p.getSchoolId(), p, ref.semesterId(), teacherId);
+            result.setScoreRecalcStatus(recalc.status());
+            result.setScoreRecalcTaskId(recalc.taskId());
+        });
+        return result;
     }
 
     // ==================== 4.5 批量审核通过 ====================
@@ -426,23 +441,24 @@ public class AuditTaskService {
         for (Long taskId : distinctIds) {
             try {
                 ApproveResult r = self.approveInNewTransaction(teacherId, taskId, comment);
-                results.add(new BatchResultItem(taskId, true, r.getStatus(), null, null));
+                results.add(new BatchResultItem(taskId, true, r.getStatus(), null, null,
+                        r.getScoreRecalcStatus(), r.getScoreRecalcTaskId()));
                 success++;
             } catch (BusinessException e) {
                 log.warn("批量审核失败: teacherId={}, taskId={}, code={}, msg={}",
                         teacherId, taskId, e.getCode(), e.getMessage());
-                results.add(new BatchResultItem(taskId, false, null, e.getCode(), e.getMessage()));
+                results.add(new BatchResultItem(taskId, false, null, e.getCode(), e.getMessage(), null, null));
                 failed++;
             } catch (ObjectOptimisticLockingFailureException e) {
                 log.warn("批量审核版本冲突: teacherId={}, taskId={}", teacherId, taskId, e);
                 results.add(new BatchResultItem(taskId, false, null,
                         ResultCode.DATA_VERSION_CONFLICT.getCode(),
-                        "该任务已被其他审批人处理"));
+                        "该任务已被其他审批人处理", null, null));
                 failed++;
             } catch (Exception e) {
                 log.error("批量审核异常: teacherId={}, taskId={}", teacherId, taskId, e);
                 results.add(new BatchResultItem(taskId, false, null,
-                        ResultCode.SYSTEM_ERROR.getCode(), ResultCode.SYSTEM_ERROR.getMessage()));
+                        ResultCode.SYSTEM_ERROR.getCode(), ResultCode.SYSTEM_ERROR.getMessage(), null, null));
                 failed++;
             }
         }
@@ -916,16 +932,33 @@ public class AuditTaskService {
                 .anyMatch(r -> Objects.equals(r.getIsAuditor(), 1));
     }
 
-    private void triggerScoreRecalc(Long schoolId, PendingApproval p, Long semesterId, Long teacherId) {
+    /**
+     * 提交评分重算并返回回执：任务同步落库后异步执行。
+     * <ul>
+     *   <li>无学期归属 → {@code SKIPPED}（该档案不参与学期评分）</li>
+     *   <li>任务创建成功 → {@code PENDING} + 任务 ID，前端可凭 ID 查询完成/失败与原因</li>
+     *   <li>任务创建异常 → {@code FAILED}，审批响应明确提示重算未提交，不再静默</li>
+     * </ul>
+     */
+    private ScoreRecalcDispatch triggerScoreRecalc(Long schoolId, PendingApproval p, Long semesterId, Long teacherId) {
         if (semesterId == null) {
-            return;
+            return new ScoreRecalcDispatch("SKIPPED", null);
         }
         try {
-            adminScoreService.recalculateStudent(schoolId, p.getApplicantId(), semesterId, teacherId);
+            Long taskId = adminScoreService.submitStudentRecalculation(
+                    schoolId, p.getApplicantId(), semesterId, teacherId);
+            return taskId != null
+                    ? new ScoreRecalcDispatch("PENDING", taskId)
+                    : new ScoreRecalcDispatch("SKIPPED", null);
         } catch (Exception e) {
-            log.warn("触发评分重算失败: taskId={}, applicantId={}, err={}",
-                    p.getId(), p.getApplicantId(), e.getMessage());
+            log.error("提交评分重算任务失败: taskId={}, applicantId={}, err={}",
+                    p.getId(), p.getApplicantId(), e.getMessage(), e);
+            return new ScoreRecalcDispatch("FAILED", null);
         }
+    }
+
+    /** 评分重算回执：状态（PENDING/SKIPPED/FAILED）+ 任务 ID */
+    private record ScoreRecalcDispatch(String status, Long taskId) {
     }
 
     /**
@@ -1362,6 +1395,10 @@ public class AuditTaskService {
         private Integer status;
         private String statusLabel;
         private String auditedAt;
+        /** 评分重算状态：PENDING=已提交异步任务，SKIPPED=无需重算，FAILED=任务提交失败 */
+        private String scoreRecalcStatus;
+        /** 评分重算任务 ID（PENDING 时返回，可查询完成/失败与原因） */
+        private Long scoreRecalcTaskId;
     }
 
     @Data
@@ -1373,6 +1410,10 @@ public class AuditTaskService {
         private String statusLabel;
         private String returnedAt;
         private String rejectedReason;
+        /** 评分重算状态：PENDING=已提交异步任务，SKIPPED=无需重算，FAILED=任务提交失败 */
+        private String scoreRecalcStatus;
+        /** 评分重算任务 ID（PENDING 时返回，可查询完成/失败与原因） */
+        private Long scoreRecalcTaskId;
     }
 
     @Data
@@ -1390,6 +1431,10 @@ public class AuditTaskService {
         private final Integer status;
         private final Integer errorCode;
         private final String errorMessage;
+        /** 评分重算状态：PENDING/SKIPPED/FAILED（成功条目返回） */
+        private final String scoreRecalcStatus;
+        /** 评分重算任务 ID */
+        private final Long scoreRecalcTaskId;
     }
 
     @Data

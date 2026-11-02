@@ -243,36 +243,82 @@ public class AdminScoreService {
             log.warn("无可用指标规则版本，跳过自动评分: schoolId={}, userId={}, semesterId={}",
                     schoolId, userId, semesterId);
             // 无评分规则版本时仍同步计算数据完整度（档案审核通过/成绩导入等触发场景）
-            try {
-                dataCompletenessService.recalculateForStudent(userId, semesterId);
-            } catch (Exception e) {
-                log.warn("数据完整度计算失败（无规则版本分支），不影响主流程: userId={}, semesterId={}",
-                        userId, semesterId, e);
-            }
+            recalcCompletenessQuietly(userId, semesterId);
             return;
         }
-        Map<Long, EvaluationIndicator> indicatorById = toIndicatorMap(resolved.indicators());
-        Long comparedSemesterId = resolvePreviousSemesterId(schoolId, semesterId);
 
-        ScoreRecalculationTask task = new ScoreRecalculationTask();
-        task.setSchoolId(schoolId);
-        task.setTaskType(TARGET_STUDENT);
-        task.setTargetId(userId);
-        task.setSemesterId(semesterId);
-        task.setStatus(STATUS_QUEUED);
-        task.setTriggeredBy(resolveTriggeredBy(schoolId, operatorId));
-        task.setTriggeredAt(LocalDateTime.now());
-        task.setTotalCount(1);
-        task.setProgress(0);
-
+        Long triggeredBy = resolveTriggeredBy(schoolId, operatorId);
+        ScoreRecalculationTask task = newStudentTask(schoolId, userId, semesterId, triggeredBy);
         // 学校无任何用户时无法满足 triggered_by 外键，跳过落库，仅执行重算
-        if (task.getTriggeredBy() == null) {
+        if (triggeredBy == null) {
             log.warn("学校无用户，跳过评分重算任务落库: schoolId={}, userId={}, semesterId={}",
                     schoolId, userId, semesterId);
         } else {
-            taskRepository.save(task);
+            task = taskRepository.save(task);
         }
+        executeStudentTask(task, userId, resolved);
+    }
 
+    /**
+     * 提交单学生指定学期的评分重算：<strong>同步创建排队任务</strong>后异步执行，返回任务 ID。
+     * <p>
+     * 供审批等需要向调用方回执重算状态的场景使用：任务先落库再提交线程池，
+     * 异步执行失败会写入任务状态（3=失败）与 error_message，调用方可凭任务 ID 查询，
+     * 避免重算异常只写日志、审批却显示完全成功。无可用触发人时仍异步重算但不落任务并返回 null。
+     *
+     * @return 评分重算任务 ID；未落任务时返回 null
+     */
+    public Long submitStudentRecalculation(Long schoolId, Long userId, Long semesterId, Long operatorId) {
+        Long triggeredBy = resolveTriggeredBy(schoolId, operatorId);
+        if (triggeredBy == null) {
+            log.warn("学校无用户，跳过评分重算任务落库: schoolId={}, userId={}, semesterId={}",
+                    schoolId, userId, semesterId);
+            self.recalculateStudent(schoolId, userId, semesterId, operatorId);
+            return null;
+        }
+        ScoreRecalculationTask task = taskRepository.save(
+                newStudentTask(schoolId, userId, semesterId, triggeredBy));
+        Long taskId = task.getId();
+        self.executeStudentRecalculation(taskId);
+        return taskId;
+    }
+
+    /**
+     * 异步执行已创建的评分重算任务（由 {@link #submitStudentRecalculation} 经代理提交）。
+     * 解析规则版本或执行失败时均落任务失败状态与原因，不再静默。
+     */
+    @Async("scoreRecalculationExecutor")
+    public void executeStudentRecalculation(Long taskId) {
+        ScoreRecalculationTask task = taskRepository.findById(taskId).orElse(null);
+        if (task == null) {
+            log.warn("评分重算任务不存在，跳过执行: taskId={}", taskId);
+            return;
+        }
+        ResolvedRule resolved;
+        try {
+            resolved = resolveRuleForSemester(task.getSchoolId(), task.getSemesterId());
+        } catch (Exception e) {
+            log.error("评分规则版本解析失败: taskId={}, schoolId={}, semesterId={}",
+                    taskId, task.getSchoolId(), task.getSemesterId(), e);
+            failTask(task, errorText(e));
+            return;
+        }
+        if (resolved == null) {
+            log.warn("无可用指标规则版本，跳过自动评分: taskId={}, schoolId={}, userId={}, semesterId={}",
+                    taskId, task.getSchoolId(), task.getTargetId(), task.getSemesterId());
+            recalcCompletenessQuietly(task.getTargetId(), task.getSemesterId());
+            failTask(task, "无可用指标规则版本");
+            return;
+        }
+        executeStudentTask(task, task.getTargetId(), resolved);
+    }
+
+    /** 执行单学生重算并推进任务状态：成功置 2=完成，异常置 3=失败并记录原因 */
+    private void executeStudentTask(ScoreRecalculationTask task, Long userId, ResolvedRule resolved) {
+        Long schoolId = task.getSchoolId();
+        Long semesterId = task.getSemesterId();
+        Map<Long, EvaluationIndicator> indicatorById = toIndicatorMap(resolved.indicators());
+        Long comparedSemesterId = resolvePreviousSemesterId(schoolId, semesterId);
         try {
             task.setStatus(STATUS_RUNNING);
             task.setStartedAt(LocalDateTime.now());
@@ -293,6 +339,31 @@ public class AdminScoreService {
             log.error("档案审核通过自动评分失败: schoolId={}, userId={}, semesterId={}",
                     schoolId, userId, semesterId, e);
             failTask(task, errorText(e));
+        }
+    }
+
+    /** 构造单学生重算任务（status=0 排队中） */
+    private ScoreRecalculationTask newStudentTask(Long schoolId, Long userId, Long semesterId, Long triggeredBy) {
+        ScoreRecalculationTask task = new ScoreRecalculationTask();
+        task.setSchoolId(schoolId);
+        task.setTaskType(TARGET_STUDENT);
+        task.setTargetId(userId);
+        task.setSemesterId(semesterId);
+        task.setStatus(STATUS_QUEUED);
+        task.setTriggeredBy(triggeredBy);
+        task.setTriggeredAt(LocalDateTime.now());
+        task.setTotalCount(1);
+        task.setProgress(0);
+        return task;
+    }
+
+    /** 无规则版本分支仍计算数据完整度（失败仅记录，不影响主流程） */
+    private void recalcCompletenessQuietly(Long userId, Long semesterId) {
+        try {
+            dataCompletenessService.recalculateForStudent(userId, semesterId);
+        } catch (Exception e) {
+            log.warn("数据完整度计算失败（无规则版本分支），不影响主流程: userId={}, semesterId={}",
+                    userId, semesterId, e);
         }
     }
 
