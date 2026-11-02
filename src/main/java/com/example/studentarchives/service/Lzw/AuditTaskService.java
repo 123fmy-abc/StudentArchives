@@ -610,10 +610,10 @@ public class AuditTaskService {
                                                  Long semesterId, String grade, String keyword,
                                                  String sortOrder) {
         List<PendingApproval> all = pendingApprovalRepository.findByStatusAndSchoolId(1, schoolId);
-        Set<Long> delegatedDelegatorIds = resolveDelegatedDelegatorIds(teacherId);
+        List<ApprovalDelegation> activeDelegations = resolveActiveDelegations(teacherId);
         List<PendingApproval> result = new ArrayList<>();
         for (PendingApproval p : all) {
-            if (!isInScope(p, teacherId, schoolId, delegatedDelegatorIds)) {
+            if (!isInScope(p, teacherId, schoolId, activeDelegations)) {
                 continue;
             }
             if (type != null && !type.isEmpty() && !type.equals(toTypeCode(p.getApprovableType()))) {
@@ -678,42 +678,98 @@ public class AuditTaskService {
     // ==================== 私有：范围校验 ====================
 
     private void ensureTaskAccess(PendingApproval p, Long teacherId, Long schoolId) {
-        if (!isInScope(p, teacherId, schoolId, resolveDelegatedDelegatorIds(teacherId))) {
+        if (!isInScope(p, teacherId, schoolId, resolveActiveDelegations(teacherId))) {
             throw new BusinessException(ResultCode.ACCESS_DENIED, "无访问权限");
         }
     }
 
-    private boolean isInScope(PendingApproval p, Long teacherId, Long schoolId, Set<Long> delegatedDelegatorIds) {
+    /**
+     * 任务可见范围判定：管理员 → 本人待办 → 审批委托代审 → 授权范围。
+     * <p>
+     * 委托代审必须同时满足：同校、节点 allow_delegate=1、委托声明的角色/范围匹配节点、
+     * 且任务落在<b>原审批人</b>授权范围内，避免受托人借委托处理原审批人无权处理的档案。
+     * 因委托改派而来的任务（节点 delegation_id 非空）在委托撤销/过期/范围失配后立即失效，
+     * 不再因 assignedAuditorId 归属受托人而放行。
+     */
+    private boolean isInScope(PendingApproval p, Long teacherId, Long schoolId,
+                              List<ApprovalDelegation> activeDelegations) {
         if (isAdmin(teacherId)) {
             return true;
         }
-        if (p.getAuditorId() != null && p.getAuditorId().equals(teacherId)) {
+        // 本人待办：仅限本校任务；委托改派任务须委托仍生效且范围未变
+        if (p.getAuditorId() != null && p.getAuditorId().equals(teacherId)
+                && Objects.equals(p.getSchoolId(), schoolId)
+                && isAssignmentAccessible(p, teacherId, schoolId, activeDelegations)) {
             return true;
         }
-        // 审批委托：受托人可代委托人处理其待办（仅限节点创建时快照 allow_delegate=1 的任务）
-        if (p.getAuditorId() != null && delegatedDelegatorIds != null
-                && delegatedDelegatorIds.contains(p.getAuditorId())
-                && delegationAllowedFor(p)) {
+        if (isDelegatedTaskInScope(p, teacherId, schoolId, activeDelegations)) {
             return true;
         }
         return studentInScope(p.getApplicantId(), teacherId, schoolId);
     }
 
-    /** 委托代审前置校验：任务所在节点创建时对应的步骤须 allow_delegate=1（节点缺失或旧数据视为不允许） */
-    private boolean delegationAllowedFor(PendingApproval p) {
+    /**
+     * 本人待办是否仍可处理：非委托改派的任务直接放行；由委托改派的任务要求对应委托
+     * 仍处于生效期、受托人未变、角色/范围仍匹配且任务在原审批人范围内。
+     */
+    private boolean isAssignmentAccessible(PendingApproval p, Long teacherId, Long schoolId,
+                                           List<ApprovalDelegation> activeDelegations) {
         ApprovalNode node = approvalNodeRepository.findById(p.getNodeId()).orElse(null);
-        return node != null && Integer.valueOf(1).equals(node.getAllowDelegate());
+        if (node == null || node.getDelegationId() == null) {
+            return true;
+        }
+        return activeDelegations.stream()
+                .filter(d -> Objects.equals(d.getId(), node.getDelegationId()))
+                .filter(d -> Objects.equals(d.getDelegateeId(), teacherId))
+                .filter(d -> d.getDelegatorId() != null)
+                .filter(d -> Objects.equals(d.getSchoolId(), schoolId))
+                .anyMatch(d -> delegationMatchesNode(d, node)
+                        && studentInScope(p.getApplicantId(), d.getDelegatorId(), schoolId));
     }
 
-    /** 返回当前教师作为受托人时可代审的委托人 ID 集合（生效中的委托） */
-    private Set<Long> resolveDelegatedDelegatorIds(Long teacherId) {
-        if (teacherId == null) {
-            return Set.of();
+    /**
+     * 受托人代审判定：待办原归属人为委托人，委托生效且同校，节点允许委托，
+     * 委托声明的角色/范围与节点匹配，任务在原审批人授权范围内。
+     */
+    private boolean isDelegatedTaskInScope(PendingApproval p, Long teacherId, Long schoolId,
+                                           List<ApprovalDelegation> activeDelegations) {
+        if (p.getAuditorId() == null || activeDelegations.isEmpty()
+                || !Objects.equals(p.getSchoolId(), schoolId)) {
+            return false;
         }
-        return approvalDelegationRepository.findActiveByDelegateeId(teacherId, LocalDateTime.now()).stream()
-                .map(ApprovalDelegation::getDelegatorId)
-                .filter(Objects::nonNull)
-                .collect(Collectors.toSet());
+        List<ApprovalDelegation> candidates = activeDelegations.stream()
+                .filter(d -> Objects.equals(d.getDelegatorId(), p.getAuditorId()))
+                .filter(d -> Objects.equals(d.getSchoolId(), schoolId))
+                .toList();
+        if (candidates.isEmpty()) {
+            return false;
+        }
+        ApprovalNode node = approvalNodeRepository.findById(p.getNodeId()).orElse(null);
+        if (node == null || !Integer.valueOf(1).equals(node.getAllowDelegate())) {
+            return false;
+        }
+        return candidates.stream()
+                .filter(d -> delegationMatchesNode(d, node))
+                .anyMatch(d -> studentInScope(p.getApplicantId(), d.getDelegatorId(), schoolId));
+    }
+
+    /** 委托声明的角色/范围是否覆盖节点（null 字段表示不限） */
+    private boolean delegationMatchesNode(ApprovalDelegation d, ApprovalNode node) {
+        if (d.getRoleId() != null && !Objects.equals(d.getRoleId(), node.getRoleId())) {
+            return false;
+        }
+        if (d.getScopeType() != null && !Objects.equals(d.getScopeType(), node.getScopeType())) {
+            return false;
+        }
+        return d.getScopeId() == null || Objects.equals(d.getScopeId(), node.getScopeId());
+    }
+
+    /** 当前教师作为受托人的生效委托列表 */
+    private List<ApprovalDelegation> resolveActiveDelegations(Long teacherId) {
+        if (teacherId == null) {
+            return List.of();
+        }
+        return approvalDelegationRepository.findActiveByDelegateeId(teacherId, LocalDateTime.now());
     }
 
     private boolean studentInScope(Long studentId, Long teacherId, Long schoolId) {

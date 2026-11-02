@@ -174,7 +174,7 @@ public class TeacherDelegationService {
      * <p>
      * 校验规则：
      * <ul>
-     *   <li>受托人必须有教师角色（roles.is_auditor=1），且不能是本人；</li>
+     *   <li>受托人必须是同校、启用中、持有教师审批角色（roles.is_auditor=1）的教师，且不能是本人；</li>
      *   <li>startTime 必须晚于当前时间，endTime 必须晚于 startTime，最长委托期 180 天；</li>
      *   <li>委托时段不得与已有生效中的委托记录重叠（status IN (0,1)）；</li>
      *   <li>委托人只能委托自己拥有审批权限的角色和范围。</li>
@@ -191,6 +191,7 @@ public class TeacherDelegationService {
     @Transactional
     public DelegationCreateResponse createDelegation(Long userId, DelegationCreateRequest request) {
         adminAuthService.requireAdminOrPermission(userId, "delegate:manage");
+        Long schoolId = adminAuthService.getOperatorSchoolId(userId);
         LocalDateTime now = LocalDateTime.now();
         LocalDateTime startTime = request.getStartTime();
         LocalDateTime endTime = request.getEndTime();
@@ -201,6 +202,13 @@ public class TeacherDelegationService {
         }
         User delegatee = userRepository.findById(request.getDelegateeId())
                 .orElseThrow(() -> new BusinessException(ResultCode.DATA_NOT_EXIST, "受托人不存在"));
+        // 跨校委托会突破学校级数据隔离，直接拒绝
+        if (!Objects.equals(delegatee.getSchoolId(), schoolId)) {
+            throw new BusinessException(ResultCode.ACCESS_DENIED, "只能委托本校教师");
+        }
+        if (!StatusEnum.ENABLED.equalsValue(delegatee.getStatus())) {
+            throw new BusinessException(ResultCode.PARAM_ERROR, "受托人账号未启用");
+        }
         if (!isAuditor(delegatee.getId())) {
             throw new BusinessException(ResultCode.PARAM_ERROR, "受托人必须有教师审批角色（is_auditor=1）");
         }
@@ -222,8 +230,6 @@ public class TeacherDelegationService {
         if (!overlapping.isEmpty()) {
             throw new BusinessException(ResultCode.BIZ_STATUS_NOT_OPERABLE, "委托时段与已有生效中的委托记录重叠");
         }
-
-        Long schoolId = adminAuthService.getOperatorSchoolId(userId);
 
         // ==================== 委托人角色/范围归属校验 ====================
         validateDelegatorOwnership(userId, schoolId, request);

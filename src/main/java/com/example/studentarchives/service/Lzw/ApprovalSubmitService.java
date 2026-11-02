@@ -206,7 +206,7 @@ public class ApprovalSubmitService {
         Long delegationId = null;
         if (!fallback && Integer.valueOf(1).equals(step.getAllowDelegate())) {
             ApprovalDelegation delegation = resolveActiveDelegation(
-                    auditorId, step.getRoleId(), step.getScopeType(), scopeId, now);
+                    auditorId, step.getRoleId(), step.getScopeType(), scopeId, schoolId, now);
             if (delegation != null && delegation.getDelegateeId() != null
                     && !Objects.equals(delegation.getDelegateeId(), auditorId)) {
                 effectiveAuditorId = delegation.getDelegateeId();
@@ -450,19 +450,33 @@ public class ApprovalSubmitService {
     /**
      * 解析委托人在当前时点、与节点角色/范围匹配的「生效中」委托。
      * 委托的 roleId/scopeType/scopeId 为空视为不限（通配）。
+     * 仅接受同校委托且受托人属于同一学校，避免历史跨校委托继续改派任务。
      */
     private ApprovalDelegation resolveActiveDelegation(Long delegatorId, Long roleId,
                                                        Integer scopeType, Long scopeId,
-                                                       LocalDateTime now) {
-        if (delegatorId == null) {
+                                                       Long schoolId, LocalDateTime now) {
+        if (delegatorId == null || schoolId == null) {
             return null;
         }
         return approvalDelegationRepository.findActiveByDelegatorId(delegatorId, now).stream()
+                .filter(d -> Objects.equals(d.getSchoolId(), schoolId))
+                .filter(d -> isSameSchoolUser(d.getDelegateeId(), schoolId))
                 .filter(d -> d.getRoleId() == null || Objects.equals(d.getRoleId(), roleId))
                 .filter(d -> d.getScopeType() == null || Objects.equals(d.getScopeType(), scopeType))
                 .filter(d -> d.getScopeId() == null || Objects.equals(d.getScopeId(), scopeId))
                 .findFirst()
                 .orElse(null);
+    }
+
+    /** 受托人是否属于指定学校且启用中（缺失用户视为无效委托） */
+    private boolean isSameSchoolUser(Long userId, Long schoolId) {
+        if (userId == null) {
+            return false;
+        }
+        return userRepository.findById(userId)
+                .map(u -> Objects.equals(u.getSchoolId(), schoolId)
+                        && Integer.valueOf(1).equals(u.getStatus()))
+                .orElse(false);
     }
 
     /** 待办生成后向实际审批人发审核提醒（audit_remind），失败仅记日志不阻塞提交。 */
