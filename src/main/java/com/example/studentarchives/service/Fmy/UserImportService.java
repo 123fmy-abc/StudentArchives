@@ -132,6 +132,8 @@ public class UserImportService {
         Map<String, List<Long>> classIdsByName = buildClassIdsByName(schoolId);
 
         List<UserImportFailItem> failures = new ArrayList<>();
+        // 服务端为每个成功账号生成的一次性初始口令，随导入结果单独下发（不写日志）
+        List<UserImportCredential> credentials = new ArrayList<>();
         int success = 0;
         for (GradeImportFileParser.ParsedRow row : rows) {
             String userNo = row.getValues().get("userNo");
@@ -155,14 +157,21 @@ public class UserImportService {
                     throw new BusinessException(ResultCode.DATA_VALIDATION_FAILED, "班级名称不唯一，请使用更精确的班级名: " + className.trim());
                 }
 
-                // 复用创建用户逻辑（默认密码 123456、角色 student、student_profiles.class_id 落库）
-                userManageService.createUser(operatorId, CreateUserRequest.builder()
+                // 复用创建用户逻辑（由服务端随机生成一次性初始口令、角色 student、student_profiles.class_id 落库）
+                UserManageService.CreateUserResponse created = userManageService.createUser(operatorId, CreateUserRequest.builder()
                         .userNo(userNo.trim())
                         .name(name.trim())
                         .schoolId(schoolId)
                         .roleIds(List.of(studentRoleId))
                         .classId(classIds.get(0))
                         .build());
+                if (created.getInitialPassword() != null) {
+                    credentials.add(UserImportCredential.builder()
+                            .userNo(userNo.trim())
+                            .initialPassword(created.getInitialPassword())
+                            .mustChangePassword(Boolean.TRUE)
+                            .build());
+                }
                 success++;
             } catch (BusinessException be) {
                 failures.add(new UserImportFailItem(row.getRowNumber(), userNo, be.getMessage()));
@@ -174,6 +183,7 @@ public class UserImportService {
                 .successCount(success)
                 .failCount(failures.size())
                 .failures(failures)
+                .credentials(credentials)
                 .build();
     }
 
@@ -246,6 +256,20 @@ public class UserImportService {
         private Integer successCount;
         private Integer failCount;
         private List<UserImportFailItem> failures;
+        /** 成功创建账号的一次性初始口令列表（单独下发，含 mustChangePassword=true，不写日志） */
+        private List<UserImportCredential> credentials;
+    }
+
+    /** 导入成功账号的初始凭证（仅本次响应下发一次） */
+    @Data
+    @Builder
+    @NoArgsConstructor
+    @AllArgsConstructor
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    public static class UserImportCredential {
+        private String userNo;
+        private String initialPassword;
+        private Boolean mustChangePassword;
     }
 
     /** 导入失败明细项 */

@@ -43,4 +43,8 @@ public class User extends BaseEntity {
 
     @Column(name = "refresh_token_version", nullable = false)
     private Integer refreshTokenVersion = 0;
+
+    /** 是否需强制修改密码：新建/导入/重置后为 true，首次登录须改密后方可使用其他接口 */
+    @Column(name = "must_change_password", nullable = false)
+    private Boolean mustChangePassword = Boolean.FALSE;
 }

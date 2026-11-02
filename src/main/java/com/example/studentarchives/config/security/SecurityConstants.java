@@ -21,4 +21,15 @@ public final class SecurityConstants {
             "/applications/*/guide",
             "/awards/*/guide"
     };
+
+    /**
+     * 强制改密期间仍允许访问的路径（must_change_password=1 时）。
+     * 仅放行「修改密码 / 查看当前身份 / 登出」，其余接口一律返回 403，
+     * 直到用户完成首次改密。
+     */
+    public static final String[] FORCE_PASSWORD_CHANGE_ALLOWED_PATHS = {
+            "/auth/password",
+            "/auth/me",
+            "/auth/logout"
+    };
 }

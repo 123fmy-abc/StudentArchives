@@ -80,5 +80,8 @@ public class LoginResponse {
         private String homePage;
 
         private String avatar;
+
+        /** 是否需首次登录强制改密：true 时前端应跳转强制改密页，后端仅放行 /auth/password 等少数接口 */
+        private Boolean mustChangePassword;
     }
 }

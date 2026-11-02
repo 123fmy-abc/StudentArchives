@@ -95,6 +95,12 @@ public class ApplicationService {
 
         FormTemplate template = validateByTemplate(schoolId, ArchiveTypeEnum.ACADEMIC_COMPETITION.getValue(), req, draft);
 
+        // 编辑既有草稿/退回记录：按 archiveId 原地更新，避免产生重复记录
+        if (req.getArchiveId() != null) {
+            return resubmitExisting(req.getArchiveId(), ArchiveTypeEnum.ACADEMIC_COMPETITION.getValue(),
+                    req.getCompetitionName(), req.getSemesterId(), req.getObtainTime(), draft, template, req, userId, now);
+        }
+
         Archive archive = createArchiveBase(schoolId, userId, ArchiveTypeEnum.ACADEMIC_COMPETITION.getValue(),
                 req.getCompetitionName(), req.getSemesterId(), req.getObtainTime(), draft, now);
         archive = archiveRepository.save(archive);
@@ -130,6 +136,11 @@ public class ApplicationService {
 
         FormTemplate template = validateByTemplate(schoolId, ArchiveTypeEnum.SCHOLARSHIP.getValue(), req, draft);
 
+        if (req.getArchiveId() != null) {
+            return resubmitExisting(req.getArchiveId(), ArchiveTypeEnum.SCHOLARSHIP.getValue(),
+                    req.getScholarshipName(), req.getSemesterId(), req.getObtainTime(), draft, template, req, userId, now);
+        }
+
         Archive archive = createArchiveBase(schoolId, userId, ArchiveTypeEnum.SCHOLARSHIP.getValue(),
                 req.getScholarshipName(), req.getSemesterId(), req.getObtainTime(), draft, now);
         archive = archiveRepository.save(archive);
@@ -163,6 +174,11 @@ public class ApplicationService {
         requireOnSubmit(draft, req.getProjectType(), "项目类型");
 
         FormTemplate template = validateByTemplate(schoolId, ArchiveTypeEnum.INNOVATION_ENTREPRENEURSHIP.getValue(), req, draft);
+
+        if (req.getArchiveId() != null) {
+            return resubmitExisting(req.getArchiveId(), ArchiveTypeEnum.INNOVATION_ENTREPRENEURSHIP.getValue(),
+                    req.getCompanyName(), req.getSemesterId(), req.getRegisteredTime(), draft, template, req, userId, now);
+        }
 
         Archive archive = createArchiveBase(schoolId, userId, ArchiveTypeEnum.INNOVATION_ENTREPRENEURSHIP.getValue(),
                 req.getCompanyName(), req.getSemesterId(), req.getRegisteredTime(), draft, now);
@@ -200,6 +216,11 @@ public class ApplicationService {
 
         FormTemplate template = validateByTemplate(schoolId, ArchiveTypeEnum.ACADEMIC_RESEARCH.getValue(), req, draft);
 
+        if (req.getArchiveId() != null) {
+            return resubmitExisting(req.getArchiveId(), ArchiveTypeEnum.ACADEMIC_RESEARCH.getValue(),
+                    req.getProjectName(), req.getSemesterId(), req.getStartDate(), draft, template, req, userId, now);
+        }
+
         Archive archive = createArchiveBase(schoolId, userId, ArchiveTypeEnum.ACADEMIC_RESEARCH.getValue(),
                 req.getProjectName(), req.getSemesterId(), req.getStartDate(), draft, now);
         archive = archiveRepository.save(archive);
@@ -236,6 +257,11 @@ public class ApplicationService {
 
         FormTemplate template = validateByTemplate(schoolId, ArchiveTypeEnum.HONOR_CERTIFICATE.getValue(), req, draft);
 
+        if (req.getArchiveId() != null) {
+            return resubmitExisting(req.getArchiveId(), ArchiveTypeEnum.HONOR_CERTIFICATE.getValue(),
+                    req.getCertificateName(), req.getSemesterId(), req.getObtainTime(), draft, template, req, userId, now);
+        }
+
         Archive archive = createArchiveBase(schoolId, userId, ArchiveTypeEnum.HONOR_CERTIFICATE.getValue(),
                 req.getCertificateName(), req.getSemesterId(), req.getObtainTime(), draft, now);
         archive = archiveRepository.save(archive);
@@ -269,6 +295,11 @@ public class ApplicationService {
         requireOnSubmit(draft, req.getCompanyName(), "公司名称");
 
         FormTemplate template = validateByTemplate(schoolId, ArchiveTypeEnum.INTERNSHIP.getValue(), req, draft);
+
+        if (req.getArchiveId() != null) {
+            return resubmitExisting(req.getArchiveId(), ArchiveTypeEnum.INTERNSHIP.getValue(),
+                    req.getCompanyName(), req.getSemesterId(), req.getStartDate(), draft, template, req, userId, now);
+        }
 
         Archive archive = createArchiveBase(schoolId, userId, ArchiveTypeEnum.INTERNSHIP.getValue(),
                 req.getCompanyName(), req.getSemesterId(), req.getStartDate(), draft, now);
@@ -304,6 +335,11 @@ public class ApplicationService {
 
         FormTemplate template = validateByTemplate(schoolId, ArchiveTypeEnum.ORGANIZATION.getValue(), req, draft);
 
+        if (req.getArchiveId() != null) {
+            return resubmitExisting(req.getArchiveId(), ArchiveTypeEnum.ORGANIZATION.getValue(),
+                    req.getPositionTitle(), req.getSemesterId(), req.getStartDate(), draft, template, req, userId, now);
+        }
+
         Archive archive = createArchiveBase(schoolId, userId, ArchiveTypeEnum.ORGANIZATION.getValue(),
                 req.getPositionTitle(), req.getSemesterId(), req.getStartDate(), draft, now);
         archive = archiveRepository.save(archive);
@@ -338,6 +374,11 @@ public class ApplicationService {
 
         FormTemplate template = validateByTemplate(schoolId, ArchiveTypeEnum.TRAINING_PROJECT.getValue(), req, draft);
 
+        if (req.getArchiveId() != null) {
+            return resubmitExisting(req.getArchiveId(), ArchiveTypeEnum.TRAINING_PROJECT.getValue(),
+                    req.getProjectName(), req.getSemesterId(), req.getStartDate(), draft, template, req, userId, now);
+        }
+
         Archive archive = createArchiveBase(schoolId, userId, ArchiveTypeEnum.TRAINING_PROJECT.getValue(),
                 req.getProjectName(), req.getSemesterId(), req.getStartDate(), draft, now);
         archive = archiveRepository.save(archive);
@@ -370,6 +411,11 @@ public class ApplicationService {
         requireOnSubmit(draft, req.getActivityName(), "活动名称");
 
         FormTemplate template = validateByTemplate(schoolId, ArchiveTypeEnum.SOCIAL_PRACTICE.getValue(), req, draft);
+
+        if (req.getArchiveId() != null) {
+            return resubmitExisting(req.getArchiveId(), ArchiveTypeEnum.SOCIAL_PRACTICE.getValue(),
+                    req.getActivityName(), req.getSemesterId(), req.getStartDate(), draft, template, req, userId, now);
+        }
 
         Archive archive = createArchiveBase(schoolId, userId, ArchiveTypeEnum.SOCIAL_PRACTICE.getValue(),
                 req.getActivityName(), req.getSemesterId(), req.getStartDate(), draft, now);
@@ -408,6 +454,11 @@ public class ApplicationService {
         requireOnSubmit(draft, req.getReviewContent(), "心得体会");
 
         FormTemplate template = validateByTemplate(schoolId, ArchiveTypeEnum.BOOK_REVIEW.getValue(), req, draft);
+
+        if (req.getArchiveId() != null) {
+            return resubmitExisting(req.getArchiveId(), ArchiveTypeEnum.BOOK_REVIEW.getValue(),
+                    req.getBookName(), req.getSemesterId(), req.getReadMonth(), draft, template, req, userId, now);
+        }
 
         Archive archive = createArchiveBase(schoolId, userId, ArchiveTypeEnum.BOOK_REVIEW.getValue(),
                 req.getBookName(), req.getSemesterId(), req.getReadMonth(), draft, now);
@@ -622,7 +673,9 @@ public class ApplicationService {
         // 创建新版本档案
         User user = loadUser(userId);
         Long schoolId = schoolId(user);
-        boolean draft = isDraft(body.containsKey("isDraft") ? toInt(body.get("isDraft")) : 1);
+        // 纠错语义固定为「新建版本并提交待审」：缺省 isDraft 视为提交（0），
+        // 不再默认成草稿。若调用方显式传 isDraft=1 才存为草稿。
+        boolean draft = isDraft(body.containsKey("isDraft") ? toInt(body.get("isDraft")) : 0);
         LocalDateTime now = LocalDateTime.now();
 
         Archive archive = new Archive();
@@ -661,6 +714,58 @@ public class ApplicationService {
                 ? toLongList(body.get("evidenceFileIds"))
                 : Collections.emptyList(), userId, archive.getId());
         writeArchiveVersion(archive, userId);
+        generatePendingApprovalIfSubmitted(archive);
+
+        return buildResponse(archive);
+    }
+
+    /**
+     * 编辑既有草稿/退回记录：按 archiveId 原地更新（不新增记录），版本 +1、状态按提交/草稿处理。
+     * <p>
+     * 用于 submit* 接口在请求携带 archiveId 时的更新语义，修复「编辑保存被实现为新建记录」：
+     * 同一记录重复提交不会产生新行，ID 不变、版本递增。
+     */
+    private ArchiveSubmitResponse resubmitExisting(Long archiveId, String archiveType, String title,
+                                                   Long semesterId, LocalDate obtainedAt, boolean draft,
+                                                   FormTemplate template, Object req, Long userId, LocalDateTime now) {
+        Archive archive = archiveRepository.findById(archiveId)
+                .orElseThrow(() -> new BusinessException(ResultCode.DATA_NOT_EXIST, "档案不存在"));
+        checkOwnership(archive, userId);
+        if (!archiveType.equals(archive.getArchiveType())) {
+            throw new BusinessException(ResultCode.PARAM_ERROR, "档案类型与记录不匹配");
+        }
+        int status = archive.getStatus() == null ? -1 : archive.getStatus();
+        if (status != ApplyStatusEnum.DRAFT.getValue() && status != ApplyStatusEnum.REJECTED.getValue()) {
+            throw new BusinessException(ResultCode.BIZ_STATUS_NOT_OPERABLE, "仅草稿或已退回状态可编辑");
+        }
+
+        if (title != null) {
+            archive.setTitle(title);
+        }
+        archive.setSemesterId(semesterId);
+        archive.setObtainedAt(obtainedAt);
+
+        ArchiveAuditInfo audit = archive.getAuditInfo() != null ? archive.getAuditInfo() : new ArchiveAuditInfo();
+        if (draft) {
+            archive.setStatus(ApplyStatusEnum.DRAFT.getValue());
+            audit.setDraftSavedAt(now);
+            audit.setSubmitCount(audit.getSubmitCount() != null ? audit.getSubmitCount() : 0);
+            audit.setCurrentVersion(audit.getCurrentVersion() != null ? audit.getCurrentVersion() : 1);
+        } else {
+            archive.setStatus(ApplyStatusEnum.PENDING.getValue());
+            audit.setSubmittedAt(now);
+            audit.setSubmitCount(audit.getSubmitCount() != null ? audit.getSubmitCount() + 1 : 1);
+            audit.setCurrentVersion(audit.getCurrentVersion() != null ? audit.getCurrentVersion() + 1 : 2);
+        }
+        archive.setAuditInfo(audit);
+        archive = archiveRepository.save(archive);
+
+        // 更新扩展表（按字段名映射）+ 重新绑定附件 + 版本留痕 + 表单快照
+        Map<String, Object> extFields = objectMapper.convertValue(req, Map.class);
+        updateExtension(archiveType, archive.getId(), extFields);
+        bindFiles(toLongList(extFields.get("evidenceFileIds")), userId, archive.getId());
+        writeArchiveVersion(archive, userId);
+        writeFormSnapshot(template, archive.getSchoolId(), archiveType, archive.getId(), req, userId);
         generatePendingApprovalIfSubmitted(archive);
 
         return buildResponse(archive);
@@ -1182,6 +1287,8 @@ public class ApplicationService {
 
     @Data
     public static class CompetitionSubmitRequest {
+        /** 可选：传则按该档案 ID 原地更新（编辑提交），不传则新建 */
+        private Long archiveId;
         private Long semesterId;
         private LocalDate obtainTime;
         private List<Long> evidenceFileIds;
@@ -1197,6 +1304,7 @@ public class ApplicationService {
 
     @Data
     public static class ScholarshipSubmitRequest {
+        private Long archiveId;
         private Long semesterId;
         private LocalDate obtainTime;
         private List<Long> evidenceFileIds;
@@ -1211,6 +1319,7 @@ public class ApplicationService {
 
     @Data
     public static class InnovationSubmitRequest {
+        private Long archiveId;
         private Long semesterId;
         private LocalDate registeredTime;
         private List<Long> evidenceFileIds;
@@ -1226,6 +1335,7 @@ public class ApplicationService {
 
     @Data
     public static class ResearchSubmitRequest {
+        private Long archiveId;
         private Long semesterId;
         private List<Long> evidenceFileIds;
         private Integer isDraft;
@@ -1242,6 +1352,7 @@ public class ApplicationService {
 
     @Data
     public static class CertificateSubmitRequest {
+        private Long archiveId;
         private Long semesterId;
         private LocalDate obtainTime;
         private List<Long> evidenceFileIds;
@@ -1255,6 +1366,7 @@ public class ApplicationService {
 
     @Data
     public static class InternshipSubmitRequest {
+        private Long archiveId;
         private Long semesterId;
         private List<Long> evidenceFileIds;
         private Integer isDraft;
@@ -1270,6 +1382,7 @@ public class ApplicationService {
 
     @Data
     public static class OrganizationSubmitRequest {
+        private Long archiveId;
         private Long semesterId;
         private List<Long> evidenceFileIds;
         private Integer isDraft;
@@ -1285,6 +1398,7 @@ public class ApplicationService {
 
     @Data
     public static class TrainingSubmitRequest {
+        private Long archiveId;
         private Long semesterId;
         private List<Long> evidenceFileIds;
         private Integer isDraft;
@@ -1299,6 +1413,7 @@ public class ApplicationService {
 
     @Data
     public static class PracticeSubmitRequest {
+        private Long archiveId;
         private Long semesterId;
         private List<Long> evidenceFileIds;
         private Integer isDraft;
@@ -1316,6 +1431,7 @@ public class ApplicationService {
 
     @Data
     public static class BookReviewSubmitRequest {
+        private Long archiveId;
         private Long semesterId;
         private List<Long> evidenceFileIds;
         private Integer isDraft;

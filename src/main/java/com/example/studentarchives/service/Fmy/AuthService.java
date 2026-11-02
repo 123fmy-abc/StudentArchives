@@ -278,6 +278,7 @@ public class AuthService {
                 .roleLevelLabel(roleLevelLabel(roleLevel))
                 .homePage(accountRoleResolver.homePage(roles))
                 .avatar(contactInfo != null ? contactInfo.getAvatar() : null)
+                .mustChangePassword(Boolean.TRUE.equals(currentUser.getMustChangePassword()))
                 .build();
 
         LoginResponse.LoginResponseBuilder responseBuilder = LoginResponse.builder()
@@ -534,6 +535,8 @@ public class AuthService {
 
         // 更新密码
         user.setPassword(passwordEncoder.encode(request.getNewPassword()));
+        // 用户已自行改密，清除强制改密标记
+        user.setMustChangePassword(Boolean.FALSE);
         userRepository.save(user);
 
         // 使当前用户所有已签发 Token 失效
@@ -623,6 +626,8 @@ public class AuthService {
 
         // 5. 更新密码
         user.setPassword(passwordEncoder.encode(request.getNewPassword()));
+        // 通过邮箱验证码重置密码，视为用户已完成自主改密，清除强制改密标记
+        user.setMustChangePassword(Boolean.FALSE);
         userRepository.save(user);
 
         // 6. 使旧 Token 失效

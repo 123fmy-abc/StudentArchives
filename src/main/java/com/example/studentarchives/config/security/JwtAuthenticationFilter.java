@@ -12,6 +12,7 @@ import io.jsonwebtoken.ExpiredJwtException;
 import io.jsonwebtoken.JwtException;
 
 import static com.example.studentarchives.config.security.SecurityConstants.PUBLIC_AUTH_PATHS;
+import static com.example.studentarchives.config.security.SecurityConstants.FORCE_PASSWORD_CHANGE_ALLOWED_PATHS;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
@@ -122,6 +123,13 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                 return;
             }
 
+            // 首次登录强制改密：除改密/身份/登出外，其余接口一律 403
+            if (Boolean.TRUE.equals(authStatus.getMustChangePassword())
+                    && !isForcePasswordChangeAllowed(request.getServletPath())) {
+                writeError(response, ResultCode.ACCESS_DENIED, "首次登录请先修改初始密码");
+                return;
+            }
+
             // 设置认证上下文
             UsernamePasswordAuthenticationToken authentication =
                     new UsernamePasswordAuthenticationToken(userId, token, null);
@@ -144,6 +152,16 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             return bearerToken.substring(7);
         }
         return null;
+    }
+
+    /** 强制改密期间是否允许访问该路径（改密/身份/登出及其子路径） */
+    private boolean isForcePasswordChangeAllowed(String path) {
+        for (String allowed : FORCE_PASSWORD_CHANGE_ALLOWED_PATHS) {
+            if (path.equals(allowed) || path.startsWith(allowed + "/")) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /** 返回错误响应（使用 ResultCode 动态 HTTP 状态码） */

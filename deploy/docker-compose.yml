@@ -1,0 +1,48 @@
+# 生产服务器（宝塔）部署用：只运行 app 容器。
+# MySQL / Redis 使用宝塔原生服务（宿主机 127.0.0.1），不随本文件重建。
+# 镜像标签默认 :latest，可用环境变量 APP_TAG 覆盖（用于回滚到指定 sha）。
+
+services:
+  app:
+    image: ${ACR_HOST}/${ACR_NAMESPACE}/student-archives:${APP_TAG:-latest}
+    container_name: stuarchives-app
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      SPRING_PROFILES_ACTIVE: prod
+      TZ: Asia/Shanghai
+
+      # ===== 数据库（宝塔原生 MySQL）=====
+      DB_HOST: ${DB_HOST}
+      DB_PORT: ${DB_PORT:-3306}
+      DB_NAME: ${DB_NAME}
+      DB_USERNAME: ${DB_USERNAME}
+      DB_PASSWORD: ${DB_PASSWORD}
+
+      # ===== Redis（宝塔原生 Redis）=====
+      REDIS_HOST: ${REDIS_HOST}
+      REDIS_PORT: ${REDIS_PORT:-6380}
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+
+      # ===== 邮件 =====
+      MAIL_HOST: ${MAIL_HOST:-smtp.qq.com}
+      MAIL_PORT: ${MAIL_PORT:-587}
+      MAIL_USERNAME: ${MAIL_USERNAME}
+      MAIL_PASSWORD: ${MAIL_PASSWORD}
+
+      # ===== JWT =====
+      JWT_SECRET: ${JWT_SECRET}
+
+      # ===== 阿里云 OSS =====
+      OSS_ENDPOINT: ${OSS_ENDPOINT}
+      OSS_ACCESS_KEY_ID: ${OSS_ACCESS_KEY_ID}
+      OSS_ACCESS_KEY_SECRET: ${OSS_ACCESS_KEY_SECRET}
+      OSS_BUCKET_NAME: ${OSS_BUCKET_NAME}
+
+      # ===== DeepSeek AI =====
+      DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY}
+      # 可选覆盖：DEEPSEEK_BASE_URL / DEEPSEEK_MODEL / DEEPSEEK_TIMEOUT_MS / DEEPSEEK_MAX_TOKENS / DEEPSEEK_TEMPERATURE
+
+    volumes:
+      - ./logs:/app/logs

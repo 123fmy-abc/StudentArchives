@@ -131,4 +131,17 @@ public class AwardController {
             @AuthenticationPrincipal Long userId) {
         return ApiResult.success(awardService.getVersions(applicationId, userId));
     }
+
+    // ==================== 8.6 更正已通过的奖项 ====================
+
+    /**
+     * 更正已通过的奖项：新建版本并进入待审（与档案纠错同构）。
+     */
+    @PostMapping("/{applicationId}/correction")
+    public ApiResult<AwardSubmitResponse> correction(
+            @PathVariable Long applicationId,
+            @RequestBody Map<String, Object> body,
+            @AuthenticationPrincipal Long userId) {
+        return ApiResult.success("更正申请已提交", awardService.correction(applicationId, body, userId));
+    }
 }

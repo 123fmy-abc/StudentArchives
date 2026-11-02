@@ -7,11 +7,14 @@ services:
     restart: unless-stopped
     environment:
       MYSQL_DATABASE: student_archives
+      # 应用使用「仅授权本库」的独立账号 StuArch（最小权限），root 仅用于容器内运维
       MYSQL_USER: StuArch
-      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
-      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root123}
+      # 口令必须由环境变量注入强口令；缺省直接构建失败，杜绝 root123 等弱口令（OPS-01 / BSR-24）
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:?MYSQL_PASSWORD must be set to a strong value}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?MYSQL_ROOT_PASSWORD must be set to a strong value}
     ports:
-      - "3306:3306"
+      # 仅绑定宿主机回环地址，禁止把 3306 暴露到公网（公网 3306 必须不可达）
+      - "127.0.0.1:3306:3306"
     volumes:
       - mysql-data:/var/lib/mysql
       - ./docker/mysql/init:/docker-entrypoint-initdb.d

@@ -7,4 +7,6 @@ public interface UserAuthStatus {
     Integer getTokenVersion();
 
     Integer getRefreshTokenVersion();
+
+    Boolean getMustChangePassword();
 }

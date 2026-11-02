@@ -44,7 +44,7 @@ public interface UserRepository extends JpaRepository<User, Long>, JpaSpecificat
      * 查询用户认证状态（用于 JWT 过滤器与刷新令牌）
      */
     @Cacheable(value = "userAuth", key = "#userId")
-    @Query("SELECT u.status AS status, u.tokenVersion AS tokenVersion, u.refreshTokenVersion AS refreshTokenVersion FROM User u WHERE u.id = :userId")
+    @Query("SELECT u.status AS status, u.tokenVersion AS tokenVersion, u.refreshTokenVersion AS refreshTokenVersion, u.mustChangePassword AS mustChangePassword FROM User u WHERE u.id = :userId")
     Optional<UserAuthStatus> findAuthStatusById(@Param("userId") Long userId);
 
     /**

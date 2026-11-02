@@ -3,6 +3,7 @@ package com.example.studentarchives.service.Lzw;
 import com.example.studentarchives.common.PageParam;
 import com.example.studentarchives.common.PageResult;
 import com.example.studentarchives.common.ResultCode;
+import com.example.studentarchives.common.ValidationConstants;
 import com.example.studentarchives.entity.log.LoginLog;
 import com.example.studentarchives.entity.foundation.Dictionary;
 import com.example.studentarchives.entity.org.Clazz;
@@ -50,6 +51,7 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.security.SecureRandom;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
@@ -78,8 +80,13 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class UserManageService {
 
-    /** 未指定初始密码时的默认密码 */
-    private static final String DEFAULT_PASSWORD = "123456";
+    /** 一次性初始口令字符集（排除易混淆的 0/O/1/I/l 等） */
+    private static final SecureRandom SECURE_RANDOM = new SecureRandom();
+    private static final String PWD_UPPER = "ABCDEFGHJKLMNPQRSTUVWXYZ";
+    private static final String PWD_LOWER = "abcdefghijkmnpqrstuvwxyz";
+    private static final String PWD_DIGIT = "23456789";
+    private static final String PWD_SPECIAL = "!@#$%^&*?";
+    private static final int INITIAL_PASSWORD_LENGTH = 12;
 
     /** 学生角色编码（自动创建 student_profiles 记录） */
     private static final String ROLE_CODE_STUDENT = "student";
@@ -216,12 +223,24 @@ public class UserManageService {
         user.setUserNo(userNo);
         user.setName(body.getName().trim());
         user.setGender(body.getGender());
-        String rawPassword = (body.getPassword() != null && !body.getPassword().isBlank())
-                ? body.getPassword() : DEFAULT_PASSWORD;
+        boolean passwordProvided = body.getPassword() != null && !body.getPassword().isBlank();
+        String rawPassword;
+        if (passwordProvided) {
+            // 管理员显式设置的密码同样要求满足强度策略，避免弱口令
+            if (!body.getPassword().matches(ValidationConstants.PASSWORD_PATTERN)) {
+                throw new BusinessException(ResultCode.PARAM_ERROR, ValidationConstants.PASSWORD_MESSAGE);
+            }
+            rawPassword = body.getPassword();
+        } else {
+            // 不再使用统一默认口令，改为服务端随机生成一次性初始口令
+            rawPassword = generateInitialPassword();
+        }
         user.setPassword(passwordEncoder.encode(rawPassword));
         user.setStatus(1);
         user.setTokenVersion(0);
         user.setRefreshTokenVersion(0);
+        // 新建账号一律强制首次登录改密（即使管理员显式设密，也要求用户首次登录后更换）
+        user.setMustChangePassword(Boolean.TRUE);
         userRepository.save(user);
 
         upsertContactInfo(user.getId(), body.getEmail(), body.getPhone());
@@ -246,7 +265,12 @@ public class UserManageService {
             teacherProfileRepository.save(tp);
         }
 
-        return CreateUserResponse.builder().userId(user.getId()).build();
+        return CreateUserResponse.builder()
+                .userId(user.getId())
+                .mustChangePassword(Boolean.TRUE)
+                // 仅服务端生成时回传一次性明文口令；管理员自设密码时不回传
+                .initialPassword(passwordProvided ? null : rawPassword)
+                .build();
     }
 
     // ==================== 6.4 更新用户信息 ====================
@@ -290,9 +314,9 @@ public class UserManageService {
         }
         user.setStatus(status);
         userRepository.save(user);
-        // 禁用后使该用户所有 Token 立即失效（token_version +1）
+        // 禁用后使该用户所有 Token 立即失效（access 与 refresh 一并递增，防止旧 refresh 换新 access 复活）
         if (Integer.valueOf(0).equals(status)) {
-            userRepository.incrementTokenVersion(userId);
+            userRepository.revokeAllTokens(userId);
         }
     }
 
@@ -308,7 +332,12 @@ public class UserManageService {
             throw new BusinessException(ResultCode.PARAM_MISSING, "新密码不能为空");
         }
         user.setPassword(passwordEncoder.encode(newPassword));
+        // 管理员重置后，用户下次登录须自行修改密码
+        user.setMustChangePassword(Boolean.TRUE);
         userRepository.save(user);
+        // 重置成功后立即吊销该用户全部旧 access / refresh，踢出所有已登录会话。
+        // 否则账号被盗后重置密码，攻击者仍可凭旧 access 访问、凭旧 refresh 续期。
+        userRepository.revokeAllTokens(userId);
     }
 
     // ==================== 6.7 分配用户角色（覆盖式） ====================
@@ -683,6 +712,31 @@ public class UserManageService {
 
     // ==================== 通用辅助 ====================
 
+    /**
+     * 生成一次性初始口令：12 位，保证包含大写/小写/数字/特殊字符，满足 PASSWORD_PATTERN。
+     * 使用 SecureRandom，避免可预测；仅在创建响应里回传一次。
+     */
+    private String generateInitialPassword() {
+        String all = PWD_UPPER + PWD_LOWER + PWD_DIGIT + PWD_SPECIAL;
+        List<Character> chars = new ArrayList<>(INITIAL_PASSWORD_LENGTH);
+        chars.add(pick(PWD_UPPER));
+        chars.add(pick(PWD_LOWER));
+        chars.add(pick(PWD_DIGIT));
+        chars.add(pick(PWD_SPECIAL));
+        for (int i = 4; i < INITIAL_PASSWORD_LENGTH; i++) {
+            chars.add(pick(all));
+        }
+        Collections.shuffle(chars, SECURE_RANDOM);
+        StringBuilder sb = new StringBuilder(INITIAL_PASSWORD_LENGTH);
+        chars.forEach(sb::append);
+        return sb.toString();
+    }
+
+    private char pick(String alphabet) {
+        return alphabet.charAt(SECURE_RANDOM.nextInt(alphabet.length()));
+    }
+
+
     private Map<Long, College> loadColleges(List<Long> ids) {
         if (ids == null || ids.isEmpty()) {
             return Map.of();
@@ -870,6 +924,10 @@ public class UserManageService {
     @AllArgsConstructor
     public static class CreateUserResponse {
         private Long userId;
+        /** 是否需首次登录强制改密 */
+        private Boolean mustChangePassword;
+        /** 服务端随机生成的一次性初始口令（仅生成时返回一次，不落日志、不再回显） */
+        private String initialPassword;
     }
 
     /** 6.4 更新用户请求 */

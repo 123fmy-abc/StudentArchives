@@ -458,6 +458,129 @@ public class AwardService {
         return buildSubmitResponse(app);
     }
 
+    // ==================== 8.6 更正已通过的奖项（新建版本并提交待审） ====================
+
+    /**
+     * 更正已通过的奖项：新建版本并进入待审，保留原版本用于追溯（AUTH 无关，S01/S02 纠错契约）。
+     *
+     * @param applicationId 原奖项报名 ID
+     * @param body          可覆盖字段（title/semesterId 及对应子表字段、evidenceFileIds）
+     * @param userId        当前用户
+     * @return 新版本 applicationId / 状态 / 版本号
+     */
+    @Transactional
+    public AwardSubmitResponse correction(Long applicationId, Map<String, Object> body, Long userId) {
+        AwardApplication original = awardApplicationRepository.findById(applicationId)
+                .orElseThrow(() -> new BusinessException(ResultCode.DATA_NOT_EXIST, "奖项报名不存在"));
+        checkOwnership(original, userId);
+
+        if (original.getStatus() == null || original.getStatus() != ApplyStatusEnum.APPROVED.getValue()) {
+            throw new BusinessException(ResultCode.BIZ_STATUS_NOT_OPERABLE, "仅已通过状态的奖项可以更正");
+        }
+
+        LocalDateTime now = LocalDateTime.now();
+        AwardApplication app = new AwardApplication();
+        app.setSchoolId(original.getSchoolId());
+        app.setUserId(userId);
+        app.setAwardType(original.getAwardType());
+        app.setTitle(body.containsKey("title") ? (String) body.get("title") : original.getTitle());
+        app.setSemesterId(body.containsKey("semesterId") ? toLong(body.get("semesterId")) : original.getSemesterId());
+        app.setCertificateNo(original.getCertificateNo());
+        app.setIssuingUnit(original.getIssuingUnit());
+        app.setValidUntil(original.getValidUntil());
+        app.setParticipantRole(original.getParticipantRole());
+
+        ArchiveAuditInfo origAudit = original.getAuditInfo();
+        ArchiveAuditInfo audit = new ArchiveAuditInfo();
+        audit.setCurrentVersion(origAudit != null && origAudit.getCurrentVersion() != null
+                ? origAudit.getCurrentVersion() + 1 : 2);
+        audit.setSubmitCount(1);
+        audit.setSubmittedAt(now);
+        app.setStatus(ApplyStatusEnum.PENDING.getValue());
+        app.setAuditInfo(audit);
+        app = awardApplicationRepository.save(app);
+
+        // 复制子表到新版本，再按 body 覆盖可编辑字段
+        copyAwardExtension(original.getAwardType(), original.getId(), app.getId());
+        updateExtension(app.getAwardType(), app.getId(), body);
+
+        bindFiles(toLongList(body.get("evidenceFileIds")), userId, app.getId());
+        writeAwardVersion(app, userId);
+        generatePendingApprovalIfSubmitted(app);
+
+        return buildSubmitResponse(app);
+    }
+
+    /** 复制奖项扩展子表（竞赛之星 / 双创之星 / 科研之星及其子项）到新版本记录 */
+    private void copyAwardExtension(String awardType, Long oldAppId, Long newAppId) {
+        switch (awardType) {
+            case "competition_star" -> competitionStarRepository.findByApplicationId(oldAppId).ifPresent(ext -> {
+                AwardCompetitionStar n = new AwardCompetitionStar();
+                n.setApplicationId(newAppId);
+                n.setCompetitionName(ext.getCompetitionName());
+                n.setParticipatedAt(ext.getParticipatedAt());
+                n.setCompetitionLevel(ext.getCompetitionLevel());
+                n.setAwardLevel(ext.getAwardLevel());
+                competitionStarRepository.save(n);
+            });
+            case "innovation_star" -> innovationStarRepository.findByApplicationId(oldAppId).ifPresent(ext -> {
+                AwardInnovationStar n = new AwardInnovationStar();
+                n.setApplicationId(newAppId);
+                n.setCompanyName(ext.getCompanyName());
+                n.setIndustryType(ext.getIndustryType());
+                n.setApplicantRank(ext.getApplicantRank());
+                n.setRegisteredAt(ext.getRegisteredAt());
+                innovationStarRepository.save(n);
+            });
+            case "research_star" -> researchStarRepository.findByApplicationId(oldAppId).ifPresent(oldRs -> {
+                AwardResearchStar rs = new AwardResearchStar();
+                rs.setApplicationId(newAppId);
+                rs.setPrimaryCategory(oldRs.getPrimaryCategory());
+                AwardResearchStar savedRs = researchStarRepository.save(rs);
+                for (AwardResearchProject p : researchProjectRepository.findByResearchStarId(oldRs.getId())) {
+                    AwardResearchProject np = new AwardResearchProject();
+                    np.setResearchStarId(savedRs.getId());
+                    np.setProjectName(p.getProjectName());
+                    np.setProjectLevel(p.getProjectLevel());
+                    np.setRankTotal(p.getRankTotal());
+                    np.setEstablishedAt(p.getEstablishedAt());
+                    researchProjectRepository.save(np);
+                }
+                for (AwardSoftwareCopyright s : softwareCopyrightRepository.findByResearchStarId(oldRs.getId())) {
+                    AwardSoftwareCopyright ns = new AwardSoftwareCopyright();
+                    ns.setResearchStarId(savedRs.getId());
+                    ns.setSoftwareName(s.getSoftwareName());
+                    ns.setRankTotal(s.getRankTotal());
+                    ns.setApprovedAt(s.getApprovedAt());
+                    softwareCopyrightRepository.save(ns);
+                }
+                for (AwardPublishedPaper pp : publishedPaperRepository.findByResearchStarId(oldRs.getId())) {
+                    AwardPublishedPaper np = new AwardPublishedPaper();
+                    np.setResearchStarId(savedRs.getId());
+                    np.setJournalName(pp.getJournalName());
+                    np.setPaperTitle(pp.getPaperTitle());
+                    np.setRankTotal(pp.getRankTotal());
+                    np.setPublishedAt(pp.getPublishedAt());
+                    publishedPaperRepository.save(np);
+                }
+            });
+            default -> { }
+        }
+    }
+
+    private List<Long> toLongList(Object value) {
+        List<Long> result = new java.util.ArrayList<>();
+        if (value instanceof List<?> list) {
+            for (Object item : list) {
+                Long id = toLong(item);
+                if (id != null) {
+                    result.add(id);
+                }
+            }
+        }
+        return result;
+    }
+
     // ==================== 8.5 获取奖项版本历史 ====================
 
     @Transactional(readOnly = true)
