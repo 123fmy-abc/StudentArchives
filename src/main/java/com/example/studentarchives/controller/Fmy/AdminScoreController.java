@@ -22,7 +22,8 @@ import org.springframework.web.bind.annotation.RestController;
  * 对应《管理端接口文档》二、评分重算模块（2.1 触发评分重算 / 2.2 查询任务进度），
  * 统一前缀 /admin/scores。
  * <p>
- * 所有接口需通过 {@link AdminScoreService} 校验 admin 角色或 score:recalculate 权限码，
+ * 所有接口需通过 {@link AdminScoreService} 校验 admin 角色或管理端专属权限码
+ * {@code score:recalculate:admin}，教师侧权限码 {@code score:recalculate} 不可用于管理端接口，
  * 越权返回 20005 无访问权限。触发重算写入 audit_log 审计日志（module=score, action=recalculate）。
  */
 @RestController

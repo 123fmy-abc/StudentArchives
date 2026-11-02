@@ -79,10 +79,11 @@ import java.util.stream.Collectors;
  * <p>
  * 对应《管理端接口文档》三、评分重算模块（3.1 触发评分重算 / 3.2 查询任务进度）。
  * <ul>
- *   <li>3.1 POST /admin/scores/recalculate：校验 admin 角色或 score:recalculate 权限码，
- *       校验重算范围与「同一范围已有生效中任务」（41005），创建 score_recalculation_tasks
- *       记录后提交异步执行，接口立即返回任务 ID。</li>
- *   <li>3.2 GET /admin/scores/recalculation-tasks/{taskId}：查询任务状态、进度与结果摘要。</li>
+ *   <li>3.1 POST /admin/scores/recalculate：校验 admin 角色或管理端专属权限码
+ *       {@code score:recalculate:admin}，校验重算范围与「同一范围已有生效中任务」（41005），
+ *       创建 score_recalculation_tasks 记录后提交异步执行，接口立即返回任务 ID。</li>
+ *   <li>3.2 GET /admin/scores/recalculation-tasks/{taskId}：校验同一管理端权限码与本校范围，
+ *       查询任务状态、进度与结果摘要。</li>
  * </ul>
  * 异步执行时按目标学期自己最近发布的指标规则版本（indicator_rule_versions 按 semester_id 匹配，
  * 未单独发布则回退全校当前生效版本）重算各学生各维度画像得分，替换该学生该学期旧的评分计算批次
@@ -93,8 +94,15 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class AdminScoreService {
 
-    /** 触发评分重算权限码（《管理端接口文档》关键权限码） */
+    /** 教师端触发评分重算权限码（教师/辅导员默认持有） */
     private static final String RECALC_PERMISSION = "score:recalculate";
+
+    /**
+     * 管理端评分重算专属权限码（仅 admin 角色或管理端授权角色持有）。
+     * <p>教师侧只授予 {@link #RECALC_PERMISSION}，因此教师令牌无法通过管理端接口触发
+     * 全量/专业重算或读取任意任务详情（AUTHZ-01 / BSR-08）。</p>
+     */
+    private static final String ADMIN_RECALC_PERMISSION = "score:recalculate:admin";
 
     /** 任务状态：0=排队中 1=执行中 2=完成 3=失败 */
     private static final int STATUS_QUEUED = 0;
@@ -157,6 +165,8 @@ public class AdminScoreService {
     /**
      * 触发评分重算（POST /admin/scores/recalculate，文档 2.1）
      * <p>
+     * 仅 admin 角色或持有管理端专属权限码 {@link #ADMIN_RECALC_PERMISSION} 的授权角色可调用；
+     * 教师侧权限码 {@link #RECALC_PERMISSION} 不能用于管理端接口。
      * 管理员触发指定学生/班级/学期/专业/全量的评分重算。任务进入 score_recalculation_tasks
      * 异步执行，接口立即返回任务 ID。
      *
@@ -165,7 +175,7 @@ public class AdminScoreService {
      * @return 任务 ID 与初始状态
      */
     public ScoreRecalculateResponse triggerRecalculate(Long userId, ScoreRecalculateRequest request) {
-        adminAuthService.requireAdminOrPermission(userId, RECALC_PERMISSION);
+        adminAuthService.requireAdminOrPermission(userId, ADMIN_RECALC_PERMISSION);
         return doTriggerRecalculate(userId, request);
     }
 
@@ -381,15 +391,22 @@ public class AdminScoreService {
 
     /**
      * 查询评分重算任务进度（GET /admin/scores/recalculation-tasks/{taskId}，文档 2.2）
+     * <p>
+     * 仅 admin 角色或持有 {@link #ADMIN_RECALC_PERMISSION} 的授权角色可调用，
+     * 且只允许读取本校任务（跨校 taskId 返回 20005）。
      *
      * @param userId 当前登录用户 ID
      * @param taskId 评分重算任务 ID
      * @return 任务状态、进度与结果摘要
      */
     public ScoreRecalculationTaskResponse getRecalculationTask(Long userId, Long taskId) {
-        adminAuthService.requireAdminOrPermission(userId, RECALC_PERMISSION);
+        adminAuthService.requireAdminOrPermission(userId, ADMIN_RECALC_PERMISSION);
         ScoreRecalculationTask task = taskRepository.findById(taskId)
                 .orElseThrow(() -> new BusinessException(ResultCode.DATA_NOT_EXIST, "评分重算任务不存在"));
+        Long schoolId = adminAuthService.getOperatorSchoolId(userId);
+        if (!Objects.equals(task.getSchoolId(), schoolId)) {
+            throw new BusinessException(ResultCode.ACCESS_DENIED, "无访问权限");
+        }
         return toTaskResponse(task);
     }
 
@@ -439,8 +456,9 @@ public class AdminScoreService {
     /**
      * 教师端查询评分重算任务进度（GET /teacher/scores/recalculation-tasks/{taskId}，教师端文档 11.5）
      * <p>
-     * 复用 2.2 查询逻辑（{@link #toTaskResponse}），教师侧补充任务归属校验：
-     * 仅本人触发的任务（triggered_by）可查，管理员可查任意任务，非本人且非管理员返回 20005。
+     * 复用 2.2 查询逻辑（{@link #toTaskResponse}），教师侧补充任务归属与学校校验：
+     * 仅本校且本人触发的任务（triggered_by）可查，本校管理员可查本校任意任务，
+     * 跨校或非本人且非管理员返回 20005。
      *
      * @param userId 当前登录用户 ID
      * @param taskId 评分重算任务 ID
@@ -450,6 +468,10 @@ public class AdminScoreService {
         adminAuthService.requireAdminOrPermission(userId, RECALC_PERMISSION);
         ScoreRecalculationTask task = taskRepository.findById(taskId)
                 .orElseThrow(() -> new BusinessException(ResultCode.DATA_NOT_EXIST, "评分重算任务不存在"));
+        Long schoolId = adminAuthService.getOperatorSchoolId(userId);
+        if (!Objects.equals(task.getSchoolId(), schoolId)) {
+            throw new BusinessException(ResultCode.ACCESS_DENIED, "无访问权限");
+        }
         if (!Objects.equals(task.getTriggeredBy(), userId)) {
             AdminAuthService.OperatorRole role = adminAuthService.resolveOperatorRole(userId);
             if (role == null || !role.isAdmin()) {
