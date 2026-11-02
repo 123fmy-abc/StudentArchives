@@ -63,6 +63,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Lazy;
+import org.springframework.orm.ObjectOptimisticLockingFailureException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
@@ -200,6 +201,7 @@ public class AuditTaskService {
 
         return PendingDetailResponse.builder()
                 .taskId(p.getId())
+                .version(p.getLockVersion())
                 .type(toTypeCode(p.getApprovableType()))
                 .archiveType(info != null ? info.archiveType : null)
                 .approvableId(p.getApprovableId())
@@ -220,18 +222,20 @@ public class AuditTaskService {
 
     /** 单个审核通过（POST /teacher/audits/{taskId}/approve） */
     @Transactional
-    public ApproveResult approve(Long teacherId, Long taskId, String comment, Long nextAuditorId) {
+    public ApproveResult approve(Long teacherId, Long taskId, String comment, Long nextAuditorId,
+                                 Integer expectedVersion) {
         Long schoolId = adminAuthService.getOperatorSchoolId(teacherId);
-        return approveInternal(taskId, comment, nextAuditorId, teacherId, schoolId);
+        return approveInternal(taskId, comment, nextAuditorId, teacherId, schoolId, expectedVersion);
     }
 
     private ApproveResult approveInternal(Long taskId, String comment, Long nextAuditorId,
-                                          Long teacherId, Long schoolId) {
+                                          Long teacherId, Long schoolId, Integer expectedVersion) {
         PendingApproval p = loadTask(taskId);
         ensureTaskAccess(p, teacherId, schoolId);
         if (!Integer.valueOf(1).equals(p.getStatus())) {
             throw new BusinessException(ResultCode.BIZ_STATUS_NOT_OPERABLE, "任务已处理，请勿重复审核");
         }
+        verifyTaskVersion(p, expectedVersion);
         LocalDateTime now = LocalDateTime.now();
 
         // 1. 完成当前节点（动作=通过）
@@ -244,9 +248,9 @@ public class AuditTaskService {
             approvalNodeRepository.save(node);
         }
 
-        // 2. 当前待办置为已通过
+        // 2. 当前待办置为已通过；立即 flush，并发时在此处版本冲突并返回 409
         p.setStatus(ApplyStatusEnum.APPROVED.getValue());
-        pendingApprovalRepository.save(p);
+        flushTaskOrConflict(p);
 
         // 3. 推进流程：存在下一步则生成下一步节点与待办（非终审），否则整体通过（终审）
         ApprovalInstance inst = approvalInstanceRepository.findById(p.getInstanceId()).orElse(null);
@@ -337,7 +341,7 @@ public class AuditTaskService {
     /** 单个审核退回（POST /teacher/audits/{taskId}/reject） */
     @Transactional
     public RejectResult reject(Long teacherId, Long taskId, String comment, String templateCode,
-                               Integer rejectToStep) {
+                               Integer rejectToStep, Integer expectedVersion) {
         Long schoolId = adminAuthService.getOperatorSchoolId(teacherId);
         if (comment == null || comment.isBlank()) {
             throw new BusinessException(ResultCode.PARAM_MISSING, "退回原因不能为空");
@@ -353,6 +357,7 @@ public class AuditTaskService {
         if (!Integer.valueOf(1).equals(p.getStatus())) {
             throw new BusinessException(ResultCode.BIZ_STATUS_NOT_OPERABLE, "任务已处理，请勿重复审核");
         }
+        verifyTaskVersion(p, expectedVersion);
         LocalDateTime now = LocalDateTime.now();
 
         ApprovalNode node = approvalNodeRepository.findById(p.getNodeId()).orElse(null);
@@ -365,7 +370,7 @@ public class AuditTaskService {
         }
 
         p.setStatus(ApplyStatusEnum.REJECTED.getValue());
-        pendingApprovalRepository.save(p);
+        flushTaskOrConflict(p);
 
         approvalInstanceRepository.findById(p.getInstanceId()).ifPresent(inst -> {
             inst.setStatus(ApprovalInstanceStatusEnum.REJECTED.getValue());
@@ -428,6 +433,12 @@ public class AuditTaskService {
                         teacherId, taskId, e.getCode(), e.getMessage());
                 results.add(new BatchResultItem(taskId, false, null, e.getCode(), e.getMessage()));
                 failed++;
+            } catch (ObjectOptimisticLockingFailureException e) {
+                log.warn("批量审核版本冲突: teacherId={}, taskId={}", teacherId, taskId, e);
+                results.add(new BatchResultItem(taskId, false, null,
+                        ResultCode.DATA_VERSION_CONFLICT.getCode(),
+                        "该任务已被其他审批人处理"));
+                failed++;
             } catch (Exception e) {
                 log.error("批量审核异常: teacherId={}, taskId={}", teacherId, taskId, e);
                 results.add(new BatchResultItem(taskId, false, null,
@@ -447,14 +458,14 @@ public class AuditTaskService {
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public ApproveResult approveInNewTransaction(Long teacherId, Long taskId, String comment) {
         Long schoolId = adminAuthService.getOperatorSchoolId(teacherId);
-        return approveInternal(taskId, comment, null, teacherId, schoolId);
+        return approveInternal(taskId, comment, null, teacherId, schoolId, null);
     }
 
     // ==================== 4.6 撤销已审核记录 ====================
 
     /** 撤销已审核记录（POST /teacher/audits/{taskId}/revoke，admin 角色或 audit:revoke 权限码）。 */
     @Transactional
-    public RevokeResult revoke(Long teacherId, Long taskId, String revokeReason) {
+    public RevokeResult revoke(Long teacherId, Long taskId, String revokeReason, Integer expectedVersion) {
         adminAuthService.requireAdminOrPermission(teacherId, "audit:revoke");
         if (revokeReason == null || revokeReason.isBlank()) {
             throw new BusinessException(ResultCode.PARAM_MISSING, "撤销原因不能为空");
@@ -463,6 +474,7 @@ public class AuditTaskService {
         if (!Integer.valueOf(2).equals(p.getStatus())) {
             throw new BusinessException(ResultCode.BIZ_STATUS_NOT_OPERABLE, "仅已通过的记录可撤销");
         }
+        verifyTaskVersion(p, expectedVersion);
         LocalDateTime now = LocalDateTime.now();
 
         Long revokedLogId = auditLogRepository
@@ -472,7 +484,7 @@ public class AuditTaskService {
                 .orElse(null);
 
         p.setStatus(ApplyStatusEnum.REVOKED.getValue());
-        pendingApprovalRepository.save(p);
+        flushTaskOrConflict(p);
 
         approvalInstanceRepository.findById(p.getInstanceId()).ifPresent(inst -> {
             inst.setStatus(ApprovalInstanceStatusEnum.REVOKED.getValue());
@@ -505,7 +517,8 @@ public class AuditTaskService {
      * 同时向目标审批人发送审核提醒。转交后原审批人不再持有该待办。
      */
     @Transactional
-    public TransferResult transfer(Long teacherId, Long taskId, Long targetAuditorId, String comment) {
+    public TransferResult transfer(Long teacherId, Long taskId, Long targetAuditorId, String comment,
+                                   Integer expectedVersion) {
         Long schoolId = adminAuthService.getOperatorSchoolId(teacherId);
         if (targetAuditorId == null) {
             throw new BusinessException(ResultCode.PARAM_MISSING, "转交对象不能为空");
@@ -527,6 +540,7 @@ public class AuditTaskService {
         if (!Integer.valueOf(1).equals(p.getStatus())) {
             throw new BusinessException(ResultCode.BIZ_STATUS_NOT_OPERABLE, "任务已处理，请勿重复操作");
         }
+        verifyTaskVersion(p, expectedVersion);
         LocalDateTime now = LocalDateTime.now();
 
         // 节点改派：待办归属目标审批人（节点仍待审核，action 不置位）
@@ -538,7 +552,7 @@ public class AuditTaskService {
 
         // 待办改派给目标审批人
         p.setAuditorId(targetAuditorId);
-        pendingApprovalRepository.save(p);
+        flushTaskOrConflict(p);
 
         // 审核记录写入「转交」（audit_logs.action=4），管理员「审核记录」按转交筛选即可命中
         writeAuditLog(p, AuditActionEnum.TRANSFER.getValue(), buildTransferComment(target.getName(), comment),
@@ -948,6 +962,29 @@ public class AuditTaskService {
                 .orElseThrow(() -> new BusinessException(ResultCode.DATA_NOT_EXIST, "待审核任务不存在"));
     }
 
+    /**
+     * 校验客户端携带的版本号（可选契约）：页面停留过久后提交时提前暴露冲突。
+     * 未携带版本（旧客户端）时跳过，由 {@link #flushTaskOrConflict} 的乐观锁兜底。
+     */
+    private void verifyTaskVersion(PendingApproval p, Integer expectedVersion) {
+        if (expectedVersion != null && !expectedVersion.equals(p.getLockVersion())) {
+            throw new BusinessException(ResultCode.DATA_VERSION_CONFLICT,
+                    "数据已被他人修改，请刷新后重试");
+        }
+    }
+
+    /**
+     * 立即 flush 待办状态，让并发版本冲突在写节点/日志/通知之前暴露，统一转为 409。
+     */
+    private void flushTaskOrConflict(PendingApproval p) {
+        try {
+            pendingApprovalRepository.saveAndFlush(p);
+        } catch (ObjectOptimisticLockingFailureException e) {
+            throw new BusinessException(ResultCode.DATA_VERSION_CONFLICT,
+                    "该任务已被其他审批人处理，请刷新后重试");
+        }
+    }
+
     private PendingListItem toListItem(PendingApproval p, Map<Long, ApplicantInfo> applicantCache) {
         ApprovableInfo info = resolveApprovableInfo(p);
         ApplicantInfo applicant = applicantCache.computeIfAbsent(p.getApplicantId(), this::buildApplicantInfo);
@@ -975,6 +1012,7 @@ public class AuditTaskService {
                 .duplicateCheckStatus(info != null && info.duplicateCheckStatus != null
                         ? info.duplicateCheckStatus : dup.getValue())
                 .duplicateCheckStatusLabel(dup.getLabel())
+                .version(p.getLockVersion())
                 .build();
     }
 
@@ -1227,12 +1265,15 @@ public class AuditTaskService {
         private String statusLabel;
         private Integer duplicateCheckStatus;
         private String duplicateCheckStatusLabel;
+        /** 任务版本号（并发审批冲突检测，提交时回传） */
+        private Integer version;
     }
 
     @Data
     @Builder
     public static class PendingDetailResponse {
         private Long taskId;
+        private Integer version;
         private String type;
         private String archiveType;
         private Long approvableId;
@@ -1384,6 +1425,8 @@ public class AuditTaskService {
     public static class ApproveRequest {
         private String comment;
         private Long nextAuditorId;
+        /** 任务版本号（可选，用于提前发现并发冲突） */
+        private Integer version;
     }
 
     @Data
@@ -1391,6 +1434,8 @@ public class AuditTaskService {
         private String comment;
         private String templateCode;
         private Integer rejectToStep;
+        /** 任务版本号（可选，用于提前发现并发冲突） */
+        private Integer version;
     }
 
     @Data
@@ -1402,11 +1447,15 @@ public class AuditTaskService {
     @Data
     public static class RevokeRequest {
         private String revokeReason;
+        /** 任务版本号（可选，用于提前发现并发冲突） */
+        private Integer version;
     }
 
     @Data
     public static class TransferRequest {
         private Long targetAuditorId;
         private String comment;
+        /** 任务版本号（可选，用于提前发现并发冲突） */
+        private Integer version;
     }
 }

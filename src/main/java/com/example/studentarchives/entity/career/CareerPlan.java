@@ -52,6 +52,11 @@ public class CareerPlan extends BaseEntity {
     @Column(name = "status", nullable = false)
     private Integer status = 0;
 
+    /** 乐观锁版本号：并发审批/撤回时防止业务状态被覆盖 */
+    @Version
+    @Column(name = "lock_version", nullable = false, columnDefinition = "INT UNSIGNED DEFAULT 0")
+    private Integer lockVersion;
+
     /** 提交流程公共字段（提交/审核/退回/通过/撤销时间戳等） */
     @Embedded
     private ArchiveAuditInfo auditInfo = new ArchiveAuditInfo();

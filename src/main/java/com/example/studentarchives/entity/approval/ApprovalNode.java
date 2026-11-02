@@ -5,6 +5,7 @@ import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Lob;
 import jakarta.persistence.Table;
+import jakarta.persistence.Version;
 import lombok.Getter;
 import lombok.Setter;
 
@@ -69,4 +70,9 @@ public class ApprovalNode extends BaseEntity {
 
     @Column(name = "timeout_at")
     private LocalDateTime timeoutAt;
+
+    /** 乐观锁版本号：并发审批/转交时防止节点状态被覆盖 */
+    @Version
+    @Column(name = "lock_version", nullable = false, columnDefinition = "INT UNSIGNED DEFAULT 0")
+    private Integer lockVersion;
 }

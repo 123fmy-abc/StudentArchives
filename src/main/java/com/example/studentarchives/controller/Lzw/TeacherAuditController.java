@@ -93,7 +93,7 @@ public class TeacherAuditController {
             @PathVariable Long taskId,
             @RequestBody ApproveRequest body) {
         return ApiResult.success("审核通过", auditTaskService.approve(userId, taskId,
-                body.getComment(), body.getNextAuditorId()));
+                body.getComment(), body.getNextAuditorId(), body.getVersion()));
     }
 
     // ==================== 4.4 单个审核退回 ====================
@@ -104,7 +104,7 @@ public class TeacherAuditController {
             @PathVariable Long taskId,
             @RequestBody RejectRequest body) {
         return ApiResult.success("已退回", auditTaskService.reject(userId, taskId,
-                body.getComment(), body.getTemplateCode(), body.getRejectToStep()));
+                body.getComment(), body.getTemplateCode(), body.getRejectToStep(), body.getVersion()));
     }
 
     // ==================== 4.5 批量审核通过 ====================
@@ -125,7 +125,7 @@ public class TeacherAuditController {
             @PathVariable Long taskId,
             @RequestBody RevokeRequest body) {
         return ApiResult.success("撤销成功", auditTaskService.revoke(userId, taskId,
-                body.getRevokeReason()));
+                body.getRevokeReason(), body.getVersion()));
     }
 
     // ==================== 4.8 转交待审核任务 ====================
@@ -136,7 +136,7 @@ public class TeacherAuditController {
             @PathVariable Long taskId,
             @RequestBody TransferRequest body) {
         return ApiResult.success("已转交", auditTaskService.transfer(userId, taskId,
-                body.getTargetAuditorId(), body.getComment()));
+                body.getTargetAuditorId(), body.getComment(), body.getVersion()));
     }
 
     // ==================== 4.7 获取常用退回原因模板 ====================

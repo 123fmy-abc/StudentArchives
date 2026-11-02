@@ -4,6 +4,7 @@ import com.example.studentarchives.entity.BaseEntity;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Table;
+import jakarta.persistence.Version;
 import lombok.Getter;
 import lombok.Setter;
 
@@ -43,4 +44,9 @@ public class ApprovalInstance extends BaseEntity {
 
     @Column(name = "completed_at")
     private LocalDateTime completedAt;
+
+    /** 乐观锁版本号：并发审批推进/撤回时防止流程实例被覆盖 */
+    @Version
+    @Column(name = "lock_version", nullable = false, columnDefinition = "INT UNSIGNED DEFAULT 0")
+    private Integer lockVersion;
 }

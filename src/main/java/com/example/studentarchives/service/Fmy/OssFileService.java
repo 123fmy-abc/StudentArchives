@@ -5,6 +5,7 @@ import com.aliyun.oss.model.GeneratePresignedUrlRequest;
 import com.aliyun.oss.model.ObjectMetadata;
 import com.aliyun.oss.model.ResponseHeaderOverrides;
 import com.example.studentarchives.config.Fmy.OssProperties;
+import com.example.studentarchives.support.FileTypeValidator;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -313,13 +314,14 @@ public class OssFileService {
      */
     private String doUpload(MultipartFile file, String objectKey) {
         try (InputStream inputStream = file.getInputStream()) {
+            String contentType = FileTypeValidator.mimeTypeForFilename(file.getOriginalFilename());
             ObjectMetadata metadata = new ObjectMetadata();
             metadata.setContentLength(file.getSize());
-            metadata.setContentType(file.getContentType());
+            metadata.setContentType(contentType);
 
             ossClient.putObject(ossProperties.getBucketName(), objectKey, inputStream, metadata);
             log.info("OSS 文件上传成功: {}, size={}, type={}",
-                    objectKey, file.getSize(), file.getContentType());
+                    objectKey, file.getSize(), contentType);
             return objectKey;
         } catch (Exception e) {
             log.error("OSS 文件上传失败: bucket={}, objectKey={}, endpoint={}, error={}",

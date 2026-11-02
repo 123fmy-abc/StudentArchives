@@ -21,6 +21,7 @@ import com.example.studentarchives.repository.AdminExportTemplateRepository;
 import com.example.studentarchives.repository.SchoolRepository;
 import com.example.studentarchives.repository.UserRepository;
 import com.example.studentarchives.service.common.AdminAuthService;
+import com.example.studentarchives.support.FileTypeValidator;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -37,7 +38,6 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-import java.util.Set;
 import java.util.stream.Collectors;
 
 /**
@@ -444,17 +444,9 @@ public class AdminExportTemplateService {
             throw new BusinessException(ResultCode.PARAM_ERROR, "上传文件不能为空");
         }
 
-        // 2. 校验文件扩展名（仅允许图片格式）
+        // 2. 校验扩展名与文件头（仅允许图片格式）
         String originalFilename = file.getOriginalFilename();
-        String ext = extractExtension(originalFilename);
-        if (ext == null) {
-            throw new BusinessException(ResultCode.FILE_FORMAT_ERROR, "文件缺少扩展名");
-        }
-        Set<String> allowedImageExts = Set.of("jpg", "jpeg", "png", "gif", "webp", "bmp");
-        if (!allowedImageExts.contains(ext)) {
-            throw new BusinessException(ResultCode.FILE_FORMAT_ERROR,
-                    "仅支持 jpg/png/gif/webp/bmp 格式的图片，当前文件格式: " + ext);
-        }
+        FileTypeValidator.validate(file, FileTypeValidator.IMAGE_EXTENSIONS);
 
         // 3. 校验文件大小（预览图限制 2MB）
         long maxPreviewSize = 2 * 1024 * 1024L;
@@ -652,15 +644,6 @@ public class AdminExportTemplateService {
     private String toIso(LocalDateTime dateTime) {
         return dateTime != null
                 ? dateTime.atZone(ZoneId.systemDefault()).format(ISO_WITH_ZONE)
-                : null;
-    }
-
-    /** 提取文件扩展名（不含点号，小写） */
-    private static String extractExtension(String filename) {
-        if (filename == null || filename.isEmpty()) return null;
-        int dotIndex = filename.lastIndexOf('.');
-        return (dotIndex >= 0 && dotIndex < filename.length() - 1)
-                ? filename.substring(dotIndex + 1).toLowerCase()
                 : null;
     }
 }

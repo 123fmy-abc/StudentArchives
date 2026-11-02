@@ -58,6 +58,7 @@ import com.example.studentarchives.repository.StudentProfileRepository;
 import com.example.studentarchives.repository.UserContactInfoRepository;
 import com.example.studentarchives.repository.UserRepository;
 import com.example.studentarchives.repository.UserRoleRepository;
+import com.example.studentarchives.support.FileTypeValidator;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -174,43 +175,29 @@ public class CommonService {
             throw new BusinessException(ResultCode.PARAM_ERROR, "不支持的文件类型: " + type);
         }
 
-        // 3. 文件扩展名校验
+        // 3. 解析学校上下文：按登录用户所属学校查询附件限制配置
         String originalFilename = file.getOriginalFilename();
-        String ext = extractExtension(originalFilename);
-        if (ext == null) {
-            throw new BusinessException(ResultCode.FILE_FORMAT_ERROR, "文件缺少扩展名");
+        Long schoolId = resolveUserSchoolId(userId);
+        AttachmentLimit limit = schoolId != null
+                ? attachmentLimitRepository.findBySchoolIdAndArchiveType(schoolId, module).orElse(null)
+                : null;
+
+        // 4. 扩展名 / MIME / 文件头三重校验（学校未配置时回退内置默认白名单）
+        Set<String> allowedExtensions = limit != null
+                ? new HashSet<>(parseJsonArray(limit.getAllowedExtensions()))
+                : Collections.emptySet();
+        String detectedMimeType = FileTypeValidator.validate(file, allowedExtensions);
+
+        // 5. 校验文件大小（学校配置优先，未配置时回退全局配置）
+        long maxFileSize = (limit != null && limit.getMaxFileSize() != null && limit.getMaxFileSize() > 0)
+                ? limit.getMaxFileSize()
+                : ossProperties.getMaxFileSize();
+        if (file.getSize() > maxFileSize) {
+            throw new BusinessException(ResultCode.FILE_TOO_LARGE,
+                    "文件过大，最大允许 " + (maxFileSize / 1024 / 1024) + "MB");
         }
 
-        // 4. 根据 attachment_limits 校验（如果存在对应配置）
-        AttachmentLimit limit = attachmentLimitRepository
-                .findBySchoolIdAndArchiveType(0L, module)
-                .orElse(null);
-        if (limit != null) {
-            // 校验扩展名
-            String allowedExts = limit.getAllowedExtensions();
-            if (allowedExts != null && !allowedExts.isEmpty()) {
-                List<String> allowedList = parseJsonArray(allowedExts);
-                if (!allowedList.isEmpty() && allowedList.stream().noneMatch(ext::equalsIgnoreCase)) {
-                    throw new BusinessException(ResultCode.FILE_FORMAT_ERROR,
-                            "不支持的文件格式，允许: " + String.join(", ", allowedList));
-                }
-            }
-            // 校验文件大小
-            Long maxSize = limit.getMaxFileSize();
-            if (maxSize != null && maxSize > 0 && file.getSize() > maxSize) {
-                throw new BusinessException(ResultCode.FILE_TOO_LARGE,
-                        "文件过大，最大允许 " + (maxSize / 1024 / 1024) + "MB");
-            }
-        } else {
-            // 默认校验：文件大小不超过 maxFileSize
-            long maxFileSize = ossProperties.getMaxFileSize();
-            if (file.getSize() > maxFileSize) {
-                throw new BusinessException(ResultCode.FILE_TOO_LARGE,
-                        "文件过大，最大允许 " + (maxFileSize / 1024 / 1024) + "MB");
-            }
-        }
-
-        // 5. 上传到 OSS 临时目录
+        // 6. 上传到 OSS 临时目录
         String objectKey;
         try {
             objectKey = ossFileService.uploadTempFile(file);
@@ -221,10 +208,10 @@ public class CommonService {
                     "文件上传失败: " + (e.getMessage() != null ? e.getMessage() : "未知错误"));
         }
 
-        // 6. 生成临时签名 URL
+        // 7. 生成临时签名 URL
         String fileUrl = ossFileService.generatePresignedUrl(objectKey, ossProperties.getUrlExpireMinutes());
 
-        // 7. 写入 file_uploads 表
+        // 8. 写入 file_uploads 表
         AttachmentRelation relation = new AttachmentRelation();
         relation.setUserId(userId);
         relation.setBizType(module);
@@ -232,7 +219,7 @@ public class CommonService {
         relation.setOriginalName(originalFilename);
         relation.setFilePath(objectKey);
         relation.setFileSize(file.getSize());
-        relation.setMimeType(file.getContentType());
+        relation.setMimeType(detectedMimeType);
         relation.setDisk("oss");
         relation.setFileStatus(1); // 暂存
         relation.setTempExpireAt(LocalDateTime.now().plusHours(ossProperties.getTempExpireHours()));
@@ -244,14 +231,14 @@ public class CommonService {
         log.info("文件上传成功: fileId={}, originalName={}, objectKey={}, userId={}",
                 relation.getId(), originalFilename, objectKey, userId);
 
-        // 8. 构建响应
+        // 9. 构建响应
         return FileUploadResponse.builder()
                 .fileId(relation.getId())
                 .fileName(originalFilename)
                 .fileUrl(fileUrl)
                 .objectKey(objectKey)
                 .fileSize(file.getSize())
-                .fileType(file.getContentType())
+                .fileType(detectedMimeType)
                 .build();
     }
 
@@ -420,17 +407,9 @@ public class CommonService {
             throw new BusinessException(ResultCode.PARAM_ERROR, "上传文件不能为空");
         }
 
-        // 2. 校验文件扩展名（仅允许图片格式）
+        // 2. 校验扩展名与文件头（仅允许图片格式）
         String originalFilename = file.getOriginalFilename();
-        String ext = extractExtension(originalFilename);
-        if (ext == null) {
-            throw new BusinessException(ResultCode.FILE_FORMAT_ERROR, "文件缺少扩展名");
-        }
-        Set<String> allowedImageExts = Set.of("jpg", "jpeg", "png", "gif", "webp", "bmp");
-        if (!allowedImageExts.contains(ext)) {
-            throw new BusinessException(ResultCode.FILE_FORMAT_ERROR,
-                    "仅支持 jpg/png/gif/webp/bmp 格式的图片，当前文件格式: " + ext);
-        }
+        FileTypeValidator.validate(file, FileTypeValidator.IMAGE_EXTENSIONS);
 
         // 3. 校验文件大小（头像限制 2MB）
         long maxAvatarSize = 2 * 1024 * 1024L;
@@ -984,6 +963,18 @@ public class CommonService {
     // ==================== 私有辅助方法 ====================
 
     /**
+     * 解析当前登录用户所属学校 ID；无法解析时返回 null（使用内置默认上传限制）。
+     */
+    private Long resolveUserSchoolId(Long userId) {
+        if (userId == null) {
+            return null;
+        }
+        return userRepository.findById(userId)
+                .map(User::getSchoolId)
+                .orElse(null);
+    }
+
+    /**
      * 根据学期 name 生成展示 label
      * 如 "2022-2023-1" → "2022-2023第一学期"
      */
@@ -1007,17 +998,6 @@ public class CommonService {
             semesterChinese = suffix;
         }
         return prefix + semesterChinese;
-    }
-
-    /**
-     * 提取文件扩展名（不含点号）
-     */
-    private static String extractExtension(String filename) {
-        if (filename == null || filename.isEmpty()) return null;
-        int dotIndex = filename.lastIndexOf('.');
-        return (dotIndex >= 0 && dotIndex < filename.length() - 1)
-                ? filename.substring(dotIndex + 1).toLowerCase()
-                : null;
     }
 
     /**

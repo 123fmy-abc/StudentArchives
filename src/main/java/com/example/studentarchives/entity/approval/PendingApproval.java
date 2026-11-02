@@ -5,6 +5,7 @@ import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Lob;
 import jakarta.persistence.Table;
+import jakarta.persistence.Version;
 import lombok.Getter;
 import lombok.Setter;
 
@@ -69,4 +70,9 @@ public class PendingApproval extends BaseEntity {
 
     @Column(name = "status", nullable = false, columnDefinition = "TINYINT DEFAULT 1")
     private Integer status = 1;
+
+    /** 乐观锁版本号：并发审批时由 Hibernate 校验，冲突抛 ObjectOptimisticLockingFailureException */
+    @Version
+    @Column(name = "lock_version", nullable = false, columnDefinition = "INT UNSIGNED DEFAULT 0")
+    private Integer lockVersion;
 }

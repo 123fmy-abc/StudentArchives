@@ -26,6 +26,7 @@ import com.example.studentarchives.exception.BusinessException;
 import com.example.studentarchives.repository.*;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.orm.ObjectOptimisticLockingFailureException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -299,6 +300,13 @@ public class ActivityService {
             pendingApprovalRepository.save(task);
             closedTaskIds.add(task.getId());
             instanceIds.add(task.getInstanceId());
+        }
+        // 立即 flush：与审批并发时在此处触发乐观锁冲突，避免后写覆盖
+        try {
+            pendingApprovalRepository.flush();
+        } catch (ObjectOptimisticLockingFailureException e) {
+            throw new BusinessException(ResultCode.DATA_VERSION_CONFLICT,
+                    "该申报正在被审核，请刷新后重试");
         }
         for (Long instanceId : instanceIds) {
             approvalInstanceRepository.findById(instanceId).ifPresent(inst -> {

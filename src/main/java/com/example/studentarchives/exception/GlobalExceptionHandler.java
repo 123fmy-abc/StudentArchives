@@ -7,10 +7,12 @@ import jakarta.validation.ConstraintViolationException;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.DataAccessException;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.dao.DeadlockLoserDataAccessException;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
+import org.springframework.orm.ObjectOptimisticLockingFailureException;
 import org.springframework.validation.FieldError;
 import org.springframework.web.HttpMediaTypeNotSupportedException;
 import org.springframework.web.HttpRequestMethodNotSupportedException;
@@ -168,6 +170,22 @@ public class GlobalExceptionHandler {
         log.warn("数据完整性违反: {}", e.getMostSpecificCause() != null
                 ? e.getMostSpecificCause().getMessage() : e.getMessage());
         return ApiResult.error(ResultCode.DB_UNIQUE_CONSTRAINT, "数据校验失败，请检查提交内容");
+    }
+
+    /** 乐观锁冲突：并发修改同一行（审批提交时被他人抢先处理），返回 409 提示刷新 */
+    @ExceptionHandler(ObjectOptimisticLockingFailureException.class)
+    @ResponseStatus(HttpStatus.CONFLICT)
+    public ApiResult<Void> handleOptimisticLock(ObjectOptimisticLockingFailureException e) {
+        log.warn("乐观锁冲突: {}", e.getMessage());
+        return ApiResult.error(ResultCode.DATA_VERSION_CONFLICT, "数据已被他人修改，请刷新后重试");
+    }
+
+    /** InnoDB 死锁失败：并发审批与撤回交叉加锁时可能出现，返回 409 可重试 */
+    @ExceptionHandler(DeadlockLoserDataAccessException.class)
+    @ResponseStatus(HttpStatus.CONFLICT)
+    public ApiResult<Void> handleDeadlock(DeadlockLoserDataAccessException e) {
+        log.warn("数据库死锁，请重试: {}", e.getMessage());
+        return ApiResult.error(ResultCode.CONCURRENT_CONFLICT, "系统繁忙，请稍后重试");
     }
 
     /** Redis 或数据库连接异常（如 Redis 不可用） */

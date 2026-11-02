@@ -3,12 +3,11 @@ package com.example.studentarchives.service.Fmy;
 import com.example.studentarchives.common.ResultCode;
 import com.example.studentarchives.dto.Fmy.common.response.CoverUploadResponse;
 import com.example.studentarchives.exception.BusinessException;
+import com.example.studentarchives.support.FileTypeValidator;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
-
-import java.util.Set;
 
 /**
  * 封面上传服务（POST /common/upload/cover）
@@ -38,9 +37,6 @@ public class CoverUploadService {
     /** 封面文件大小上限（5MB） */
     private static final long MAX_COVER_SIZE = 5 * 1024 * 1024L;
 
-    /** 允许的图片扩展名 */
-    private static final Set<String> ALLOWED_IMAGE_EXTS = Set.of("jpg", "jpeg", "png", "gif", "webp", "bmp");
-
     private final OssFileService ossFileService;
 
     /**
@@ -56,16 +52,9 @@ public class CoverUploadService {
             throw new BusinessException(ResultCode.PARAM_ERROR, "上传文件不能为空");
         }
 
-        // 2. 校验文件扩展名（仅允许图片格式）
+        // 2. 校验扩展名与文件头（仅允许图片格式）
         String originalFilename = file.getOriginalFilename();
-        String ext = extractExtension(originalFilename);
-        if (ext == null) {
-            throw new BusinessException(ResultCode.FILE_FORMAT_ERROR, "文件缺少扩展名");
-        }
-        if (!ALLOWED_IMAGE_EXTS.contains(ext)) {
-            throw new BusinessException(ResultCode.FILE_FORMAT_ERROR,
-                    "仅支持 jpg/png/gif/webp/bmp 格式的图片，当前文件格式: " + ext);
-        }
+        FileTypeValidator.validate(file, FileTypeValidator.IMAGE_EXTENSIONS);
 
         // 3. 校验文件大小（封面限制 5MB）
         if (file.getSize() > MAX_COVER_SIZE) {
@@ -92,16 +81,5 @@ public class CoverUploadService {
                 .coverUrl(coverUrl)
                 .objectKey(objectKey)
                 .build();
-    }
-
-    /** 提取文件扩展名（不含点号） */
-    private static String extractExtension(String filename) {
-        if (filename == null || filename.isEmpty()) {
-            return null;
-        }
-        int dotIndex = filename.lastIndexOf('.');
-        return (dotIndex >= 0 && dotIndex < filename.length() - 1)
-                ? filename.substring(dotIndex + 1).toLowerCase()
-                : null;
     }
 }
