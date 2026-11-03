@@ -43,6 +43,31 @@ public class AdminGradeImportConfigService {
 
     private static final Set<String> REQUIRED_FIELDS = Set.of("studentNo", "courseName", "score");
 
+    // ==================== 系统内置默认模板（学校未配置时兜底，不落库） ====================
+
+    private static final List<String> DEFAULT_ALLOWED_EXTENSIONS = List.of("xlsx", "xls", "csv");
+
+    private static final long DEFAULT_MAX_FILE_SIZE = 10L * 1024 * 1024;
+
+    private static final int DEFAULT_BATCH_SIZE = 500;
+
+    private static final int DEFAULT_HAS_HEADER_ROW = 1;
+
+    private static final int DEFAULT_ALLOW_OVERWRITE = 0;
+
+    private static final List<GradeImportConfigColumnItem> DEFAULT_TEMPLATE_COLUMNS =
+            List.of(defaultColumn("studentNo", "学号"),
+                    defaultColumn("courseName", "课程名称"),
+                    defaultColumn("score", "成绩"));
+
+    private static GradeImportConfigColumnItem defaultColumn(String field, String label) {
+        GradeImportConfigColumnItem item = new GradeImportConfigColumnItem();
+        item.setField(field);
+        item.setLabel(label);
+        item.setRequired(true);
+        return item;
+    }
+
     private static final DateTimeFormatter ISO_WITH_ZONE =
             DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ssXXX");
 
@@ -55,30 +80,38 @@ public class AdminGradeImportConfigService {
 
     /**
      * 获取当前学校的成绩导入配置。
+     * <p>
+     * 学校未创建配置时返回系统内置默认模板（{@code configured=false}、{@code source=DEFAULT}），
+     * 不再返回 404，便于前端直接展示“当前使用系统默认模板”。
      *
      * @param userId 当前登录用户 ID
-     * @return 配置详情
-     * @throws BusinessException 配置不存在
+     * @return 配置详情（学校配置或默认模板）
      */
     public GradeImportConfigResponse getConfig(Long userId) {
         adminAuthService.requireAdminOrPermission(userId, PERMISSION);
         Long schoolId = adminAuthService.getOperatorSchoolId(userId);
-        GradeImportConfig config = gradeImportConfigRepository.findBySchoolId(schoolId)
-                .orElseThrow(() -> new BusinessException(ResultCode.DATA_NOT_EXIST, "成绩导入配置不存在"));
-        return toResponse(config);
+        return gradeImportConfigRepository.findBySchoolId(schoolId)
+                .map(this::toResponse)
+                .orElseGet(() -> toDefaultResponse(schoolId));
     }
 
     /**
-     * 获取当前学校的启用配置（供 AdminGradeService 导入时使用）。
+     * 获取当前学校生效的导入配置（供 AdminGradeService 导入时使用）。
+     * <p>
+     * 学校未创建配置时回退系统默认模板；仅当学校配置存在且被禁用时抛出业务异常。
      *
      * @param schoolId 学校 ID
-     * @return 启用配置
-     * @throws BusinessException 未配置或已禁用
+     * @return 生效配置（学校配置或默认模板）
+     * @throws BusinessException 学校配置已禁用
      */
     public GradeImportConfig requireEnabledConfig(Long schoolId) {
-        return gradeImportConfigRepository.findBySchoolIdAndStatus(schoolId, 1)
-                .orElseThrow(() -> new BusinessException(ResultCode.DATA_NOT_EXIST,
-                        "成绩导入配置不存在或已禁用，请先配置导入模板"));
+        GradeImportConfig config = gradeImportConfigRepository.findBySchoolId(schoolId)
+                .orElseGet(() -> buildDefaultConfig(schoolId));
+        if (!Integer.valueOf(1).equals(config.getStatus())) {
+            throw new BusinessException(ResultCode.DATA_NOT_EXIST,
+                    "成绩导入配置不存在或已禁用，请先配置导入模板");
+        }
+        return config;
     }
 
     /**
@@ -246,13 +279,8 @@ public class AdminGradeImportConfigService {
         adminAuthService.requireAdminOrPermission(userId, PERMISSION);
         Long schoolId = adminAuthService.getOperatorSchoolId(userId);
 
-        GradeImportConfig config = gradeImportConfigRepository.findBySchoolId(schoolId)
-                .orElseThrow(() -> new BusinessException(ResultCode.DATA_NOT_EXIST,
-                        "成绩导入配置不存在，请先配置导入模板"));
-
-        if (!Integer.valueOf(1).equals(config.getStatus())) {
-            throw new BusinessException(ResultCode.DATA_NOT_EXIST, "成绩导入配置已禁用");
-        }
+        // 未配置时使用系统默认模板；学校配置被禁用时抛出业务异常
+        GradeImportConfig config = requireEnabledConfig(schoolId);
 
         List<GradeImportFileParser.TemplateColumn> columns = parseTemplateColumns(config.getTemplateColumns());
         log.info("生成成绩导入模板, schoolId={}, columnCount={}, samples=null", schoolId, columns.size());
@@ -348,9 +376,46 @@ public class AdminGradeImportConfigService {
         }
     }
 
+    /**
+     * 构造学校未配置时使用的内存默认配置，不写入数据库。
+     */
+    private GradeImportConfig buildDefaultConfig(Long schoolId) {
+        GradeImportConfig config = new GradeImportConfig();
+        config.setSchoolId(schoolId);
+        config.setAllowedExtensions(writeJson(DEFAULT_ALLOWED_EXTENSIONS));
+        config.setMaxFileSize(DEFAULT_MAX_FILE_SIZE);
+        config.setTemplateColumns(writeJson(DEFAULT_TEMPLATE_COLUMNS));
+        config.setHasHeaderRow(DEFAULT_HAS_HEADER_ROW);
+        config.setBatchSize(DEFAULT_BATCH_SIZE);
+        config.setAllowOverwrite(DEFAULT_ALLOW_OVERWRITE);
+        config.setStatus(1);
+        return config;
+    }
+
+    /**
+     * 构造系统默认模板的响应，{@code id} 为空表示尚未落库。
+     */
+    private GradeImportConfigResponse toDefaultResponse(Long schoolId) {
+        return GradeImportConfigResponse.builder()
+                .id(null)
+                .configured(false)
+                .source("DEFAULT")
+                .schoolId(schoolId)
+                .allowedExtensions(new ArrayList<>(DEFAULT_ALLOWED_EXTENSIONS))
+                .maxFileSize(DEFAULT_MAX_FILE_SIZE)
+                .templateColumns(new ArrayList<>(DEFAULT_TEMPLATE_COLUMNS))
+                .hasHeaderRow(DEFAULT_HAS_HEADER_ROW)
+                .batchSize(DEFAULT_BATCH_SIZE)
+                .allowOverwrite(DEFAULT_ALLOW_OVERWRITE)
+                .status(1)
+                .build();
+    }
+
     private GradeImportConfigResponse toResponse(GradeImportConfig config) {
         return GradeImportConfigResponse.builder()
                 .id(config.getId())
+                .configured(true)
+                .source("SCHOOL")
                 .schoolId(config.getSchoolId())
                 .allowedExtensions(parseJsonList(config.getAllowedExtensions()))
                 .maxFileSize(config.getMaxFileSize())
