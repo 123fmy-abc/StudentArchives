@@ -31,7 +31,6 @@ import com.example.studentarchives.repository.AdminSemesterGpaSummaryRepository;
 import com.example.studentarchives.repository.AdminStatisticsCacheRepository;
 import com.example.studentarchives.repository.AdminUserInterestRepository;
 import com.example.studentarchives.repository.ArchiveRepository;
-import com.example.studentarchives.repository.AwardApplicationRepository;
 import com.example.studentarchives.repository.ClazzRepository;
 import com.example.studentarchives.repository.MajorRepository;
 import com.example.studentarchives.repository.SchoolRepository;
@@ -100,13 +99,6 @@ public class AdminStatisticsService {
     /** 教师端热力图支持的指标（《教师端接口文档》11.3：gpa/award/practice/archive 子集） */
     private static final Set<String> TEACHER_HEATMAP_METRICS = Set.of("gpa", "award", "practice", "archive");
 
-    /** 档案状态：1=待审批 2=通过（实时兜底统计口径，与档案管理模块一致） */
-    private static final int STATUS_PENDING = 1;
-    private static final int STATUS_APPROVED = 2;
-
-    /** 奖项申请已通过状态 */
-    private static final int AWARD_STATUS_APPROVED = 2;
-
     private final AdminAuthService adminAuthService;
     private final TeacherScopeValidator scopeValidator;
     private final AdminOrgArchiveSummaryRepository orgArchiveSummaryRepository;
@@ -115,7 +107,6 @@ public class AdminStatisticsService {
     private final AdminUserInterestRepository userInterestRepository;
     private final AdminSemesterGpaSummaryRepository semesterGpaSummaryRepository;
     private final ArchiveRepository archiveRepository;
-    private final AwardApplicationRepository awardApplicationRepository;
     private final StudentProfileRepository studentProfileRepository;
     private final ClazzRepository clazzRepository;
     private final MajorRepository majorRepository;
@@ -165,9 +156,8 @@ public class AdminStatisticsService {
                     .archiveCount(snapshot.getTotalArchives())
                     .awardCount(snapshot.getTotalAwards())
                     .avgGpa(toDouble(snapshot.getAvgGpa()))
-                    // 快照表未存审批状态计数，实时 COUNT 补齐，避免待审批/已通过恒为 0
-                    .approvedCount(cnt(archiveRepository.countBySchoolIdAndStatusAndSemesterIdNullable(schoolId, STATUS_APPROVED, effSemesterId)))
-                    .pendingCount(cnt(archiveRepository.countBySchoolIdAndStatusAndSemesterIdNullable(schoolId, STATUS_PENDING, effSemesterId)))
+                    .approvedCount(0)
+                    .pendingCount(0)
                     .dataCompleteness(dataCompletenessRepository.avgCompletenessBySchool(schoolId, effSemesterId))
                     .dimensionAvgScores(parseTopDimensions(snapshot.getTopDimensions()))
                     .archiveTypeDistribution(parseTypeDistribution(snapshot.getArchiveTypeDistribution()))
@@ -177,40 +167,23 @@ public class AdminStatisticsService {
             return new StatsResult<>(data, "MISS");
         }
 
-        // 学校级快照未命中：实时聚合兜底，避免无当前学期/快照缺失时看板 KPI 与档案查看页结论矛盾
-        return new StatsResult<>(buildRealtimeDashboard(schoolId, effSemesterId, semesterName), "MISS");
-    }
-
-    /**
-     * 实时聚合看板 KPI 兜底（轻量 COUNT 查询，不打库加载全量档案）。
-     * <p>
-     * 口径与档案查看页实时聚合保持一致：{@code semesterId} 为空时统计全部学期（含
-     * {@code semester_id} 为 NULL 的档案），避免 semesters 表为空或档案未归属学期时看板恒为 0。
-     * 画像维度/类型分布/热门兴趣等重度聚合字段保持为空，交由每日快照补齐。
-     * </p>
-     */
-    private DashboardResponse buildRealtimeDashboard(Long schoolId, Long semesterId, String semesterName) {
-        int studentCount = cnt(archiveRepository.countDistinctUserIdBySchoolIdAndSemesterIdNullable(schoolId, semesterId));
-        int archiveCount = cnt(archiveRepository.countBySchoolIdAndSemesterIdNullable(schoolId, semesterId));
-        int approvedCount = cnt(archiveRepository.countBySchoolIdAndStatusAndSemesterIdNullable(schoolId, STATUS_APPROVED, semesterId));
-        int pendingCount = cnt(archiveRepository.countBySchoolIdAndStatusAndSemesterIdNullable(schoolId, STATUS_PENDING, semesterId));
-        int awardCount = cnt(awardApplicationRepository.countBySchoolIdAndStatusAndSemesterIdNullable(schoolId, AWARD_STATUS_APPROVED, semesterId));
-
-        return DashboardResponse.builder()
-                .semesterId(semesterId)
+        // 全校范围聚合缓存未命中：返回空数据集
+        DashboardResponse empty = DashboardResponse.builder()
+                .semesterId(effSemesterId)
                 .semesterName(semesterName)
-                .studentCount(studentCount)
-                .archiveCount(archiveCount)
-                .awardCount(awardCount)
+                .studentCount(0)
+                .archiveCount(0)
+                .awardCount(0)
                 .avgGpa(null)
-                .approvedCount(approvedCount)
-                .pendingCount(pendingCount)
-                .dataCompleteness(dataCompletenessRepository.avgCompletenessBySchool(schoolId, semesterId))
+                .approvedCount(0)
+                .pendingCount(0)
+                .dataCompleteness(dataCompletenessRepository.avgCompletenessBySchool(schoolId, effSemesterId))
                 .dimensionAvgScores(List.of())
                 .archiveTypeDistribution(List.of())
                 .topInterests(List.of())
                 .cacheHit(false)
                 .build();
+        return new StatsResult<>(empty, "MISS");
     }
 
     // ==================== 16.2 组织下钻多维汇总 ====================
@@ -1266,10 +1239,6 @@ public class AdminStatisticsService {
 
     private static Double toDouble(BigDecimal v) {
         return v == null ? null : v.doubleValue();
-    }
-
-    private static int cnt(Long v) {
-        return v == null ? 0 : v.intValue();
     }
 
     private static double avgBigDecimal(List<BigDecimal> values) {

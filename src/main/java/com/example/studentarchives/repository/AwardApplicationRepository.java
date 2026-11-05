@@ -43,12 +43,4 @@ public interface AwardApplicationRepository extends JpaRepository<AwardApplicati
     List<AwardApplication> findByUserIdInAndSemesterIdAndStatus(@Param("userIds") Collection<Long> userIds,
                                                                  @Param("semesterId") Long semesterId,
                                                                  @Param("status") Integer status);
-
-    /**
-     * 统计某学校指定状态的奖项申请数量，{@code semesterId} 传 null 时统计全部学期。
-     */
-    @Query("SELECT COUNT(a) FROM AwardApplication a WHERE a.schoolId = :schoolId AND a.status = :status AND (:semesterId IS NULL OR a.semesterId = :semesterId)")
-    Long countBySchoolIdAndStatusAndSemesterIdNullable(@Param("schoolId") Long schoolId,
-                                                       @Param("status") Integer status,
-                                                       @Param("semesterId") Long semesterId);
 }
