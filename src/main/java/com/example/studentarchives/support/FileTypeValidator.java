@@ -17,6 +17,9 @@ import java.util.Set;
  * <p>
  * 扩展名白名单 → 扩展名-MIME 映射 → 文件头（魔数）三重校验，
  * 不信任客户端声明的 Content-Type，阻断 HTML/SVG/脚本/双扩展名/伪造 MIME。
+ * <p>
+ * 图片类以文件头检测的真实格式为准：扩展名与内容不一致时（如 JPG 内容命名 .png），
+ * 只要真实格式仍在图片白名单内即放行，并按真实格式返回 MIME；非图片格式仍严格匹配魔数。
  */
 public final class FileTypeValidator {
 
@@ -78,7 +81,17 @@ public final class FileTypeValidator {
         if (mimeType == null) {
             throw new BusinessException(ResultCode.FILE_FORMAT_ERROR, "不支持的文件格式: " + ext);
         }
-        checkSignature(ext, readHeader(file));
+        byte[] header = readHeader(file);
+        // 图片类以内容为准：扩展名与魔数不一致时（如 JPG 内容存成 .png 名），
+        // 只要检测出的真实格式仍是允许的图片格式就放行，并按真实格式返回 MIME
+        if (IMAGE_EXTENSIONS.contains(ext)) {
+            String detected = detectImageFormat(header);
+            if (detected == null) {
+                throw formatError(ext);
+            }
+            return detected;
+        }
+        checkSignature(ext, header);
         return mimeType;
     }
 
@@ -123,25 +136,35 @@ public final class FileTypeValidator {
         }
     }
 
+    /**
+     * 按魔数检测图片真实格式，返回对应 MIME；无法识别时返回 null。
+     */
+    private static String detectImageFormat(byte[] header) {
+        if (header.length >= 3 && (header[0] & 0xFF) == 0xFF
+                && (header[1] & 0xFF) == 0xD8 && (header[2] & 0xFF) == 0xFF) {
+            return "image/jpeg";
+        }
+        if (header.length >= 8 && startsWithAscii(header, "\u0089PNG\r\n\u001A\n")) {
+            return "image/png";
+        }
+        if (startsWithAscii(header, "GIF87a") || startsWithAscii(header, "GIF89a")) {
+            return "image/gif";
+        }
+        if (header.length >= 12 && startsWithAscii(header, "RIFF")
+                && startsWithAsciiAt(header, 8, "WEBP")) {
+            return "image/webp";
+        }
+        if (header.length >= 2 && header[0] == 0x42 && header[1] == 0x4D) {
+            return "image/bmp";
+        }
+        return null;
+    }
+
     private static void checkSignature(String ext, byte[] header) {
         if (header.length == 0) {
             throw formatError(ext);
         }
         switch (ext) {
-            case "jpg", "jpeg" -> requireMagic(header, ext, 0xFF, 0xD8, 0xFF);
-            case "png" -> requireMagic(header, ext, 0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A);
-            case "gif" -> {
-                if (!startsWithAscii(header, "GIF87a") && !startsWithAscii(header, "GIF89a")) {
-                    throw formatError(ext);
-                }
-            }
-            case "webp" -> {
-                if (header.length < 12 || !startsWithAscii(header, "RIFF")
-                        || !startsWithAsciiAt(header, 8, "WEBP")) {
-                    throw formatError(ext);
-                }
-            }
-            case "bmp" -> requireMagic(header, ext, 0x42, 0x4D);
             case "pdf" -> requireMagic(header, ext, 0x25, 0x50, 0x44, 0x46, 0x2D);
             case "zip", "docx", "xlsx", "pptx" -> requireZip(header, ext);
             case "doc", "xls", "ppt" -> requireMagic(header, ext,

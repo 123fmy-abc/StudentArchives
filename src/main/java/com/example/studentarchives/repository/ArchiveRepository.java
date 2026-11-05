@@ -67,4 +67,25 @@ public interface ArchiveRepository extends JpaRepository<Archive, Long> {
             "FROM archives WHERE school_id = :schoolId AND semester_id = :semesterId AND deleted_at IS NULL " +
             "GROUP BY archive_type", nativeQuery = true)
     List<Object[]> countGroupByArchiveType(@Param("schoolId") Long schoolId, @Param("semesterId") Long semesterId);
+
+    /**
+     * 统计某学校有效档案总数，{@code semesterId} 传 null 时统计全部学期（含未归属学期的档案）。
+     * <p>用于统计看板在无当前学期/快照缺失时的实时兜底，口径与档案查看页实时聚合保持一致。</p>
+     */
+    @Query("SELECT COUNT(a) FROM Archive a WHERE a.schoolId = :schoolId AND (:semesterId IS NULL OR a.semesterId = :semesterId)")
+    Long countBySchoolIdAndSemesterIdNullable(@Param("schoolId") Long schoolId, @Param("semesterId") Long semesterId);
+
+    /**
+     * 统计某学校有档案的学生去重数，{@code semesterId} 传 null 时统计全部学期。
+     */
+    @Query("SELECT COUNT(DISTINCT a.userId) FROM Archive a WHERE a.schoolId = :schoolId AND (:semesterId IS NULL OR a.semesterId = :semesterId)")
+    Long countDistinctUserIdBySchoolIdAndSemesterIdNullable(@Param("schoolId") Long schoolId, @Param("semesterId") Long semesterId);
+
+    /**
+     * 统计某学校指定状态档案数，{@code semesterId} 传 null 时统计全部学期。
+     */
+    @Query("SELECT COUNT(a) FROM Archive a WHERE a.schoolId = :schoolId AND a.status = :status AND (:semesterId IS NULL OR a.semesterId = :semesterId)")
+    Long countBySchoolIdAndStatusAndSemesterIdNullable(@Param("schoolId") Long schoolId,
+                                                        @Param("status") Integer status,
+                                                        @Param("semesterId") Long semesterId);
 }
