@@ -48,6 +48,24 @@ public final class FileTypeValidator {
             Map.entry("csv", "text/csv"),
             Map.entry("zip", "application/zip"));
 
+    /** MIME 类型 → 规范扩展名（存储对象 key 后缀以服务端判定格式为准，不沿用客户端文件名） */
+    private static final Map<String, String> MIME_EXTENSION = Map.ofEntries(
+            Map.entry("image/jpeg", "jpg"),
+            Map.entry("image/png", "png"),
+            Map.entry("image/gif", "gif"),
+            Map.entry("image/webp", "webp"),
+            Map.entry("image/bmp", "bmp"),
+            Map.entry("application/pdf", "pdf"),
+            Map.entry("application/msword", "doc"),
+            Map.entry("application/vnd.openxmlformats-officedocument.wordprocessingml.document", "docx"),
+            Map.entry("application/vnd.ms-excel", "xls"),
+            Map.entry("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "xlsx"),
+            Map.entry("application/vnd.ms-powerpoint", "ppt"),
+            Map.entry("application/vnd.openxmlformats-officedocument.presentationml.presentation", "pptx"),
+            Map.entry("text/plain", "txt"),
+            Map.entry("text/csv", "csv"),
+            Map.entry("application/zip", "zip"));
+
     /** 读取文件头字节数 */
     private static final int HEADER_LENGTH = 512;
 
@@ -89,6 +107,15 @@ public final class FileTypeValidator {
         String ext = extractExtension(filename);
         return ext != null ? EXTENSION_MIME.getOrDefault(ext, "application/octet-stream")
                 : "application/octet-stream";
+    }
+
+    /**
+     * 按服务端判定的 MIME 类型返回规范扩展名（不含点号），未知类型返回 null。
+     * <p>
+     * 用于生成存储对象 key：扩展名必须与真实内容一致，不能沿用客户端文件名后缀。
+     */
+    public static String extensionForMime(String mimeType) {
+        return mimeType != null ? MIME_EXTENSION.get(mimeType) : null;
     }
 
     /** 提取小写扩展名（不含点号） */

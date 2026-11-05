@@ -212,7 +212,7 @@ public class CommonService {
         // 6. 上传到 OSS 临时目录
         String objectKey;
         try {
-            objectKey = ossFileService.uploadTempFile(file);
+            objectKey = ossFileService.uploadTempFile(file, detectedMimeType);
         } catch (Exception e) {
             log.error("OSS 临时文件上传失败: type={}, module={}, filename={}, size={}, error={}",
                     type, module, file.getOriginalFilename(), file.getSize(), e.getMessage(), e);
@@ -422,9 +422,9 @@ public class CommonService {
             throw new BusinessException(ResultCode.PARAM_ERROR, "上传文件不能为空");
         }
 
-        // 2. 校验扩展名与文件头（仅允许图片格式）
+        // 2. 校验扩展名与文件头（仅允许图片格式），并按服务端判定的真实格式存储
         String originalFilename = file.getOriginalFilename();
-        FileTypeValidator.validate(file, FileTypeValidator.IMAGE_EXTENSIONS);
+        String contentType = FileTypeValidator.validate(file, FileTypeValidator.IMAGE_EXTENSIONS);
 
         // 3. 校验文件大小（头像限制 2MB）
         long maxAvatarSize = 2 * 1024 * 1024L;
@@ -436,7 +436,7 @@ public class CommonService {
         // 4. 上传到 OSS 头像目录（avatar/{uuid}.{ext}）
         String objectKey;
         try {
-            objectKey = ossFileService.uploadAvatar(file);
+            objectKey = ossFileService.uploadAvatar(file, contentType);
         } catch (Exception e) {
             log.error("OSS 头像上传失败: filename={}, size={}, error={}",
                     originalFilename, file.getSize(), e.getMessage(), e);

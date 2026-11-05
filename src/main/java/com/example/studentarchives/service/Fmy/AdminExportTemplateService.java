@@ -444,9 +444,9 @@ public class AdminExportTemplateService {
             throw new BusinessException(ResultCode.PARAM_ERROR, "上传文件不能为空");
         }
 
-        // 2. 校验扩展名与文件头（仅允许图片格式）
+        // 2. 校验扩展名与文件头（仅允许图片格式），并按服务端判定的真实格式存储
         String originalFilename = file.getOriginalFilename();
-        FileTypeValidator.validate(file, FileTypeValidator.IMAGE_EXTENSIONS);
+        String contentType = FileTypeValidator.validate(file, FileTypeValidator.IMAGE_EXTENSIONS);
 
         // 3. 校验文件大小（预览图限制 2MB）
         long maxPreviewSize = 2 * 1024 * 1024L;
@@ -458,7 +458,7 @@ public class AdminExportTemplateService {
         // 4. 上传到 OSS 正式目录（export-template-preview/{uuid}.{ext}）
         String objectKey;
         try {
-            objectKey = ossFileService.uploadTemplatePreview(file);
+            objectKey = ossFileService.uploadTemplatePreview(file, contentType);
         } catch (Exception e) {
             log.error("OSS 模板预览图上传失败: templateId={}, filename={}, size={}, error={}",
                     templateId, originalFilename, file.getSize(), e.getMessage(), e);

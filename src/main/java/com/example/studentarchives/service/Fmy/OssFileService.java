@@ -54,14 +54,15 @@ public class OssFileService {
      * <p>
      * 路径格式：{@code {bizType}/{category}/{yyyy-MM}/{uuid}.{ext}}
      *
-     * @param file     上传的文件
-     * @param bizType  业务类型，如 archive / award / career_plan / announcement
-     * @param category 文件分类，如 certificate / photo / proof / other
+     * @param file        上传的文件
+     * @param bizType     业务类型，如 archive / award / career_plan / announcement
+     * @param category    文件分类，如 certificate / photo / proof / other
+     * @param contentType 服务端判定的 MIME 类型（决定对象 key 后缀与响应 Content-Type）
      * @return OSS 对象路径（相对路径）
      */
-    public String uploadFile(MultipartFile file, String bizType, String category) {
-        String objectKey = buildObjectKey(bizType, category, file.getOriginalFilename());
-        return doUpload(file, objectKey);
+    public String uploadFile(MultipartFile file, String bizType, String category, String contentType) {
+        String objectKey = buildObjectKey(bizType, category, contentType);
+        return doUpload(file, objectKey, contentType);
     }
 
     /**
@@ -77,7 +78,7 @@ public class OssFileService {
      * @return OSS 对象路径（相对路径）
      */
     public String uploadBytes(byte[] data, String contentType, String bizType, String category, String originalFilename) {
-        String objectKey = buildObjectKey(bizType, category, originalFilename);
+        String objectKey = buildObjectKey(bizType, category, getExtWithDot(originalFilename));
         ObjectMetadata metadata = new ObjectMetadata();
         metadata.setContentLength(data.length);
         metadata.setContentType(contentType != null ? contentType : "application/octet-stream");
@@ -98,14 +99,14 @@ public class OssFileService {
      * <p>
      * 路径格式：avatar/{uuid}.{ext}
      *
-     * @param file 上传的头像文件
+     * @param file        上传的头像文件
+     * @param contentType 服务端判定的 MIME 类型
      * @return OSS 对象路径
      */
-    public String uploadAvatar(MultipartFile file) {
-        String ext = extractExtension(file.getOriginalFilename());
+    public String uploadAvatar(MultipartFile file, String contentType) {
         String objectKey = "avatar/" + UUID.randomUUID().toString().replace("-", "")
-                + (ext != null ? "." + ext : "");
-        return doUpload(file, objectKey);
+                + extWithDotForContentType(contentType);
+        return doUpload(file, objectKey, contentType);
     }
 
     /**
@@ -113,14 +114,14 @@ public class OssFileService {
      * <p>
      * 路径格式：export-template-preview/{uuid}.{ext}
      *
-     * @param file 上传的预览图文件
+     * @param file        上传的预览图文件
+     * @param contentType 服务端判定的 MIME 类型
      * @return OSS 对象路径
      */
-    public String uploadTemplatePreview(MultipartFile file) {
-        String ext = extractExtension(file.getOriginalFilename());
+    public String uploadTemplatePreview(MultipartFile file, String contentType) {
         String objectKey = "export-template-preview/" + UUID.randomUUID().toString().replace("-", "")
-                + (ext != null ? "." + ext : "");
-        return doUpload(file, objectKey);
+                + extWithDotForContentType(contentType);
+        return doUpload(file, objectKey, contentType);
     }
 
     /**
@@ -128,12 +129,13 @@ public class OssFileService {
      * <p>
      * 临时文件可通过 {@link #moveToPermanent} 迁移到正式目录。
      *
-     * @param file 上传的文件
+     * @param file        上传的文件
+     * @param contentType 服务端判定的 MIME 类型
      * @return OSS 对象路径（相对路径）
      */
-    public String uploadTempFile(MultipartFile file) {
-        String objectKey = buildTempObjectKey(file.getOriginalFilename());
-        return doUpload(file, objectKey);
+    public String uploadTempFile(MultipartFile file, String contentType) {
+        String objectKey = buildTempObjectKey(extWithDotForContentType(contentType));
+        return doUpload(file, objectKey, contentType);
     }
 
     /**
@@ -293,28 +295,35 @@ public class OssFileService {
     /**
      * 构建正式文件 OSS 路径: {bizType}/{category}/{yyyy-MM}/{uuid}.{ext}
      */
-    private String buildObjectKey(String bizType, String category, String originalFilename) {
+    private String buildObjectKey(String bizType, String category, String extWithDot) {
         return bizType + "/" + category + "/"
                 + LocalDate.now().format(MONTH_FORMAT) + "/"
                 + UUID.randomUUID().toString().replace("-", "")
-                + getExtWithDot(originalFilename);
+                + extWithDot;
     }
 
     /**
      * 构建临时文件路径: temp/{yyyy-MM}/{uuid}.{ext}
      */
-    private String buildTempObjectKey(String originalFilename) {
+    private String buildTempObjectKey(String extWithDot) {
         return "temp/" + LocalDate.now().format(MONTH_FORMAT) + "/"
                 + UUID.randomUUID().toString().replace("-", "")
-                + getExtWithDot(originalFilename);
+                + extWithDot;
+    }
+
+    /**
+     * 由服务端判定的 MIME 类型得到带点号的规范后缀，未知类型返回空字符串。
+     */
+    private static String extWithDotForContentType(String contentType) {
+        String ext = FileTypeValidator.extensionForMime(contentType);
+        return ext != null ? "." + ext : "";
     }
 
     /**
      * 执行文件上传
      */
-    private String doUpload(MultipartFile file, String objectKey) {
+    private String doUpload(MultipartFile file, String objectKey, String contentType) {
         try (InputStream inputStream = file.getInputStream()) {
-            String contentType = FileTypeValidator.mimeTypeForFilename(file.getOriginalFilename());
             ObjectMetadata metadata = new ObjectMetadata();
             metadata.setContentLength(file.getSize());
             metadata.setContentType(contentType);

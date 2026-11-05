@@ -52,9 +52,9 @@ public class CoverUploadService {
             throw new BusinessException(ResultCode.PARAM_ERROR, "上传文件不能为空");
         }
 
-        // 2. 校验扩展名与文件头（仅允许图片格式）
+        // 2. 校验扩展名与文件头（仅允许图片格式），并按服务端判定的真实格式存储
         String originalFilename = file.getOriginalFilename();
-        FileTypeValidator.validate(file, FileTypeValidator.IMAGE_EXTENSIONS);
+        String contentType = FileTypeValidator.validate(file, FileTypeValidator.IMAGE_EXTENSIONS);
 
         // 3. 校验文件大小（封面限制 5MB）
         if (file.getSize() > MAX_COVER_SIZE) {
@@ -65,7 +65,7 @@ public class CoverUploadService {
         // 4. 上传到 OSS 正式目录 cover/photo/{yyyy-MM}/{uuid}.{ext}
         String objectKey;
         try {
-            objectKey = ossFileService.uploadFile(file, BIZ_TYPE_COVER, CATEGORY_PHOTO);
+            objectKey = ossFileService.uploadFile(file, BIZ_TYPE_COVER, CATEGORY_PHOTO, contentType);
         } catch (Exception e) {
             log.error("OSS 封面上传失败: userId={}, filename={}, size={}, error={}",
                     userId, originalFilename, file.getSize(), e.getMessage(), e);
