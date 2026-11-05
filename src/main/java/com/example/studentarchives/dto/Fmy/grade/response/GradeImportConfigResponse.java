@@ -19,6 +19,12 @@ public class GradeImportConfigResponse {
 
     private Long id;
 
+    /** 当前学校是否已创建自定义配置；false 表示返回系统内置默认模板 */
+    private Boolean configured;
+
+    /** 配置来源：SCHOOL=学校自定义，DEFAULT=系统默认 */
+    private String source;
+
     private Long schoolId;
 
     private List<String> allowedExtensions;
