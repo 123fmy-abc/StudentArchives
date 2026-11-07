@@ -7,6 +7,7 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
+import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
 
@@ -37,4 +38,13 @@ public interface SemesterRepository extends JpaRepository<Semester, Long>, JpaSp
      * 同学校下按名称查询（用于名称唯一性校验）
      */
     Optional<Semester> findBySchoolIdAndName(Long schoolId, String name);
+
+    /**
+     * 查询指定学校下覆盖某日期的启用学期（start_date ≤ date ≤ end_date），
+     * 用于成长时间轴事件按发生时间（eventAt）自动归集学期。
+     * 建学期时已校验同校学期日期不重叠，正常最多命中一条，此处取 start_date 最晚的一条。
+     */
+    @Query("SELECT s FROM Semester s WHERE s.schoolId = :schoolId AND s.status = 1 "
+            + "AND s.startDate <= :date AND s.endDate >= :date ORDER BY s.startDate DESC")
+    List<Semester> findActiveBySchoolIdAndDate(@Param("schoolId") Long schoolId, @Param("date") LocalDate date);
 }

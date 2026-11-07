@@ -25,12 +25,13 @@ import com.example.studentarchives.dto.Fmy.profile.response.CareerPlanCreateResp
 import com.example.studentarchives.dto.Fmy.profile.response.CareerPlanDetailResponse;
 import com.example.studentarchives.dto.Fmy.profile.response.CareerPlanIdResponse;
 import com.example.studentarchives.dto.Fmy.profile.response.CareerPlanListItem;
-import com.example.studentarchives.dto.Fmy.profile.response.CareerPlanPreviewResponse;
 import com.example.studentarchives.service.Fmy.ProfileCareerPlanService;
 import jakarta.servlet.http.HttpServletResponse;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.http.ContentDisposition;
+import org.springframework.http.HttpHeaders;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -43,6 +44,8 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.io.IOException;
+import java.io.OutputStream;
+import java.nio.charset.StandardCharsets;
 
 /**
  * 个人中心职业规划控制器
@@ -177,20 +180,31 @@ public class ProfileCareerPlanController {
     /**
      * 预览职业规划文件（4.5.1）
      * <p>
-     * 与下载共用同一份生成/缓存文件，返回 OSS 签名 inline 预览 URL
-     * （response-content-disposition=inline），前端可在新标签页内嵌渲染 PDF，确认版式后再下载。
+     * 后端代理流式返回 PDF 字节流（Content-Type: application/pdf + Content-Disposition: inline），
+     * 浏览器内嵌渲染，规避 OSS 默认域名 x-oss-force-download 强制下载。
+     * 与下载共用同一份生成/缓存文件，确认版式后再下载。
      *
-     * @param userId  当前登录用户 ID
-     * @param planId  规划 ID
-     * @param purpose 导出用途：internal（内部预览，屏幕水印+打印隐藏）/ external（外部投递，默认，无水印）
-     * @return 预览信息
+     * @param userId   当前登录用户 ID
+     * @param planId   规划 ID
+     * @param purpose  导出用途：internal（内部预览，屏幕水印+打印隐藏）/ external（外部投递，默认，无水印）
+     * @param response HTTP 响应（用于流式写出 PDF）
      */
     @GetMapping("/{planId}/preview")
-    public ApiResult<CareerPlanPreviewResponse> previewPlan(
+    public void previewPlan(
             @AuthenticationPrincipal Long userId,
             @PathVariable Long planId,
-            @RequestParam(value = "purpose", required = false, defaultValue = "external") String purpose) {
-        return ApiResult.success(profileCareerPlanService.getCareerPlanPreviewUrl(userId, planId, purpose));
+            @RequestParam(value = "purpose", required = false, defaultValue = "external") String purpose,
+            HttpServletResponse response) throws IOException {
+        byte[] bytes = profileCareerPlanService.getCareerPlanPreviewBytes(userId, planId, purpose);
+        response.setContentType("application/pdf");
+        response.setHeader(HttpHeaders.CONTENT_DISPOSITION, ContentDisposition.inline()
+                .filename(ProfileCareerPlanService.EXPORT_FILE_NAME, StandardCharsets.UTF_8)
+                .build()
+                .toString());
+        response.setContentLength(bytes.length);
+        OutputStream out = response.getOutputStream();
+        out.write(bytes);
+        out.flush();
     }
 
     /**

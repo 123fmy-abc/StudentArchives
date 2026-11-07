@@ -34,7 +34,6 @@ import com.example.studentarchives.dto.Fmy.profile.response.CareerPlanDetailResp
 import com.example.studentarchives.dto.Fmy.profile.response.CareerPlanDetailResponse.VersionItem;
 import com.example.studentarchives.dto.Fmy.profile.response.CareerPlanIdResponse;
 import com.example.studentarchives.dto.Fmy.profile.response.CareerPlanListItem;
-import com.example.studentarchives.dto.Fmy.profile.response.CareerPlanPreviewResponse;
 import com.example.studentarchives.entity.career.CareerAction;
 import com.example.studentarchives.entity.career.CareerGoal;
 import com.example.studentarchives.entity.career.CareerMilestone;
@@ -121,8 +120,8 @@ public class ProfileCareerPlanService {
     /** 职业规划导出模板业务类型（export_templates.export_type） */
     private static final String EXPORT_TYPE_CAREER_PLAN = "career_plan";
 
-    /** 职业规划导出文件名（固定，不含日期，避免下载名随日期变化） */
-    private static final String EXPORT_FILE_NAME = "职业规划文件.pdf";
+    /** 职业规划导出文件名（固定，不含日期，避免下载名随日期变化），下载与预览共用 */
+    public static final String EXPORT_FILE_NAME = "职业规划文件.pdf";
 
     /** 规划来源标签（source：1=手动创建 2=AI建议添加） */
     private static final Map<Integer, String> PLAN_SOURCE_LABELS = Map.of(
@@ -291,33 +290,29 @@ public class ProfileCareerPlanService {
     }
 
     /**
-     * 获取职业规划文件预览信息（GET /profile/career-plans/{planId}/preview）
+     * 获取职业规划文件预览字节流（GET /profile/career-plans/{planId}/preview）
      * <p>
      * 与下载共用 {@link #resolveExportFile} 解析同一份生成/缓存文件，保证「预览即所见即所得」；
-     * 返回 OSS 签名 inline 预览 URL（response-content-disposition=inline），供前端新标签页内嵌渲染 PDF。
-     * external 用途返回无水印版本，便于投递前确认版式。
+     * 直接读取 OSS 对象字节并经控制器代理流式返回（Content-Type: application/pdf +
+     * Content-Disposition: inline），绕过 OSS 默认域名 x-oss-force-download 强制下载的限制，
+     * 使浏览器内嵌渲染 PDF。external 用途返回无水印版本，便于投递前确认版式。
      *
      * @param userId  当前登录用户 ID
      * @param planId  规划 ID
      * @param purpose 导出用途：internal（内部预览，屏幕水印+打印隐藏）/ external（外部投递，默认，无水印）
-     * @return 预览信息
+     * @return PDF 字节内容
      */
     @Transactional
-    public CareerPlanPreviewResponse getCareerPlanPreviewUrl(Long userId, Long planId, String purpose) {
+    public byte[] getCareerPlanPreviewBytes(Long userId, Long planId, String purpose) {
         AttachmentRelation relation = resolveExportFile(userId, planId, purpose);
         if (relation == null || relation.getFilePath() == null) {
             throw new BusinessException(ResultCode.DATA_NOT_EXIST, "未找到规划文件");
         }
-        String previewUrl = ossFileService.getPreviewUrl(relation.getFilePath(), relation.getOriginalName());
-        if (previewUrl == null) {
+        byte[] bytes = ossFileService.readObject(relation.getFilePath());
+        if (bytes == null) {
             throw new BusinessException(ResultCode.DATA_NOT_EXIST, "规划文件不存在");
         }
-        return CareerPlanPreviewResponse.builder()
-                .previewUrl(previewUrl)
-                .fileName(relation.getOriginalName())
-                .purpose(purpose != null ? purpose : "external")
-                .generatedAt(toIso(LocalDateTime.now()))
-                .build();
+        return bytes;
     }
 
     /**

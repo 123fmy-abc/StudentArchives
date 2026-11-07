@@ -2,6 +2,7 @@ package com.example.studentarchives.service.Fmy;
 
 import com.aliyun.oss.OSS;
 import com.aliyun.oss.model.GeneratePresignedUrlRequest;
+import com.aliyun.oss.model.OSSObject;
 import com.aliyun.oss.model.ObjectMetadata;
 import com.aliyun.oss.model.ResponseHeaderOverrides;
 import com.example.studentarchives.config.Fmy.OssProperties;
@@ -11,6 +12,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.io.IOException;
 import java.io.InputStream;
 import java.io.UnsupportedEncodingException;
 import java.net.URL;
@@ -180,6 +182,26 @@ public class OssFileService {
      */
     public boolean exists(String objectKey) {
         return ossClient.doesObjectExist(ossProperties.getBucketName(), objectKey);
+    }
+
+    /**
+     * 读取 OSS 对象字节内容，供后端代理流式返回（内嵌预览 PDF/图片等）。
+     *
+     * @param objectKey 对象路径
+     * @return 文件字节内容，对象不存在时返回 null
+     */
+    public byte[] readObject(String objectKey) {
+        if (objectKey == null || !exists(objectKey)) {
+            return null;
+        }
+        try (OSSObject ossObject = ossClient.getObject(ossProperties.getBucketName(), objectKey);
+             InputStream inputStream = ossObject.getObjectContent()) {
+            return inputStream.readAllBytes();
+        } catch (IOException e) {
+            log.error("OSS 文件读取失败: bucket={}, objectKey={}, error={}",
+                    ossProperties.getBucketName(), objectKey, e.getMessage(), e);
+            throw new RuntimeException("OSS文件读取失败: " + e.getMessage(), e);
+        }
     }
 
     /**

@@ -129,9 +129,9 @@ public class ProfileGrowthTimelineService {
                 .orElseThrow(() -> new BusinessException(ResultCode.TOKEN_INVALID, "用户不存在"));
 
         validateEventType(request.getEventType());
-        if (request.getSemesterId() != null) {
-            validateSemester(request.getSemesterId());
-        }
+        LocalDate eventDate = parseEventAt(request.getEventAt());
+        // 学期归集：传入 semesterId 则校验后使用；未传时按 eventAt 落入的学期日期区间自动归属
+        Long semesterId = resolveSemesterId(user.getSchoolId(), request.getSemesterId(), eventDate);
         // 来源记录必填：必须关联一条已有来源记录，否则报错
         validateSourceRequired(request.getSourceType(), request.getSourceId());
         String sourceType = request.getSourceType().trim();
@@ -144,12 +144,12 @@ public class ProfileGrowthTimelineService {
         GrowthTimeline timeline = new GrowthTimeline();
         timeline.setSchoolId(user.getSchoolId());
         timeline.setUserId(userId);
-        timeline.setSemesterId(request.getSemesterId());
+        timeline.setSemesterId(semesterId);
         timeline.setEventType(request.getEventType());
         timeline.setEventName(request.getEventName().trim());
         timeline.setContent(request.getContent());
         timeline.setCoverImage(request.getCoverImage());
-        timeline.setEventAt(parseEventAt(request.getEventAt()));
+        timeline.setEventAt(eventDate);
         timeline.setSourceId(request.getSourceId());
         timeline.setSourceType(sourceType);
         timeline.setEventKey(request.getEventKey() != null ? request.getEventKey().trim() : null);
@@ -195,6 +195,18 @@ public class ProfileGrowthTimelineService {
         if (request.getSemesterId() != null) {
             validateSemester(request.getSemesterId());
             timeline.setSemesterId(request.getSemesterId());
+        }
+        LocalDate newEventAt = null;
+        if (request.getEventAt() != null) {
+            newEventAt = parseEventAt(request.getEventAt());
+            timeline.setEventAt(newEventAt);
+        }
+        // 未显式传学期但修改了发生时间时，按新日期重新归集学期；未命中任何学期区间则保留原值
+        if (request.getSemesterId() == null && newEventAt != null) {
+            semesterRepository.findActiveBySchoolIdAndDate(timeline.getSchoolId(), newEventAt).stream()
+                    .findFirst()
+                    .map(Semester::getId)
+                    .ifPresent(timeline::setSemesterId);
         }
         if (request.getEventType() != null) {
             validateEventType(request.getEventType());
@@ -310,6 +322,22 @@ public class ProfileGrowthTimelineService {
     private void validateSemester(Long semesterId) {
         semesterRepository.findById(semesterId)
                 .orElseThrow(() -> new BusinessException(ResultCode.DATA_NOT_EXIST, "学期不存在"));
+    }
+
+    /**
+     * 学期归集：显式传入 semesterId 时校验后使用；
+     * 未传时按 eventAt 落入的学期日期区间（start_date ≤ eventAt ≤ end_date）自动归属，
+     * 未命中任何学期则返回 null（事件暂无学期，后续补建学期覆盖该日期后可再归集）。
+     */
+    private Long resolveSemesterId(Long schoolId, Long semesterId, LocalDate eventAt) {
+        if (semesterId != null) {
+            validateSemester(semesterId);
+            return semesterId;
+        }
+        return semesterRepository.findActiveBySchoolIdAndDate(schoolId, eventAt).stream()
+                .findFirst()
+                .map(Semester::getId)
+                .orElse(null);
     }
 
     /** 来源记录必填校验：每条时间轴事件必须关联一条已有来源记录，否则报错 */
