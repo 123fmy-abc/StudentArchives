@@ -1166,10 +1166,11 @@ public class ProfileCareerPlanService {
     @Transactional
     public void deletePlan(Long userId, Long planId) {
         CareerPlan plan = getOwnedPlan(userId, planId);
-        // 删除场景状态校验（仅草稿/已退回可删），文案与编辑区分，明确可删条件
+        // 删除场景状态校验（草稿/已退回/已撤销可删），与统一动态接口 ActivityService#checkDeletable 口径一致，
+        // 否则撤回（status=4 已撤销）后在职业规划页无法删除，只能去动态中心删
         int status = plan.getStatus() != null ? plan.getStatus() : 0;
-        if (status != 0 && status != 3) {
-            throw new BusinessException(ResultCode.BIZ_STATUS_NOT_OPERABLE, "当前状态不可删除（仅草稿/已退回状态可删除）");
+        if (status != 0 && status != 3 && status != ApplyStatusEnum.REVOKED.getValue()) {
+            throw new BusinessException(ResultCode.BIZ_STATUS_NOT_OPERABLE, "当前状态不可删除（仅草稿/已退回/已撤销状态可删除）");
         }
         LocalDateTime now = LocalDateTime.now();
 

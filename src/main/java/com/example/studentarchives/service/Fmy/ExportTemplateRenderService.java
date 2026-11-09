@@ -79,6 +79,7 @@ public class ExportTemplateRenderService {
             new CjkFontCandidate("C:\\Windows\\Fonts\\simhei.ttf", "SimHei"),
             new CjkFontCandidate("C:\\Windows\\Fonts\\simsun.ttc", "SimSun"),
             new CjkFontCandidate("/System/Library/Fonts/PingFang.ttc", "PingFang SC"),
+            new CjkFontCandidate("/usr/share/fonts/noto/NotoSansCJK-Regular.ttc", "Noto Sans CJK SC"),
             new CjkFontCandidate("/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc", "Noto Sans CJK SC"),
             new CjkFontCandidate("/usr/share/fonts/noto-cjk/NotoSansCJK-Regular.ttc", "Noto Sans CJK SC"),
             new CjkFontCandidate("/usr/share/fonts/truetype/wqy/wqy-microhei.ttc", "WenQuanYi Micro Hei")
