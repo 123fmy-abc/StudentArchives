@@ -24,7 +24,7 @@ public class UserContactInfo extends BaseEntity {
     @Column(name = "email", length = 255)
     private String email;
 
-    @Column(name = "avatar", length = 255)
+    @Column(name = "avatar", length = 1024)
     private String avatar;
 
     @Column(name = "address", length = 255)
