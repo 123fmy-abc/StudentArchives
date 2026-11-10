@@ -95,10 +95,11 @@ public class ApplicationService {
 
         FormTemplate template = validateByTemplate(schoolId, ArchiveTypeEnum.ACADEMIC_COMPETITION.getValue(), req, draft);
 
-        // 编辑既有草稿/退回记录：按 archiveId 原地更新，避免产生重复记录
-        if (req.getArchiveId() != null) {
-            return resubmitExisting(req.getArchiveId(), ArchiveTypeEnum.ACADEMIC_COMPETITION.getValue(),
-                    req.getCompetitionName(), req.getSemesterId(), req.getObtainTime(), draft, template, req, userId, now);
+        ArchiveSubmitResponse merged = tryMergeExistingDraft(req.getArchiveId(), draft, userId,
+                ArchiveTypeEnum.ACADEMIC_COMPETITION.getValue(), req.getCompetitionName(),
+                req.getSemesterId(), req.getObtainTime(), template, req, now);
+        if (merged != null) {
+            return merged;
         }
 
         Archive archive = createArchiveBase(schoolId, userId, ArchiveTypeEnum.ACADEMIC_COMPETITION.getValue(),
@@ -136,9 +137,11 @@ public class ApplicationService {
 
         FormTemplate template = validateByTemplate(schoolId, ArchiveTypeEnum.SCHOLARSHIP.getValue(), req, draft);
 
-        if (req.getArchiveId() != null) {
-            return resubmitExisting(req.getArchiveId(), ArchiveTypeEnum.SCHOLARSHIP.getValue(),
-                    req.getScholarshipName(), req.getSemesterId(), req.getObtainTime(), draft, template, req, userId, now);
+        ArchiveSubmitResponse merged = tryMergeExistingDraft(req.getArchiveId(), draft, userId,
+                ArchiveTypeEnum.SCHOLARSHIP.getValue(), req.getScholarshipName(),
+                req.getSemesterId(), req.getObtainTime(), template, req, now);
+        if (merged != null) {
+            return merged;
         }
 
         Archive archive = createArchiveBase(schoolId, userId, ArchiveTypeEnum.SCHOLARSHIP.getValue(),
@@ -175,9 +178,11 @@ public class ApplicationService {
 
         FormTemplate template = validateByTemplate(schoolId, ArchiveTypeEnum.INNOVATION_ENTREPRENEURSHIP.getValue(), req, draft);
 
-        if (req.getArchiveId() != null) {
-            return resubmitExisting(req.getArchiveId(), ArchiveTypeEnum.INNOVATION_ENTREPRENEURSHIP.getValue(),
-                    req.getCompanyName(), req.getSemesterId(), req.getRegisteredTime(), draft, template, req, userId, now);
+        ArchiveSubmitResponse merged = tryMergeExistingDraft(req.getArchiveId(), draft, userId,
+                ArchiveTypeEnum.INNOVATION_ENTREPRENEURSHIP.getValue(), req.getCompanyName(),
+                req.getSemesterId(), req.getRegisteredTime(), template, req, now);
+        if (merged != null) {
+            return merged;
         }
 
         Archive archive = createArchiveBase(schoolId, userId, ArchiveTypeEnum.INNOVATION_ENTREPRENEURSHIP.getValue(),
@@ -216,9 +221,11 @@ public class ApplicationService {
 
         FormTemplate template = validateByTemplate(schoolId, ArchiveTypeEnum.ACADEMIC_RESEARCH.getValue(), req, draft);
 
-        if (req.getArchiveId() != null) {
-            return resubmitExisting(req.getArchiveId(), ArchiveTypeEnum.ACADEMIC_RESEARCH.getValue(),
-                    req.getProjectName(), req.getSemesterId(), req.getStartDate(), draft, template, req, userId, now);
+        ArchiveSubmitResponse merged = tryMergeExistingDraft(req.getArchiveId(), draft, userId,
+                ArchiveTypeEnum.ACADEMIC_RESEARCH.getValue(), req.getProjectName(),
+                req.getSemesterId(), req.getStartDate(), template, req, now);
+        if (merged != null) {
+            return merged;
         }
 
         Archive archive = createArchiveBase(schoolId, userId, ArchiveTypeEnum.ACADEMIC_RESEARCH.getValue(),
@@ -257,9 +264,11 @@ public class ApplicationService {
 
         FormTemplate template = validateByTemplate(schoolId, ArchiveTypeEnum.HONOR_CERTIFICATE.getValue(), req, draft);
 
-        if (req.getArchiveId() != null) {
-            return resubmitExisting(req.getArchiveId(), ArchiveTypeEnum.HONOR_CERTIFICATE.getValue(),
-                    req.getCertificateName(), req.getSemesterId(), req.getObtainTime(), draft, template, req, userId, now);
+        ArchiveSubmitResponse merged = tryMergeExistingDraft(req.getArchiveId(), draft, userId,
+                ArchiveTypeEnum.HONOR_CERTIFICATE.getValue(), req.getCertificateName(),
+                req.getSemesterId(), req.getObtainTime(), template, req, now);
+        if (merged != null) {
+            return merged;
         }
 
         Archive archive = createArchiveBase(schoolId, userId, ArchiveTypeEnum.HONOR_CERTIFICATE.getValue(),
@@ -296,9 +305,11 @@ public class ApplicationService {
 
         FormTemplate template = validateByTemplate(schoolId, ArchiveTypeEnum.INTERNSHIP.getValue(), req, draft);
 
-        if (req.getArchiveId() != null) {
-            return resubmitExisting(req.getArchiveId(), ArchiveTypeEnum.INTERNSHIP.getValue(),
-                    req.getCompanyName(), req.getSemesterId(), req.getStartDate(), draft, template, req, userId, now);
+        ArchiveSubmitResponse merged = tryMergeExistingDraft(req.getArchiveId(), draft, userId,
+                ArchiveTypeEnum.INTERNSHIP.getValue(), req.getCompanyName(),
+                req.getSemesterId(), req.getStartDate(), template, req, now);
+        if (merged != null) {
+            return merged;
         }
 
         Archive archive = createArchiveBase(schoolId, userId, ArchiveTypeEnum.INTERNSHIP.getValue(),
@@ -335,9 +346,11 @@ public class ApplicationService {
 
         FormTemplate template = validateByTemplate(schoolId, ArchiveTypeEnum.ORGANIZATION.getValue(), req, draft);
 
-        if (req.getArchiveId() != null) {
-            return resubmitExisting(req.getArchiveId(), ArchiveTypeEnum.ORGANIZATION.getValue(),
-                    req.getPositionTitle(), req.getSemesterId(), req.getStartDate(), draft, template, req, userId, now);
+        ArchiveSubmitResponse merged = tryMergeExistingDraft(req.getArchiveId(), draft, userId,
+                ArchiveTypeEnum.ORGANIZATION.getValue(), req.getPositionTitle(),
+                req.getSemesterId(), req.getStartDate(), template, req, now);
+        if (merged != null) {
+            return merged;
         }
 
         Archive archive = createArchiveBase(schoolId, userId, ArchiveTypeEnum.ORGANIZATION.getValue(),
@@ -374,9 +387,11 @@ public class ApplicationService {
 
         FormTemplate template = validateByTemplate(schoolId, ArchiveTypeEnum.TRAINING_PROJECT.getValue(), req, draft);
 
-        if (req.getArchiveId() != null) {
-            return resubmitExisting(req.getArchiveId(), ArchiveTypeEnum.TRAINING_PROJECT.getValue(),
-                    req.getProjectName(), req.getSemesterId(), req.getStartDate(), draft, template, req, userId, now);
+        ArchiveSubmitResponse merged = tryMergeExistingDraft(req.getArchiveId(), draft, userId,
+                ArchiveTypeEnum.TRAINING_PROJECT.getValue(), req.getProjectName(),
+                req.getSemesterId(), req.getStartDate(), template, req, now);
+        if (merged != null) {
+            return merged;
         }
 
         Archive archive = createArchiveBase(schoolId, userId, ArchiveTypeEnum.TRAINING_PROJECT.getValue(),
@@ -412,9 +427,11 @@ public class ApplicationService {
 
         FormTemplate template = validateByTemplate(schoolId, ArchiveTypeEnum.SOCIAL_PRACTICE.getValue(), req, draft);
 
-        if (req.getArchiveId() != null) {
-            return resubmitExisting(req.getArchiveId(), ArchiveTypeEnum.SOCIAL_PRACTICE.getValue(),
-                    req.getActivityName(), req.getSemesterId(), req.getStartDate(), draft, template, req, userId, now);
+        ArchiveSubmitResponse merged = tryMergeExistingDraft(req.getArchiveId(), draft, userId,
+                ArchiveTypeEnum.SOCIAL_PRACTICE.getValue(), req.getActivityName(),
+                req.getSemesterId(), req.getStartDate(), template, req, now);
+        if (merged != null) {
+            return merged;
         }
 
         Archive archive = createArchiveBase(schoolId, userId, ArchiveTypeEnum.SOCIAL_PRACTICE.getValue(),
@@ -455,9 +472,11 @@ public class ApplicationService {
 
         FormTemplate template = validateByTemplate(schoolId, ArchiveTypeEnum.BOOK_REVIEW.getValue(), req, draft);
 
-        if (req.getArchiveId() != null) {
-            return resubmitExisting(req.getArchiveId(), ArchiveTypeEnum.BOOK_REVIEW.getValue(),
-                    req.getBookName(), req.getSemesterId(), req.getReadMonth(), draft, template, req, userId, now);
+        ArchiveSubmitResponse merged = tryMergeExistingDraft(req.getArchiveId(), draft, userId,
+                ArchiveTypeEnum.BOOK_REVIEW.getValue(), req.getBookName(),
+                req.getSemesterId(), req.getReadMonth(), template, req, now);
+        if (merged != null) {
+            return merged;
         }
 
         Archive archive = createArchiveBase(schoolId, userId, ArchiveTypeEnum.BOOK_REVIEW.getValue(),
@@ -717,6 +736,30 @@ public class ApplicationService {
         generatePendingApprovalIfSubmitted(archive);
 
         return buildResponse(archive);
+    }
+
+    private ArchiveSubmitResponse tryMergeExistingDraft(Long archiveId, boolean draft, Long userId,
+                                                        String archiveType, String title, Long semesterId,
+                                                        LocalDate obtainedAt, FormTemplate template,
+                                                        Object req, LocalDateTime now) {
+        if (archiveId == null) {
+            // 提交与草稿保存均做合并：未携带 archiveId 时，若存在同名草稿则原地更新，避免重复记录
+            Archive draftArchive = findOpenDraft(userId, archiveType, title);
+            if (draftArchive == null) {
+                return null;
+            }
+            archiveId = draftArchive.getId();
+        }
+        return resubmitExisting(archiveId, archiveType, title, semesterId, obtainedAt, draft, template, req, userId, now);
+    }
+
+    private Archive findOpenDraft(Long userId, String archiveType, String title) {
+        int draftStatus = ApplyStatusEnum.DRAFT.getValue();
+        return archiveRepository.findByUserIdAndArchiveType(userId, archiveType).stream()
+                .filter(a -> a.getStatus() != null && a.getStatus() == draftStatus)
+                .filter(a -> title != null && title.equalsIgnoreCase(a.getTitle()))
+                .max(java.util.Comparator.comparing(Archive::getId))
+                .orElse(null);
     }
 
     /**
