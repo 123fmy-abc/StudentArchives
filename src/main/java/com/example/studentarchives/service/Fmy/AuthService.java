@@ -80,6 +80,7 @@ public class AuthService {
 
     private final UserRepository userRepository;
     private final UserContactInfoRepository userContactInfoRepository;
+    private final OssFileService ossFileService;
     private final AccountRoleResolver accountRoleResolver;
     private final RolePermissionRepository rolePermissionRepository;
     private final PermissionRepository permissionRepository;
@@ -277,7 +278,7 @@ public class AuthService {
                 .roleLevel(roleLevel)
                 .roleLevelLabel(roleLevelLabel(roleLevel))
                 .homePage(accountRoleResolver.homePage(roles))
-                .avatar(contactInfo != null ? contactInfo.getAvatar() : null)
+                .avatar(contactInfo != null ? ossFileService.resolveAvatarUrl(contactInfo.getAvatar()) : null)
                 .mustChangePassword(Boolean.TRUE.equals(currentUser.getMustChangePassword()))
                 .build();
 
@@ -332,7 +333,7 @@ public class AuthService {
                 .homePage(accountRoleResolver.homePage(roles))
                 .permissions(permissions)
                 .scopes(resolveUserScopes(roleScopes))
-                .avatar(contactInfo != null ? contactInfo.getAvatar() : null)
+                .avatar(contactInfo != null ? ossFileService.resolveAvatarUrl(contactInfo.getAvatar()) : null)
                 .build();
     }
 

@@ -52,6 +52,13 @@ public class OssFileService {
     private static final DateTimeFormatter MONTH_FORMAT = DateTimeFormatter.ofPattern("yyyy-MM");
 
     /**
+     * 头像签名 URL 有效期（分钟）：7 天。
+     * OSS V4 签名 URL 最长 7 天有效（604800 秒），超期签名会被 OSS 拒绝（AuthorizationArgumentError）。
+     * 头像读取时现签，仅需覆盖前端缓存周期，取上限即可。
+     */
+    private static final int AVATAR_URL_EXPIRE_MINUTES = 7 * 24 * 60;
+
+    /**
      * 上传文件到 OSS（正式目录）
      * <p>
      * 路径格式：{@code {bizType}/{category}/{yyyy-MM}/{uuid}.{ext}}
@@ -261,6 +268,40 @@ public class OssFileService {
     public String getPreviewUrl(String objectKey, String filename) {
         if (objectKey == null || !exists(objectKey)) return null;
         return generatePresignedUrl(objectKey, ossProperties.getUrlExpireMinutes(), "inline", filename);
+    }
+
+    /**
+     * 解析头像访问 URL（数据库只存 objectKey，读取时现签，永不过期失效）。
+     * <p>
+     * 兼容两种存量数据：
+     * <ul>
+     *   <li>objectKey（如 {@code avatar/{uuid}.jpg}）：直接签名；</li>
+     *   <li>历史遗留的完整签名 URL（V4 签名 30 天版本已永久失效）：
+     *       提取 URL 路径中的 {@code avatar/} 前缀 objectKey 重新签名，自动修复。</li>
+     * </ul>
+     *
+     * @param storedAvatar user_contact_infos.avatar 存储值
+     * @return 可直接访问的签名 URL；存储值为空返回 null
+     */
+    public String resolveAvatarUrl(String storedAvatar) {
+        if (storedAvatar == null || storedAvatar.isBlank()) {
+            return null;
+        }
+        String objectKey = storedAvatar;
+        if (storedAvatar.startsWith("http://") || storedAvatar.startsWith("https://")) {
+            // 历史 URL：取域名后的路径部分（即 objectKey），并去掉签名等查询参数
+            int pathStart = storedAvatar.indexOf('/', storedAvatar.indexOf("//") + 2);
+            objectKey = pathStart > 0 ? storedAvatar.substring(pathStart + 1) : storedAvatar;
+            int queryStart = objectKey.indexOf('?');
+            if (queryStart > 0) {
+                objectKey = objectKey.substring(0, queryStart);
+            }
+            // 仅对头像目录重新签名，其他 URL 原样返回
+            if (!objectKey.startsWith("avatar/")) {
+                return storedAvatar;
+            }
+        }
+        return generatePresignedUrl(objectKey, AVATAR_URL_EXPIRE_MINUTES);
     }
 
     /**

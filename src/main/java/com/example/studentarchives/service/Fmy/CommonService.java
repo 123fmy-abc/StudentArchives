@@ -409,7 +409,9 @@ public class CommonService {
      * <p>
      * 与普通文件上传不同，头像上传不走临时目录（temp/），
      * 直接上传至 OSS 正式目录 avatar/{uuid}.{ext}，
-     * 并在上传成功后立即更新用户联系信息的头像字段。
+     * 并在上传成功后将 objectKey 写入用户联系信息的头像字段
+     * （读取时由 {@link OssFileService#resolveAvatarUrl} 现签访问 URL，
+     * 响应中的 avatarUrl 为本次现签结果，仅供前端立即展示）。
      *
      * @param file   上传的头像文件（仅允许 jpg/png/gif/webp/bmp，最大 2MB）
      * @param userId 当前登录用户 ID
@@ -444,17 +446,18 @@ public class CommonService {
                     "头像上传失败: " + (e.getMessage() != null ? e.getMessage() : "未知错误"));
         }
 
-        // 5. 生成头像访问 URL（30 天有效，生产环境建议 OSS 头像目录开启公共读后改用不带签名的 URL）
-        String avatarUrl = ossFileService.generatePresignedUrl(objectKey, 30 * 24 * 60);
+        // 5. 生成头像访问 URL（现签，仅供本次响应直接展示）
+        String avatarUrl = ossFileService.generatePresignedUrl(objectKey, 7 * 24 * 60);
 
-        // 6. 更新 user_contact_infos.avatar 字段
+        // 6. 更新 user_contact_infos.avatar 字段（只存 objectKey，读取时由 resolveAvatarUrl 现签，
+        //    避免 OSS V4 签名 URL 7 天上限导致存库 URL 过期失效）
         UserContactInfo contactInfo = userContactInfoRepository.findByUserId(userId)
                 .orElseGet(() -> {
                     UserContactInfo newInfo = new UserContactInfo();
                     newInfo.setUserId(userId);
                     return newInfo;
                 });
-        contactInfo.setAvatar(avatarUrl);
+        contactInfo.setAvatar(objectKey);
         contactInfo.setUpdatedBy(userId);
         userContactInfoRepository.save(contactInfo);
 

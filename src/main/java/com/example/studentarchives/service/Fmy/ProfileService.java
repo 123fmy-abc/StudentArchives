@@ -174,6 +174,7 @@ public class ProfileService {
     private final ArchiveRepository archiveRepository;
     private final DictionaryRepository dictionaryRepository;
     private final DataCompletenessService dataCompletenessService;
+    private final OssFileService ossFileService;
     private final ObjectMapper objectMapper;
     private final GrowthTimelineStatusResolver growthTimelineStatusResolver;
 
@@ -228,7 +229,7 @@ public class ProfileService {
                 .map(c -> ContactInfo.builder()
                         .email(c.getEmail())
                         .phone(c.getPhone())
-                        .avatar(c.getAvatar())
+                        .avatar(ossFileService.resolveAvatarUrl(c.getAvatar()))
                         .address(c.getAddress())
                         .emergencyName(c.getEmergencyName())
                         .emergencyRelation(c.getEmergencyRelation())
@@ -344,7 +345,7 @@ public class ProfileService {
         return ContactUpdateResponse.builder()
                 .email(contact.getEmail())
                 .phone(contact.getPhone())
-                .avatar(contact.getAvatar())
+                .avatar(ossFileService.resolveAvatarUrl(contact.getAvatar()))
                 .address(contact.getAddress())
                 .emergencyName(contact.getEmergencyName())
                 .emergencyRelation(contact.getEmergencyRelation())
