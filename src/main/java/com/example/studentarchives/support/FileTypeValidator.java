@@ -96,8 +96,7 @@ public final class FileTypeValidator {
         if (mimeType == null) {
             throw new BusinessException(ResultCode.FILE_FORMAT_ERROR, "不支持的文件格式: " + ext);
         }
-        checkSignature(ext, readHeader(file));
-        return mimeType;
+        return checkSignature(ext, readHeader(file), allowed);
     }
 
     /**
@@ -150,65 +149,123 @@ public final class FileTypeValidator {
         }
     }
 
-    private static void checkSignature(String ext, byte[] header) {
+    /**
+     * 按声明扩展名校验文件头魔数；不匹配时按魔数反向检测真实格式，
+     * 真实格式属于本次上传允许的白名单时放行并按真实格式返回 MIME，
+     * 否则抛出明确错误。
+     */
+    private static String checkSignature(String ext, byte[] header, Set<String> allowed) {
         if (header.length == 0) {
             throw formatError(ext);
         }
-        switch (ext) {
-            case "jpg", "jpeg" -> requireMagic(header, ext, 0xFF, 0xD8, 0xFF);
-            case "png" -> requireMagic(header, ext, 0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A);
-            case "gif" -> {
-                if (!startsWithAscii(header, "GIF87a") && !startsWithAscii(header, "GIF89a")) {
-                    throw formatError(ext);
-                }
-            }
-            case "webp" -> {
-                if (header.length < 12 || !startsWithAscii(header, "RIFF")
-                        || !startsWithAsciiAt(header, 8, "WEBP")) {
-                    throw formatError(ext);
-                }
-            }
-            case "bmp" -> requireMagic(header, ext, 0x42, 0x4D);
-            case "pdf" -> requireMagic(header, ext, 0x25, 0x50, 0x44, 0x46, 0x2D);
-            case "zip", "docx", "xlsx", "pptx" -> requireZip(header, ext);
-            case "doc", "xls", "ppt" -> requireMagic(header, ext,
-                    0xD0, 0xCF, 0x11, 0xE0, 0xA1, 0xB1, 0x1A, 0xE1);
-            case "txt", "csv" -> requirePlainText(header, ext);
-            default -> throw formatError(ext);
+        boolean matched = switch (ext) {
+            case "jpg", "jpeg" -> hasMagic(header, 0xFF, 0xD8, 0xFF);
+            case "png" -> hasMagic(header, 0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A);
+            case "gif" -> startsWithAscii(header, "GIF87a") || startsWithAscii(header, "GIF89a");
+            case "webp" -> header.length >= 12 && startsWithAscii(header, "RIFF")
+                    && startsWithAsciiAt(header, 8, "WEBP");
+            case "bmp" -> hasMagic(header, 0x42, 0x4D);
+            case "pdf" -> hasMagic(header, 0x25, 0x50, 0x44, 0x46, 0x2D);
+            case "zip", "docx", "xlsx", "pptx" -> isZipHeader(header);
+            case "doc", "xls", "ppt" -> hasMagic(header, 0xD0, 0xCF, 0x11, 0xE0, 0xA1, 0xB1, 0x1A, 0xE1);
+            case "txt", "csv" -> isPlainText(header);
+            default -> false;
+        };
+        if (matched) {
+            return EXTENSION_MIME.get(ext);
         }
+        // 声明扩展名与内容不符：按魔数检测真实格式，属于白名单则按真实格式放行
+        String real = detectSignature(header);
+        if (real != null && isAllowedFormat(real, allowed)) {
+            return EXTENSION_MIME.get(real);
+        }
+        if (real != null) {
+            throw new BusinessException(ResultCode.FILE_FORMAT_ERROR,
+                    "文件实际格式为 " + real + "，与扩展名 ." + ext + " 不符，且该格式不在允许范围内");
+        }
+        throw formatError(ext);
     }
 
-    private static void requireMagic(byte[] header, String ext, int... expected) {
+    /** jpg 与 jpeg 视为同一格式，其余按扩展名精确匹配 */
+    private static boolean isAllowedFormat(String ext, Set<String> allowed) {
+        if (allowed.contains(ext)) {
+            return true;
+        }
+        return "jpg".equals(ext) && (allowed.contains("jpeg") || allowed.contains("jpg"))
+                || "jpeg".equals(ext) && allowed.contains("jpg");
+    }
+
+    /** 按魔数识别真实格式，无法唯一识别（zip 族、纯文本、未知）返回 null */
+    private static String detectSignature(byte[] header) {
+        if (hasMagic(header, 0xFF, 0xD8, 0xFF)) {
+            return "jpg";
+        }
+        if (hasMagic(header, 0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A)) {
+            return "png";
+        }
+        if (startsWithAscii(header, "GIF87a") || startsWithAscii(header, "GIF89a")) {
+            return "gif";
+        }
+        if (header.length >= 12 && startsWithAscii(header, "RIFF")
+                && startsWithAsciiAt(header, 8, "WEBP")) {
+            return "webp";
+        }
+        if (hasMagic(header, 0x42, 0x4D)) {
+            return "bmp";
+        }
+        if (hasMagic(header, 0x25, 0x50, 0x44, 0x46, 0x2D)) {
+            return "pdf";
+        }
+        // OLE 复合文档：doc/xls/ppt 共用同一魔数，无法唯一区分，统一按 doc 处理
+        if (hasMagic(header, 0xD0, 0xCF, 0x11, 0xE0, 0xA1, 0xB1, 0x1A, 0xE1)) {
+            return "doc";
+        }
+        // ISOBMFF 容器：iPhone HEIC 照片常被改名为 .jpeg 上传，给出明确提示
+        if (header.length >= 12 && startsWithAsciiAt(header, 4, "ftyp")) {
+            return isHeicBrand(header) ? "heic" : "mov";
+        }
+        return null;
+    }
+
+    /** 偏移 8 起为品牌码，heic/heif/mif1/msf1/hevc 均为 iPhone HEIC 照片家族 */
+    private static boolean isHeicBrand(byte[] header) {
+        String brand = new String(header, 8, 4, java.nio.charset.StandardCharsets.US_ASCII);
+        return switch (brand) {
+            case "heic", "heif", "mif1", "msf1", "hevc" -> true;
+            default -> false;
+        };
+    }
+
+    private static boolean hasMagic(byte[] header, int... expected) {
         if (header.length < expected.length) {
-            throw formatError(ext);
+            return false;
         }
         for (int i = 0; i < expected.length; i++) {
             if ((header[i] & 0xFF) != expected[i]) {
-                throw formatError(ext);
+                return false;
             }
         }
+        return true;
     }
 
-    private static void requireZip(byte[] header, String ext) {
+    private static boolean isZipHeader(byte[] header) {
         if (header.length < 4 || header[0] != 'P' || header[1] != 'K') {
-            throw formatError(ext);
+            return false;
         }
         int low = header[2] & 0xFF;
         int high = header[3] & 0xFF;
-        boolean valid = (low == 0x03 && high == 0x04)
+        return (low == 0x03 && high == 0x04)
                 || (low == 0x05 && high == 0x06)
                 || (low == 0x07 && high == 0x08);
-        if (!valid) {
-            throw formatError(ext);
-        }
     }
 
-    private static void requirePlainText(byte[] header, String ext) {
+    private static boolean isPlainText(byte[] header) {
         for (byte b : header) {
             if (b == 0x00) {
-                throw formatError(ext);
+                return false;
             }
         }
+        return true;
     }
 
     private static boolean startsWithAscii(byte[] header, String ascii) {

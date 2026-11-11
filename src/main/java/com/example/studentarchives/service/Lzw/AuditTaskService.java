@@ -266,7 +266,7 @@ public class AuditTaskService {
             }
             Long designated = designateAllowed ? nextAuditorId : null;
 
-            ApprovalNode nextNode = approvalSubmitService.createStepNode(inst, nextStep, schoolId,
+            ApprovalNode nextNode = approvalSubmitService.createStepNode(inst, nextStep, p.getSchoolId(),
                     p.getApplicantId(), p.getApplicantName(), p.getApplicantNo(), p.getTitle(),
                     p.getCategoryLabel(), p.getSubmittedAt(), designated);
 
@@ -316,7 +316,7 @@ public class AuditTaskService {
                 .build();
         // 重算需读取已提交的审批结果，事务提交后再提交任务；回执写入响应，失败不再静默
         runAfterCommit(() -> {
-            ScoreRecalcDispatch recalc = triggerScoreRecalc(schoolId, p, ref.semesterId(), teacherId);
+            ScoreRecalcDispatch recalc = triggerScoreRecalc(p.getSchoolId(), p, ref.semesterId(), teacherId);
             result.setScoreRecalcStatus(recalc.status());
             result.setScoreRecalcTaskId(recalc.taskId());
         });
@@ -354,14 +354,14 @@ public class AuditTaskService {
         if (comment == null || comment.isBlank()) {
             throw new BusinessException(ResultCode.PARAM_MISSING, "退回原因不能为空");
         }
-        // 退回原因模板使用频率统计
-        if (templateCode != null && !templateCode.isBlank()) {
-            incrementTemplateUsage(schoolId, templateCode);
-        }
         // rejectToStep 仅在多级流程「退回到指定步骤」时生效，当前单节点流程默认退回申请人，暂不落地该字段。
 
         PendingApproval p = loadTask(taskId);
         ensureTaskAccess(p, teacherId, schoolId);
+        // 退回原因模板使用频率统计（鉴权通过后按任务所属学校计，避免越权请求污染本校统计）
+        if (templateCode != null && !templateCode.isBlank()) {
+            incrementTemplateUsage(p.getSchoolId(), templateCode);
+        }
         if (!Integer.valueOf(1).equals(p.getStatus())) {
             throw new BusinessException(ResultCode.BIZ_STATUS_NOT_OPERABLE, "任务已处理，请勿重复审核");
         }
@@ -486,7 +486,12 @@ public class AuditTaskService {
         if (revokeReason == null || revokeReason.isBlank()) {
             throw new BusinessException(ResultCode.PARAM_MISSING, "撤销原因不能为空");
         }
+        Long schoolId = adminAuthService.getOperatorSchoolId(teacherId);
         PendingApproval p = loadTask(taskId);
+        // 撤销权限不免除学校隔离：仅允许撤销本校任务
+        if (!Objects.equals(p.getSchoolId(), schoolId)) {
+            throw new BusinessException(ResultCode.ACCESS_DENIED, "无访问权限");
+        }
         if (!Integer.valueOf(2).equals(p.getStatus())) {
             throw new BusinessException(ResultCode.BIZ_STATUS_NOT_OPERABLE, "仅已通过的记录可撤销");
         }
@@ -557,14 +562,19 @@ public class AuditTaskService {
             throw new BusinessException(ResultCode.BIZ_STATUS_NOT_OPERABLE, "任务已处理，请勿重复操作");
         }
         verifyTaskVersion(p, expectedVersion);
+
+        ApprovalNode node = approvalNodeRepository.findById(p.getNodeId())
+                .orElseThrow(() -> new BusinessException(ResultCode.DATA_NOT_EXIST, "审批节点不存在"));
+        // 转交不得绕过流程步骤的角色/范围要求
+        if (!approvalSubmitService.isAuditorEligible(targetAuditorId, node.getRoleId(),
+                node.getScopeType(), node.getScopeId(), p.getSchoolId())) {
+            throw new BusinessException(ResultCode.PARAM_ERROR, "转交对象不满足该节点要求的审批角色或授权范围");
+        }
         LocalDateTime now = LocalDateTime.now();
 
         // 节点改派：待办归属目标审批人（节点仍待审核，action 不置位）
-        ApprovalNode node = approvalNodeRepository.findById(p.getNodeId()).orElse(null);
-        if (node != null) {
-            node.setAssignedAuditorId(targetAuditorId);
-            approvalNodeRepository.save(node);
-        }
+        node.setAssignedAuditorId(targetAuditorId);
+        approvalNodeRepository.save(node);
 
         // 待办改派给目标审批人
         p.setAuditorId(targetAuditorId);
@@ -694,7 +704,8 @@ public class AuditTaskService {
     private boolean isInScope(PendingApproval p, Long teacherId, Long schoolId,
                               List<ApprovalDelegation> activeDelegations) {
         if (isAdmin(teacherId)) {
-            return true;
+            // 管理员仅免除角色范围限制，仍必须限定在本校任务内，避免凭 taskId 跨校审批
+            return Objects.equals(p.getSchoolId(), schoolId);
         }
         // 本人待办：仅限本校任务；委托改派任务须委托仍生效且范围未变
         if (p.getAuditorId() != null && p.getAuditorId().equals(teacherId)
@@ -705,7 +716,19 @@ public class AuditTaskService {
         if (isDelegatedTaskInScope(p, teacherId, schoolId, activeDelegations)) {
             return true;
         }
-        return studentInScope(p.getApplicantId(), teacherId, schoolId);
+        // 共享待办：授权范围覆盖学生还不够，还必须持有当前节点要求的角色与节点授权范围，
+        // 否则「按角色配置的审核节点」会被范围内任意教师处理。
+        return studentInScope(p.getApplicantId(), teacherId, schoolId) && isNodeAuditorEligible(p, teacherId);
+    }
+
+    /** 当前教师是否满足待办所在节点的角色与范围要求（与审批人解析口径一致） */
+    private boolean isNodeAuditorEligible(PendingApproval p, Long teacherId) {
+        ApprovalNode node = approvalNodeRepository.findById(p.getNodeId()).orElse(null);
+        if (node == null) {
+            return false;
+        }
+        return approvalSubmitService.isAuditorEligible(teacherId, node.getRoleId(),
+                node.getScopeType(), node.getScopeId(), p.getSchoolId());
     }
 
     /**

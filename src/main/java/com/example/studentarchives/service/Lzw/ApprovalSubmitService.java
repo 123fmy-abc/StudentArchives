@@ -19,6 +19,7 @@ import com.example.studentarchives.repository.ApprovalFlowStepRepository;
 import com.example.studentarchives.repository.ApprovalInstanceRepository;
 import com.example.studentarchives.repository.ApprovalNodeRepository;
 import com.example.studentarchives.repository.PendingApprovalRepository;
+import com.example.studentarchives.repository.RoleRepository;
 import com.example.studentarchives.repository.RoleScopeRepository;
 import com.example.studentarchives.repository.UserMessageRepository;
 import com.example.studentarchives.repository.UserRepository;
@@ -66,6 +67,7 @@ public class ApprovalSubmitService {
     private final ApprovalNodeRepository nodeRepository;
     private final PendingApprovalRepository pendingApprovalRepository;
     private final UserRoleRepository userRoleRepository;
+    private final RoleRepository roleRepository;
     private final RoleScopeRepository roleScopeRepository;
     private final UserRepository userRepository;
     private final ApprovalDelegationRepository approvalDelegationRepository;
@@ -348,6 +350,10 @@ public class ApprovalSubmitService {
      * 学院/专业/班级节点（scopeType=2/3/4）：数据范围需精确命中节点 scopeId。
      */
     private Long resolveAuditor(Long roleId, Integer scopeType, Long scopeId, Long schoolId) {
+        if (!isAuditorRole(roleId)) {
+            log.warn("审批节点角色不可用（不存在/已禁用/非审批角色），跳过自动分配: roleId={}", roleId);
+            return null;
+        }
         List<UserRole> userRoles = userRoleRepository.findByRoleId(roleId);
         LocalDate today = LocalDate.now();
         List<Long> candidates = new ArrayList<>();
@@ -397,6 +403,31 @@ public class ApprovalSubmitService {
                 .orElse(false);
     }
 
+    /** 角色是否可用于审批：存在、启用且 is_auditor=1 */
+    private boolean isAuditorRole(Long roleId) {
+        if (roleId == null) {
+            return false;
+        }
+        return roleRepository.findById(roleId)
+                .map(r -> Integer.valueOf(1).equals(r.getStatus())
+                        && Integer.valueOf(1).equals(r.getIsAuditor()))
+                .orElse(false);
+    }
+
+    /** 用户是否持有任一启用中的审批角色（roles.is_auditor=1） */
+    private boolean hasEnabledAuditorRole(Long userId) {
+        List<Long> roleIds = userRoleRepository.findByUserId(userId).stream()
+                .map(UserRole::getRoleId)
+                .filter(Objects::nonNull)
+                .distinct()
+                .collect(Collectors.toList());
+        if (roleIds.isEmpty()) {
+            return false;
+        }
+        return roleRepository.findByIdInAndStatus(roleIds, 1).stream()
+                .anyMatch(r -> Integer.valueOf(1).equals(r.getIsAuditor()));
+    }
+
     /**
      * 回退审批人：本校持有「学校级授权（scope_type=1 且 scope_id=学校）」且授权生效中、
      * 用户启用的用户，按当前待办最少者优先（用于兜底，避免申报无人审核）。
@@ -409,6 +440,7 @@ public class ApprovalSubmitService {
                 .map(RoleScope::getUserId)
                 .filter(Objects::nonNull)
                 .filter(this::isEnabledUser)
+                .filter(this::hasEnabledAuditorRole)
                 .distinct()
                 .collect(Collectors.toList());
         if (candidates.isEmpty()) {
@@ -421,9 +453,13 @@ public class ApprovalSubmitService {
                 .orElse(null);
     }
 
-    /** 手动指定的审批人是否具备该节点要求的角色与授权范围 */
-    private boolean isAuditorEligible(Long userId, Long roleId, Integer scopeType, Long scopeId, Long schoolId) {
-        if (userId == null || roleId == null) {
+    /**
+     * 判断用户是否具备指定审批节点要求的角色与授权范围。
+     * <p>供提交首节点、多级推进、转交以及待办可见性校验复用，保证「流程配置的角色」
+     * 与「实际可处理待办的人」使用同一口径。
+     */
+    public boolean isAuditorEligible(Long userId, Long roleId, Integer scopeType, Long scopeId, Long schoolId) {
+        if (userId == null || roleId == null || !isAuditorRole(roleId)) {
             return false;
         }
         boolean hasRole = userRoleRepository.findByUserId(userId).stream()
