@@ -36,7 +36,14 @@ ls -1t "$BACKUP_DIR"/${APP_NAME}-*.jar 2>/dev/null | tail -n +$((KEEP_BACKUPS + 
 echo "    已备份到 $BACKUP_DIR/${APP_NAME}-${ts}.jar（保留最近 ${KEEP_BACKUPS} 份）"
 
 echo "==> 2/4 替换 jar"
-install -m 0644 "$new_jar" "$JAR_PATH"
+# 保持原 jar 的属主/属组（宝塔下常为 www:www），避免以后服务改用 www 用户启动时权限不足
+OWNER=$(stat -c '%U:%G' "$BACKUP_DIR/${APP_NAME}-${ts}.jar" 2>/dev/null || echo "root:root")
+if [ "$OWNER" = "root:root" ]; then
+  install -m 0644 "$new_jar" "$JAR_PATH"
+else
+  install -m 0644 -o "${OWNER%%:*}" -g "${OWNER##*:}" "$new_jar" "$JAR_PATH"
+fi
+echo "    已替换，属主 ${OWNER}"
 
 echo "==> 3/4 重启服务 ${SERVICE}"
 systemctl restart "$SERVICE"
