@@ -53,6 +53,7 @@ import com.example.studentarchives.repository.UserMessageRepository;
 import com.example.studentarchives.repository.UserRepository;
 import com.example.studentarchives.repository.UserRoleRepository;
 import com.example.studentarchives.service.Fmy.AdminScoreService;
+import com.example.studentarchives.service.Fmy.OssFileService;
 import com.example.studentarchives.service.Fmy.TeacherScopeValidator;
 import com.example.studentarchives.service.common.AdminAuthService;
 import com.fasterxml.jackson.core.type.TypeReference;
@@ -131,6 +132,7 @@ public class AuditTaskService {
     private final AttachmentRelationRepository attachmentRelationRepository;
 
     private final ActivityService activityService;
+    private final OssFileService ossFileService;
     private final AdminAuthService adminAuthService;
     private final TeacherScopeValidator scopeValidator;
     private final AdminScoreService adminScoreService;
@@ -1162,7 +1164,10 @@ public class AuditTaskService {
             return Collections.emptyList();
         }
         return attachmentRelationRepository.findByBizTypeAndBizId(bizType, approvableId).stream()
-                .map(f -> new FileItem(f.getId(), f.getOriginalName(), f.getFilePath(), f.getFilePath(), f.getFileSize()))
+                .map(f -> new FileItem(f.getId(), f.getOriginalName(),
+                        ossFileService.getFileUrl(f.getFilePath(), f.getOriginalName()),
+                        ossFileService.getPreviewUrl(f.getFilePath(), f.getOriginalName()),
+                        f.getFileSize()))
                 .collect(Collectors.toList());
     }
 
