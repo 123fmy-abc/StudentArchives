@@ -89,9 +89,11 @@ public class ApplicationService {
         boolean draft = isDraft(req.getIsDraft());
         LocalDateTime now = LocalDateTime.now();
 
+        requireOnSubmit(draft, req.getSemesterId(), "学期ID");
         requireOnSubmit(draft, req.getCompetitionName(), "竞赛名称");
         requireOnSubmit(draft, req.getCompetitionType(), "竞赛类型");
         requireOnSubmit(draft, req.getAwardLevel(), "获奖等级");
+        requireOnSubmit(draft, req.getObtainedTime(), "获奖时间");
         requireEvidenceOnSubmit(draft, req.getEvidenceFileIds());
 
         FormTemplate template = validateByTemplate(schoolId, ArchiveTypeEnum.ACADEMIC_COMPETITION.getValue(), req, draft);
@@ -132,9 +134,11 @@ public class ApplicationService {
         boolean draft = isDraft(req.getIsDraft());
         LocalDateTime now = LocalDateTime.now();
 
+        requireOnSubmit(draft, req.getSemesterId(), "学期ID");
         requireOnSubmit(draft, req.getScholarshipName(), "奖学金名称");
         requireOnSubmit(draft, req.getScholarshipCategory(), "奖学金类别");
         requireOnSubmit(draft, req.getAwardLevel(), "获奖等级");
+        requireOnSubmit(draft, req.getObtainedTime(), "获得时间");
         requireEvidenceOnSubmit(draft, req.getEvidenceFileIds());
 
         FormTemplate template = validateByTemplate(schoolId, ArchiveTypeEnum.SCHOLARSHIP.getValue(), req, draft);
@@ -174,9 +178,11 @@ public class ApplicationService {
         boolean draft = isDraft(req.getIsDraft());
         LocalDateTime now = LocalDateTime.now();
 
+        requireOnSubmit(draft, req.getSemesterId(), "学期ID");
         requireOnSubmit(draft, req.getCompanyName(), "公司名称");
         requireOnSubmit(draft, req.getIndustryType(), "行业类型");
         requireOnSubmit(draft, req.getProjectType(), "项目类型");
+        requireOnSubmit(draft, req.getRegisteredTime(), "注册时间");
         requireEvidenceOnSubmit(draft, req.getEvidenceFileIds());
 
         FormTemplate template = validateByTemplate(schoolId, ArchiveTypeEnum.INNOVATION_ENTREPRENEURSHIP.getValue(), req, draft);
@@ -218,9 +224,12 @@ public class ApplicationService {
         boolean draft = isDraft(req.getIsDraft());
         LocalDateTime now = LocalDateTime.now();
 
+        requireOnSubmit(draft, req.getSemesterId(), "学期ID");
         requireOnSubmit(draft, req.getProjectName(), "项目名称");
         requireOnSubmit(draft, req.getProjectLevel(), "项目级别");
         requireOnSubmit(draft, req.getProjectType(), "项目类型");
+        requireOnSubmit(draft, req.getStartDate(), "开始日期");
+        requireOnSubmit(draft, req.getEndDate(), "结束日期");
         requireEvidenceOnSubmit(draft, req.getEvidenceFileIds());
 
         FormTemplate template = validateByTemplate(schoolId, ArchiveTypeEnum.ACADEMIC_RESEARCH.getValue(), req, draft);
@@ -263,8 +272,10 @@ public class ApplicationService {
         boolean draft = isDraft(req.getIsDraft());
         LocalDateTime now = LocalDateTime.now();
 
+        requireOnSubmit(draft, req.getSemesterId(), "学期ID");
         requireOnSubmit(draft, req.getCertificateName(), "证书名称");
         requireOnSubmit(draft, req.getCertificateType(), "证书类型");
+        requireOnSubmit(draft, req.getObtainedTime(), "获得时间");
         requireEvidenceOnSubmit(draft, req.getEvidenceFileIds());
 
         FormTemplate template = validateByTemplate(schoolId, ArchiveTypeEnum.HONOR_CERTIFICATE.getValue(), req, draft);
@@ -306,7 +317,10 @@ public class ApplicationService {
         boolean draft = isDraft(req.getIsDraft());
         LocalDateTime now = LocalDateTime.now();
 
+        requireOnSubmit(draft, req.getSemesterId(), "学期ID");
         requireOnSubmit(draft, req.getCompanyName(), "公司名称");
+        requireOnSubmit(draft, req.getStartDate(), "开始时间");
+        requireOnSubmit(draft, req.getEndDate(), "结束时间");
         requireEvidenceOnSubmit(draft, req.getEvidenceFileIds());
 
         FormTemplate template = validateByTemplate(schoolId, ArchiveTypeEnum.INTERNSHIP.getValue(), req, draft);
@@ -348,7 +362,10 @@ public class ApplicationService {
         boolean draft = isDraft(req.getIsDraft());
         LocalDateTime now = LocalDateTime.now();
 
+        requireOnSubmit(draft, req.getSemesterId(), "学期ID");
         requireOnSubmit(draft, req.getPositionTitle(), "职位名称");
+        requireOnSubmit(draft, req.getStartDate(), "任职开始");
+        requireOnSubmit(draft, req.getEndDate(), "任职结束");
         requireEvidenceOnSubmit(draft, req.getEvidenceFileIds());
 
         FormTemplate template = validateByTemplate(schoolId, ArchiveTypeEnum.ORGANIZATION.getValue(), req, draft);
@@ -390,7 +407,10 @@ public class ApplicationService {
         boolean draft = isDraft(req.getIsDraft());
         LocalDateTime now = LocalDateTime.now();
 
+        requireOnSubmit(draft, req.getSemesterId(), "学期ID");
         requireOnSubmit(draft, req.getProjectName(), "项目名称");
+        requireOnSubmit(draft, req.getStartDate(), "开始时间");
+        requireOnSubmit(draft, req.getEndDate(), "结束时间");
         requireEvidenceOnSubmit(draft, req.getEvidenceFileIds());
 
         FormTemplate template = validateByTemplate(schoolId, ArchiveTypeEnum.TRAINING_PROJECT.getValue(), req, draft);
@@ -431,7 +451,10 @@ public class ApplicationService {
         boolean draft = isDraft(req.getIsDraft());
         LocalDateTime now = LocalDateTime.now();
 
+        requireOnSubmit(draft, req.getSemesterId(), "学期ID");
         requireOnSubmit(draft, req.getActivityName(), "活动名称");
+        requireOnSubmit(draft, req.getStartDate(), "开始时间");
+        requireOnSubmit(draft, req.getEndDate(), "结束时间");
         requireEvidenceOnSubmit(draft, req.getEvidenceFileIds());
 
         FormTemplate template = validateByTemplate(schoolId, ArchiveTypeEnum.SOCIAL_PRACTICE.getValue(), req, draft);
@@ -475,6 +498,7 @@ public class ApplicationService {
         boolean draft = isDraft(req.getIsDraft());
         LocalDateTime now = LocalDateTime.now();
 
+        requireOnSubmit(draft, req.getSemesterId(), "学期ID");
         requireOnSubmit(draft, req.getBookName(), "书名");
         requireOnSubmit(draft, req.getReadMonth(), "阅读时间");
         requireOnSubmit(draft, req.getReviewContent(), "心得体会");

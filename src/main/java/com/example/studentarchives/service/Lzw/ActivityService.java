@@ -708,6 +708,7 @@ public class ActivityService {
                 detail.put("awardLevel", ext.getAwardLevel());
                 detail.put("awardLevelLabel", resolveLabel("award_level", ext.getAwardLevel()));
                 detail.put("participantRole", ext.getParticipantRole());
+                detail.put("participantRoleLabel", resolveLabel("participant_role", ext.getParticipantRole()));
             });
             case "scholarship" -> scholarshipRepository.findByArchiveId(a.getId()).ifPresent(ext -> {
                 detail.put("scholarshipName", ext.getScholarshipName());
@@ -723,6 +724,7 @@ public class ActivityService {
                 detail.put("projectType", ext.getProjectType());
                 detail.put("projectTypeLabel", resolveLabel("project_type", ext.getProjectType()));
                 detail.put("participantRole", ext.getParticipantRole());
+                detail.put("participantRoleLabel", resolveLabel("participant_role", ext.getParticipantRole()));
                 if (ext.getRegisteredAt() != null) detail.put("registeredAt", formatDate(ext.getRegisteredAt()));
             });
             case "academic_research" -> researchRepository.findByArchiveId(a.getId()).ifPresent(ext -> {
@@ -732,6 +734,7 @@ public class ActivityService {
                 detail.put("projectType", ext.getProjectType());
                 detail.put("projectTypeLabel", resolveLabel("project_type", ext.getProjectType()));
                 detail.put("participantRole", ext.getParticipantRole());
+                detail.put("participantRoleLabel", resolveLabel("participant_role", ext.getParticipantRole()));
                 if (ext.getStartDate() != null) detail.put("startDate", formatDate(ext.getStartDate()));
                 if (ext.getEndDate() != null) detail.put("endDate", formatDate(ext.getEndDate()));
             });
@@ -769,6 +772,7 @@ public class ActivityService {
                 detail.put("practiceLocation", ext.getPracticeLocation());
                 detail.put("practiceUnit", ext.getPracticeUnit());
                 detail.put("participantRole", ext.getParticipantRole());
+                detail.put("participantRoleLabel", resolveLabel("participant_role", ext.getParticipantRole()));
                 if (ext.getStartDate() != null) detail.put("startDate", formatDate(ext.getStartDate()));
                 if (ext.getEndDate() != null) detail.put("endDate", formatDate(ext.getEndDate()));
                 if (ext.getVolunteerHours() != null) detail.put("volunteerHours", ext.getVolunteerHours());

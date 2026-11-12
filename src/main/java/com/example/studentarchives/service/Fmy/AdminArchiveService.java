@@ -697,6 +697,7 @@ public class AdminArchiveService {
                 detail.put("awardLevel", ext.getAwardLevel());
                 detail.put("awardLevelLabel", resolveLabel("award_level", ext.getAwardLevel()));
                 detail.put("participantRole", ext.getParticipantRole());
+                detail.put("participantRoleLabel", resolveLabel("participant_role", ext.getParticipantRole()));
             });
             case "scholarship" -> archiveScholarshipRepository.findByArchiveId(a.getId()).ifPresent(ext -> {
                 detail.put("scholarshipName", ext.getScholarshipName());
@@ -712,6 +713,7 @@ public class AdminArchiveService {
                 detail.put("projectType", ext.getProjectType());
                 detail.put("projectTypeLabel", resolveLabel("project_type", ext.getProjectType()));
                 detail.put("participantRole", ext.getParticipantRole());
+                detail.put("participantRoleLabel", resolveLabel("participant_role", ext.getParticipantRole()));
                 if (ext.getRegisteredAt() != null) {
                     detail.put("registeredAt", DATE.format(ext.getRegisteredAt()));
                 }
@@ -723,6 +725,7 @@ public class AdminArchiveService {
                 detail.put("projectType", ext.getProjectType());
                 detail.put("projectTypeLabel", resolveLabel("project_type", ext.getProjectType()));
                 detail.put("participantRole", ext.getParticipantRole());
+                detail.put("participantRoleLabel", resolveLabel("participant_role", ext.getParticipantRole()));
                 if (ext.getStartDate() != null) {
                     detail.put("startDate", DATE.format(ext.getStartDate()));
                 }
@@ -778,6 +781,7 @@ public class AdminArchiveService {
                 detail.put("practiceLocation", ext.getPracticeLocation());
                 detail.put("practiceUnit", ext.getPracticeUnit());
                 detail.put("participantRole", ext.getParticipantRole());
+                detail.put("participantRoleLabel", resolveLabel("participant_role", ext.getParticipantRole()));
                 if (ext.getStartDate() != null) {
                     detail.put("startDate", DATE.format(ext.getStartDate()));
                 }
