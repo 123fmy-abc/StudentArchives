@@ -77,6 +77,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -194,7 +195,9 @@ public class AuditTaskService {
 
         // 申报主体原始字段（baseInfo / duplicateInfo 来源）
         ApprovableInfo info = resolveApprovableInfo(p);
-        Map<String, Object> detailMap = ad != null ? ad.getDetail() : Collections.emptyMap();
+        // 申报日期统一由 baseInfo.obtainTime 下发（教师端契约），detail 中不重复返回
+        Map<String, Object> detailMap = ad != null ? new LinkedHashMap<>(ad.getDetail()) : new LinkedHashMap<>();
+        detailMap.remove("obtainedTime");
 
         ApplicantInfo applicantInfo = buildApplicantInfo(p.getApplicantId());
         User applicantUser = userRepository.findById(p.getApplicantId()).orElse(null);
@@ -1144,7 +1147,7 @@ public class AuditTaskService {
         return BaseInfo.builder()
                 .semesterId(info != null ? info.semesterId : null)
                 .semesterName(lookupSemesterName(info != null ? info.semesterId : null))
-                .obtainTime(str(detail.get("obtainTime")))
+                .obtainTime(str(detail.get("obtainedTime")))
                 .certificateNo(str(detail.get("certificateNo")))
                 .issuingUnit(str(detail.get("issuingUnit")))
                 .validUntil(str(detail.get("validUntil")))

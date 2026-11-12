@@ -684,7 +684,7 @@ public class AdminArchiveService {
             return detail;
         }
         if (a.getObtainedAt() != null) {
-            detail.put("obtainTime", DATE.format(a.getObtainedAt()));
+            detail.put("obtainedTime", DATE.format(a.getObtainedAt()));
         }
         if (a.getCourseCode() != null) {
             detail.put("courseCode", a.getCourseCode());

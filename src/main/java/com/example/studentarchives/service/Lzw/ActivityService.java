@@ -696,7 +696,7 @@ public class ActivityService {
         if (type == null) return detail;
 
         // 通用字段
-        if (a.getObtainedAt() != null) detail.put("obtainTime", formatDate(a.getObtainedAt()));
+        if (a.getObtainedAt() != null) detail.put("obtainedTime", formatDate(a.getObtainedAt()));
         if (a.getCourseCode() != null) detail.put("courseCode", a.getCourseCode());
 
         // 查扩展表
