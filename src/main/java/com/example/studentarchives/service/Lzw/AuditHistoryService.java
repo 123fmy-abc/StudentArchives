@@ -15,6 +15,7 @@ import com.example.studentarchives.repository.AwardApplicationRepository;
 import com.example.studentarchives.repository.CareerPlanRepository;
 import com.example.studentarchives.repository.PendingApprovalRepository;
 import com.example.studentarchives.repository.UserRepository;
+import com.example.studentarchives.service.common.AdminAuthService;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import lombok.Builder;
 import lombok.Data;
@@ -59,11 +60,14 @@ public class AuditHistoryService {
     private final CareerPlanRepository careerPlanRepository;
     private final UserRepository userRepository;
     private final PendingApprovalRepository pendingApprovalRepository;
+    private final AdminAuthService adminAuthService;
 
     /**
-     * 获取我的审核记录（GET /teacher/audits/history）
+     * 获取审核记录（GET /teacher/audits/history）
+     * <p>普通教师仅返回本人的审核记录；管理员（admin 角色）返回本校所有人的审核记录，
+     * 便于管理端核对审批操作。跨校数据仍按学校隔离。</p>
      *
-     * @param teacherId  当前教师用户 ID
+     * @param teacherId  当前登录用户 ID
      * @param type       业务类型：archive/award/career_plan（可选）
      * @param action     审核动作：1通过 2退回 3撤回 4转交（可选）
      * @param semesterId 学期 ID（可选）
@@ -74,7 +78,11 @@ public class AuditHistoryService {
     public PageResult<HistoryItem> listHistory(Long teacherId, String type, Integer action,
                                                Long semesterId, String startDate, String endDate,
                                                String keyword, PageParam pageParam) {
-        List<AuditLog> logs = auditLogRepository.findByAuditorIdOrderByIdDesc(teacherId);
+        boolean admin = isAdmin(teacherId);
+        List<AuditLog> logs = admin
+                ? auditLogRepository.findAllBySchoolIdOrderByIdDesc(
+                        adminAuthService.getOperatorSchoolId(teacherId))
+                : auditLogRepository.findByAuditorIdOrderByIdDesc(teacherId);
         if (logs.isEmpty()) {
             return PageResult.of(Collections.emptyList(), 0, pageParam);
         }
@@ -135,6 +143,17 @@ public class AuditHistoryService {
                 : userRepository.findByIdIn(new ArrayList<>(userIds)).stream()
                         .collect(Collectors.toMap(User::getId, u -> u, (a, b) -> a));
 
+        // 批量加载审核人（管理员查看全量记录时需要展示审核人信息）
+        Set<Long> auditorIds = new HashSet<>();
+        for (AuditLog l : logs) {
+            if (l.getAuditorId() != null) {
+                auditorIds.add(l.getAuditorId());
+            }
+        }
+        Map<Long, User> auditorMap = auditorIds.isEmpty() ? Map.of()
+                : userRepository.findByIdIn(new ArrayList<>(auditorIds)).stream()
+                        .collect(Collectors.toMap(User::getId, u -> u, (a, b) -> a));
+
         LocalDate sd = parseDate(startDate);
         LocalDate ed = parseDate(endDate);
         String kw = keyword == null ? null : keyword.trim().toLowerCase();
@@ -169,9 +188,13 @@ public class AuditHistoryService {
                     studentNo = u.getUserNo();
                 }
             }
+            User auditor = auditorMap.get(l.getAuditorId());
+            String auditorName = auditor != null ? auditor.getName() : null;
+            String auditorNo = auditor != null ? auditor.getUserNo() : null;
             if (kw != null && !kw.isEmpty()
                     && !contains(studentName, kw) && !contains(studentNo, kw)
-                    && !contains(info != null ? info.title() : null, kw)) {
+                    && !contains(info != null ? info.title() : null, kw)
+                    && !contains(auditorName, kw) && !contains(auditorNo, kw)) {
                 continue;
             }
             AuditActionEnum actionEnum = AuditActionEnum.of(l.getAction());
@@ -188,6 +211,9 @@ public class AuditHistoryService {
                     .title(info != null ? info.title() : null)
                     .studentName(studentName)
                     .studentNo(studentNo)
+                    .auditorId(l.getAuditorId())
+                    .auditorName(auditorName)
+                    .auditorNo(auditorNo)
                     .action(l.getAction())
                     .actionLabel(actionEnum != null ? actionEnum.getLabel() : null)
                     .comment(l.getComment())
@@ -203,6 +229,15 @@ public class AuditHistoryService {
     }
 
     // ==================== 私有：字段解析 ====================
+
+    /** 当前用户是否为 admin 角色（管理员可查看本校全部审核记录） */
+    private boolean isAdmin(Long userId) {
+        if (userId == null) {
+            return false;
+        }
+        AdminAuthService.OperatorRole role = adminAuthService.resolveOperatorRole(userId);
+        return role != null && role.isAdmin();
+    }
 
     /** 申报主体快照（类型编码 / 标题 / 学生用户 ID / 学期 ID） */
     private record BusinessInfo(String archiveType, String title, Long userId, Long semesterId) {
@@ -296,6 +331,12 @@ public class AuditHistoryService {
         private String title;
         private String studentName;
         private String studentNo;
+        /** 审核人用户 ID（管理员查看全量记录时用于区分审核人） */
+        private Long auditorId;
+        /** 审核人姓名 */
+        private String auditorName;
+        /** 审核人工号 */
+        private String auditorNo;
         private Integer action;
         private String actionLabel;
         private String comment;
