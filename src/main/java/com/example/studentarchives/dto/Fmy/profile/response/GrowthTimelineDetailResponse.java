@@ -58,6 +58,15 @@ public class GrowthTimelineDetailResponse {
     /** 来源模型类型 */
     private String sourceType;
 
+    /** 来源记录当前审批状态：0=草稿 1=待审批 2=已通过 3=已退回 4=已撤销；无审批态来源为 null */
+    private Integer sourceStatus;
+
+    /** 来源记录当前审批状态名称 */
+    private String sourceStatusLabel;
+
+    /** 来源是否已失效：带审批态的来源当前非「已通过」时为 true，节点保留但需前端标注 */
+    private Boolean sourceInvalid;
+
     /** 业务去重键 */
     private String eventKey;
 

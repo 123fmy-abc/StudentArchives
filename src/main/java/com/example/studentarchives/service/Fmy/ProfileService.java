@@ -845,9 +845,17 @@ public class ProfileService {
                     .filter(t -> eventType.equals(t.getEventType()))
                     .collect(Collectors.toList());
         }
+        // 来源审批状态：带申报态来源以实时状态覆盖事件快照；来源退回/撤销后节点保留并标注失效
+        Map<Long, Integer> sourceStatusMap = new HashMap<>();
+        Map<Long, Integer> effectiveStatusMap = new HashMap<>();
+        for (GrowthTimeline t : timelines) {
+            Integer sourceStatus = growthTimelineStatusResolver.querySourceStatus(t.getSourceType(), t.getSourceId());
+            sourceStatusMap.put(t.getId(), sourceStatus);
+            effectiveStatusMap.put(t.getId(), sourceStatus != null ? sourceStatus : t.getStatus());
+        }
         if (status != null) {
             timelines = timelines.stream()
-                    .filter(t -> status.equals(t.getStatus()))
+                    .filter(t -> status.equals(effectiveStatusMap.get(t.getId())))
                     .collect(Collectors.toList());
         }
 
@@ -868,8 +876,8 @@ public class ProfileService {
         List<TimelineItem> items = timelines.stream()
                 .map(t -> {
                     EventTypeEnum eventTypeEnum = EventTypeEnum.of(t.getEventType());
-                    Integer effectiveStatus = growthTimelineStatusResolver.resolve(
-                            t.getSourceId(), t.getSourceType(), t.getStatus());
+                    Integer sourceStatus = sourceStatusMap.get(t.getId());
+                    Integer effectiveStatus = effectiveStatusMap.get(t.getId());
                     return TimelineItem.builder()
                             .id(t.getId())
                             .semesterId(t.getSemesterId())
@@ -884,6 +892,11 @@ public class ProfileService {
                             .coverImage(t.getCoverImage())
                             .sourceId(t.getSourceId())
                             .sourceType(t.getSourceType())
+                            .sourceStatus(sourceStatus)
+                            .sourceStatusLabel(sourceStatus != null ? ApplyStatusEnum.of(sourceStatus).getLabel() : null)
+                            .sourceInvalid(growthTimelineStatusResolver.hasApprovalStatus(t.getSourceType())
+                                    && (sourceStatus == null
+                                    || sourceStatus != GrowthTimelineStatusResolver.APPROVED_STATUS))
                             .abilityData(abilityMap.getOrDefault(t.getId(), Collections.emptyList()).stream()
                                     .map(a -> AbilityItem.builder()
                                             .dimensionCode(a.getDimensionCode())

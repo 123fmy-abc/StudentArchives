@@ -136,6 +136,7 @@ public class ProfileGrowthTimelineService {
         validateSourceRequired(request.getSourceType(), request.getSourceId());
         String sourceType = request.getSourceType().trim();
         validateSourceRecord(userId, sourceType, request.getSourceId());
+        validateSourceApproved(sourceType, request.getSourceId());
         checkSourceUnique(userId, sourceType, request.getSourceId(), null);
         if (request.getEventKey() != null && !request.getEventKey().isBlank()) {
             checkEventKeyUnique(userId, request.getEventKey().trim(), null);
@@ -230,6 +231,13 @@ public class ProfileGrowthTimelineService {
         if (request.getStatus() != null) {
             timeline.setStatus(request.getStatus());
         }
+        // 来源变更：仅当来源引用实际变化时才校验审批状态；
+        // 来源事后被退回/撤销的存量节点仍允许编辑其他字段（节点保留并在读取时标注）
+        boolean sourceProvided = request.getSourceType() != null || request.getSourceId() != null;
+        String targetSourceType = request.getSourceType() != null
+                ? request.getSourceType().trim() : timeline.getSourceType();
+        Long targetSourceId = request.getSourceId() != null
+                ? request.getSourceId() : timeline.getSourceId();
         if (request.getSourceType() != null) {
             if (request.getSourceType().isBlank()) {
                 throw new BusinessException(ResultCode.PARAM_ERROR, "来源记录不能为空，必须关联已有的来源记录");
@@ -237,18 +245,18 @@ public class ProfileGrowthTimelineService {
             if (request.getSourceId() == null) {
                 throw new BusinessException(ResultCode.PARAM_ERROR, "填写来源类型时必须同时提供来源ID");
             }
-            String sourceType = request.getSourceType().trim();
-            validateSourceRecord(userId, sourceType, request.getSourceId());
-            checkSourceUnique(userId, sourceType, request.getSourceId(), id);
-            timeline.setSourceType(sourceType);
-            timeline.setSourceId(request.getSourceId());
-        } else if (request.getSourceId() != null) {
-            if (timeline.getSourceType() == null) {
-                throw new BusinessException(ResultCode.PARAM_ERROR, "填写来源ID时必须同时提供来源类型");
+        } else if (request.getSourceId() != null && timeline.getSourceType() == null) {
+            throw new BusinessException(ResultCode.PARAM_ERROR, "填写来源ID时必须同时提供来源类型");
+        }
+        if (sourceProvided) {
+            validateSourceRecord(userId, targetSourceType, targetSourceId);
+            if (!Objects.equals(targetSourceType, timeline.getSourceType())
+                    || !Objects.equals(targetSourceId, timeline.getSourceId())) {
+                validateSourceApproved(targetSourceType, targetSourceId);
             }
-            validateSourceRecord(userId, timeline.getSourceType(), request.getSourceId());
-            checkSourceUnique(userId, timeline.getSourceType(), request.getSourceId(), id);
-            timeline.setSourceId(request.getSourceId());
+            checkSourceUnique(userId, targetSourceType, targetSourceId, id);
+            timeline.setSourceType(targetSourceType);
+            timeline.setSourceId(targetSourceId);
         }
         if (request.getEventKey() != null) {
             if (request.getEventKey().isBlank()) {
@@ -361,6 +369,21 @@ public class ProfileGrowthTimelineService {
                 .isEmpty();
         if (!exists) {
             throw new BusinessException(ResultCode.DATA_NOT_EXIST, "来源记录不存在或不属于当前用户");
+        }
+    }
+
+    /**
+     * 来源审批状态校验：带申报审批状态的来源（档案 / 奖项 / 职业规划及其子表）
+     * 仅允许「已通过」的记录加入成长轴，避免草稿、待审批、已退回、已撤销的成果上轴。
+     * <p>
+     * 无审批态的来源（成绩 / 画像 / 短板等）不作限制。
+     */
+    private void validateSourceApproved(String sourceType, Long sourceId) {
+        Integer sourceStatus = growthTimelineStatusResolver.querySourceStatus(sourceType, sourceId);
+        if (sourceStatus != null && sourceStatus != GrowthTimelineStatusResolver.APPROVED_STATUS) {
+            throw new BusinessException(ResultCode.BIZ_STATUS_NOT_OPERABLE,
+                    "来源记录尚未审批通过（当前状态：" + ApplyStatusEnum.of(sourceStatus).getLabel()
+                            + "），仅已通过的记录可加入成长轴");
         }
     }
 
@@ -495,8 +518,9 @@ public class ProfileGrowthTimelineService {
         List<GrowthTimelineTag> tags =
                 growthTimelineTagRepository.findByTimelineIdIn(Collections.singletonList(timeline.getId()));
         EventTypeEnum eventTypeEnum = EventTypeEnum.of(timeline.getEventType());
-        Integer effectiveStatus = growthTimelineStatusResolver.resolve(
-                timeline.getSourceId(), timeline.getSourceType(), timeline.getStatus());
+        Integer sourceStatus = growthTimelineStatusResolver.querySourceStatus(
+                timeline.getSourceType(), timeline.getSourceId());
+        Integer effectiveStatus = sourceStatus != null ? sourceStatus : timeline.getStatus();
         return GrowthTimelineDetailResponse.builder()
                 .id(timeline.getId())
                 .semesterId(timeline.getSemesterId())
@@ -511,6 +535,9 @@ public class ProfileGrowthTimelineService {
                 .coverImage(timeline.getCoverImage())
                 .sourceId(timeline.getSourceId())
                 .sourceType(timeline.getSourceType())
+                .sourceStatus(sourceStatus)
+                .sourceStatusLabel(sourceStatus != null ? ApplyStatusEnum.of(sourceStatus).getLabel() : null)
+                .sourceInvalid(isSourceInvalid(timeline.getSourceType(), sourceStatus))
                 .eventKey(timeline.getEventKey())
                 .abilityData(abilities.stream()
                         .map(a -> AbilityItem.builder()
@@ -523,6 +550,12 @@ public class ProfileGrowthTimelineService {
                 .createdAt(toIso(timeline.getCreatedAt()))
                 .updatedAt(toIso(timeline.getUpdatedAt()))
                 .build();
+    }
+
+    /** 来源是否已失效：带审批态来源当前非「已通过」（含来源已删除）时为 true，节点保留仅作标注 */
+    private boolean isSourceInvalid(String sourceType, Integer sourceStatus) {
+        return growthTimelineStatusResolver.hasApprovalStatus(sourceType)
+                && (sourceStatus == null || sourceStatus != GrowthTimelineStatusResolver.APPROVED_STATUS);
     }
 
     /** 学期 ID → 学期名称 */

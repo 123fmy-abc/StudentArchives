@@ -43,6 +43,9 @@ public class GrowthTimelineStatusResolver {
         SOURCE_STATUS_SQL = Collections.unmodifiableMap(m);
     }
 
+    /** 来源记录已通过状态（仅该状态的来源允许加入成长轴） */
+    public static final int APPROVED_STATUS = 2;
+
     private final EntityManager entityManager;
 
     /**
@@ -54,17 +57,39 @@ public class GrowthTimelineStatusResolver {
      * @return 来源申报状态；无来源 / 不在白名单 / 记录已删或不存在时回退 fallback
      */
     public Integer resolve(Long sourceId, String sourceType, Integer fallback) {
+        Integer status = querySourceStatus(sourceType, sourceId);
+        return status != null ? status : fallback;
+    }
+
+    /**
+     * 该来源类型是否存在申报审批状态（档案 / 奖项 / 职业规划及其子表）。
+     *
+     * @param sourceType 事件来源类型
+     * @return true=该来源带申报状态；false=无审批态来源（成绩/画像/短板等）或来源类型为空
+     */
+    public boolean hasApprovalStatus(String sourceType) {
+        return sourceType != null && SOURCE_STATUS_SQL.containsKey(sourceType);
+    }
+
+    /**
+     * 查询来源记录当前申报状态。
+     *
+     * @param sourceType 事件来源类型
+     * @param sourceId   事件来源记录 ID
+     * @return 来源申报状态；无审批态来源（成绩/画像/短板等）或记录已删/不存在时返回 null
+     */
+    public Integer querySourceStatus(String sourceType, Long sourceId) {
         String sql = (sourceId == null || sourceType == null) ? null : SOURCE_STATUS_SQL.get(sourceType);
         if (sql == null) {
-            return fallback;
+            return null;
         }
         try {
             Number status = (Number) entityManager.createNativeQuery(sql)
                     .setParameter("id", sourceId)
                     .getSingleResult();
-            return status == null ? fallback : status.intValue();
+            return status == null ? null : status.intValue();
         } catch (NoResultException e) {
-            return fallback;
+            return null;
         }
     }
 }
