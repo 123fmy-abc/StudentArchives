@@ -201,16 +201,44 @@ INSERT INTO `user_contact_infos` (`id`, `user_id`, `phone`, `email`, `address`) 
 (119, 119, '13700001119', 'sunwenhua@demo.edu.cn',  '示例大学西区教师公寓8栋302室'),
 (120, 120, '13700001120', 'zhoumeiling@demo.edu.cn','示例大学西区教师公寓8栋303室');
 
+-- ============================================================
+-- 9. 角色-权限关联（role_permissions）
+--    辅导员 / 系主任 / 院长均为教师端账号，同时是「学科竞赛审批流程」的
+--    第 1/2/3 级审核人，授予与 teacher 相同的一套教师端权限码；
+--    数据可见范围由第 7 节的 role_scopes 限定（班级 / 专业 / 学院），
+--    层级差异由范围天然隔离，无需再拆分权限码。
+--    与 seed_teachers.sql 第 5 节保持同一套权限码，避免两处口径漂移。
+--    log:view 仅授予 admin：/admin/logs 校验该码且服务层未按学校/范围过滤，
+--    授予非管理员会造成跨校日志横向越权。
+--    audit:revoke 为管理员纠错权限，同样不授予这三个角色。
+--    按权限码关联，不写死 id；INSERT IGNORE 保证可重复执行。
+-- ============================================================
+INSERT IGNORE INTO `role_permissions` (`role_id`, `permission_id`)
+SELECT r.`id`, p.`id`
+FROM `roles` r
+JOIN `permissions` p ON p.`deleted_at` IS NULL AND p.`code` IN (
+    -- 个人资料与密码
+    'teacher:archive:view', 'teacher:archive:edit',
+    'teacher:profile:view', 'teacher:profile:edit', 'teacher:auth:password',
+    -- 教师端工作台与三级审核
+    'dashboard:view', 'audit:pending', 'audit:approve', 'audit:batch',
+    -- 学生档案 / AI 评价 / 导出 / 审批委托 / 评分重算
+    'student:view', 'ai:invoke', 'export:execute',
+    'delegate:manage', 'score:recalculate'
+)
+WHERE r.`deleted_at` IS NULL
+  AND r.`code` IN ('counselor', 'department_head', 'college_dean');
+
 COMMIT;
 
 -- ============================================================
--- 9. 验证
+-- 10. 验证
 -- ============================================================
--- 9.1 角色表（应只剩 1/2/3 + 117/118/119）
+-- 10.1 角色表（应只剩 1/2/3 + 117/118/119）
 SELECT `id`, `code`, `name`, `level`, `is_auditor`, `scope_types`
 FROM `roles` WHERE `deleted_at` IS NULL ORDER BY `id`;
 
--- 9.2 每个班是否恰好 1 名辅导员
+-- 10.2 每个班是否恰好 1 名辅导员
 SELECT cl.`id` AS class_id, cl.`name` AS class_name,
        COUNT(rs.`id`) AS counselor_cnt,
        GROUP_CONCAT(u.`name`) AS counselor_name
@@ -222,7 +250,7 @@ WHERE cl.`deleted_at` IS NULL
 GROUP BY cl.`id`, cl.`name`
 ORDER BY cl.`id`;
 
--- 9.3 每个专业 1 名系主任、每个学院 1 名院长
+-- 10.3 每个专业 1 名系主任、每个学院 1 名院长
 SELECT '系主任' AS role_name, m.`id` AS scope_id, m.`name` AS scope_name,
        COUNT(rs.`id`) AS cnt, GROUP_CONCAT(u.`name`) AS user_names
 FROM `majors` m
@@ -241,7 +269,7 @@ WHERE c.`deleted_at` IS NULL
 GROUP BY c.`id`, c.`name`
 ORDER BY role_name, scope_id;
 
--- 9.4 审批链完整性：每个学生 → 辅导员 → 系主任 → 院长
+-- 10.4 审批链完整性：每个学生 → 辅导员 → 系主任 → 院长
 SELECT u.`id` AS student_id, u.`name` AS student, cl.`name` AS class_name, m.`name` AS major_name,
        col.`name` AS college_name,
        (SELECT u2.`name` FROM `role_scopes` rs2 JOIN `roles` r2 ON r2.`id`=rs2.`role_id` AND r2.`code`='counselor'
@@ -260,3 +288,20 @@ JOIN `majors` m ON m.`id` = cl.`major_id`
 JOIN `colleges` col ON col.`id` = m.`college_id`
 WHERE sp.`deleted_at` IS NULL AND u.`deleted_at` IS NULL
 ORDER BY u.`id`;
+
+-- 10.5 角色权限数量（counselor / department_head / college_dean 应各 14 条，
+--      与 teacher 一致；log:view、audit:revoke 不应出现在这三个角色下）
+SELECT r.`code` AS role_code, COUNT(rp.`id`) AS perm_count
+FROM `roles` r
+LEFT JOIN `role_permissions` rp ON rp.`role_id` = r.`id` AND rp.`deleted_at` IS NULL
+WHERE r.`deleted_at` IS NULL
+GROUP BY r.`id`, r.`code`
+ORDER BY r.`id`;
+
+SELECT r.`code` AS role_code, p.`code` AS perm_code
+FROM `roles` r
+JOIN `role_permissions` rp ON rp.`role_id` = r.`id` AND rp.`deleted_at` IS NULL
+JOIN `permissions` p ON p.`id` = rp.`permission_id` AND p.`deleted_at` IS NULL
+WHERE r.`code` IN ('counselor', 'department_head', 'college_dean')
+  AND p.`code` IN ('log:view', 'audit:revoke')
+ORDER BY r.`code`, p.`code`;
