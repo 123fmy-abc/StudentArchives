@@ -2,6 +2,8 @@ package com.example.studentarchives.repository;
 
 import com.example.studentarchives.entity.log.AuditLog;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
 import java.time.LocalDateTime;
@@ -27,6 +29,17 @@ public interface AuditLogRepository extends JpaRepository<AuditLog, Long> {
 
     /** 查询某审核人（教师）的全部审核记录，按 ID 倒序（时间倒序），供「审核历史」模块 5.1 使用 */
     List<AuditLog> findByAuditorIdOrderByIdDesc(Long auditorId);
+
+    /**
+     * 查询某学校全部审核人的审核记录，按 ID 倒序。
+     * <p>audit_logs 本身无 school_id，按审核人所属学校关联过滤；
+     * 供管理员查看本校所有人的审核记录使用。</p>
+     */
+    @Query(value = "SELECT al.* FROM audit_logs al "
+            + "JOIN users u ON u.id = al.auditor_id "
+            + "WHERE u.school_id = :schoolId "
+            + "ORDER BY al.id DESC", nativeQuery = true)
+    List<AuditLog> findAllBySchoolIdOrderByIdDesc(@Param("schoolId") Long schoolId);
 
     /** 统计审核人在时间区间内的审核记录数（今日审核数） */
     long countByAuditorIdAndCreatedAtBetween(Long auditorId, LocalDateTime start, LocalDateTime end);
