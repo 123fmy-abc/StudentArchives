@@ -15,7 +15,7 @@ import java.util.Set;
  * 表单模板字段 key ↔ 档案申报 DTO 属性名注册表
  * <p>
  * 规范：{@code form_templates.fields[].key} = 档案申报 DTO 属性的小写驼峰名
- * （如 {@code competitionName} / {@code obtainTime} / {@code evidenceFileIds}）。
+ * （如 {@code competitionName} / {@code obtainedTime} / {@code evidenceFileIds}）。
  * <p>
  * 本注册表维护「档案类型编码（{@link ArchiveTypeEnum#getValue()}） → 该类型申报请求 DTO 类」的映射，
  * 供管理端配置防错（S6：校验 field.key 是否为该 DTO 的合法属性名）使用；取值侧由

@@ -92,18 +92,19 @@ public class ApplicationService {
         requireOnSubmit(draft, req.getCompetitionName(), "竞赛名称");
         requireOnSubmit(draft, req.getCompetitionType(), "竞赛类型");
         requireOnSubmit(draft, req.getAwardLevel(), "获奖等级");
+        requireEvidenceOnSubmit(draft, req.getEvidenceFileIds());
 
         FormTemplate template = validateByTemplate(schoolId, ArchiveTypeEnum.ACADEMIC_COMPETITION.getValue(), req, draft);
 
         ArchiveSubmitResponse merged = tryMergeExistingDraft(req.getArchiveId(), draft, userId,
                 ArchiveTypeEnum.ACADEMIC_COMPETITION.getValue(), req.getCompetitionName(),
-                req.getSemesterId(), req.getObtainTime(), template, req, now);
+                req.getSemesterId(), req.getObtainedTime(), template, req, now);
         if (merged != null) {
             return merged;
         }
 
         Archive archive = createArchiveBase(schoolId, userId, ArchiveTypeEnum.ACADEMIC_COMPETITION.getValue(),
-                req.getCompetitionName(), req.getSemesterId(), req.getObtainTime(), draft, now);
+                req.getCompetitionName(), req.getSemesterId(), req.getObtainedTime(), draft, now);
         archive = archiveRepository.save(archive);
 
         ArchiveCompetition ext = new ArchiveCompetition();
@@ -134,18 +135,19 @@ public class ApplicationService {
         requireOnSubmit(draft, req.getScholarshipName(), "奖学金名称");
         requireOnSubmit(draft, req.getScholarshipCategory(), "奖学金类别");
         requireOnSubmit(draft, req.getAwardLevel(), "获奖等级");
+        requireEvidenceOnSubmit(draft, req.getEvidenceFileIds());
 
         FormTemplate template = validateByTemplate(schoolId, ArchiveTypeEnum.SCHOLARSHIP.getValue(), req, draft);
 
         ArchiveSubmitResponse merged = tryMergeExistingDraft(req.getArchiveId(), draft, userId,
                 ArchiveTypeEnum.SCHOLARSHIP.getValue(), req.getScholarshipName(),
-                req.getSemesterId(), req.getObtainTime(), template, req, now);
+                req.getSemesterId(), req.getObtainedTime(), template, req, now);
         if (merged != null) {
             return merged;
         }
 
         Archive archive = createArchiveBase(schoolId, userId, ArchiveTypeEnum.SCHOLARSHIP.getValue(),
-                req.getScholarshipName(), req.getSemesterId(), req.getObtainTime(), draft, now);
+                req.getScholarshipName(), req.getSemesterId(), req.getObtainedTime(), draft, now);
         archive = archiveRepository.save(archive);
 
         ArchiveScholarship ext = new ArchiveScholarship();
@@ -175,6 +177,7 @@ public class ApplicationService {
         requireOnSubmit(draft, req.getCompanyName(), "公司名称");
         requireOnSubmit(draft, req.getIndustryType(), "行业类型");
         requireOnSubmit(draft, req.getProjectType(), "项目类型");
+        requireEvidenceOnSubmit(draft, req.getEvidenceFileIds());
 
         FormTemplate template = validateByTemplate(schoolId, ArchiveTypeEnum.INNOVATION_ENTREPRENEURSHIP.getValue(), req, draft);
 
@@ -218,6 +221,7 @@ public class ApplicationService {
         requireOnSubmit(draft, req.getProjectName(), "项目名称");
         requireOnSubmit(draft, req.getProjectLevel(), "项目级别");
         requireOnSubmit(draft, req.getProjectType(), "项目类型");
+        requireEvidenceOnSubmit(draft, req.getEvidenceFileIds());
 
         FormTemplate template = validateByTemplate(schoolId, ArchiveTypeEnum.ACADEMIC_RESEARCH.getValue(), req, draft);
 
@@ -261,18 +265,19 @@ public class ApplicationService {
 
         requireOnSubmit(draft, req.getCertificateName(), "证书名称");
         requireOnSubmit(draft, req.getCertificateType(), "证书类型");
+        requireEvidenceOnSubmit(draft, req.getEvidenceFileIds());
 
         FormTemplate template = validateByTemplate(schoolId, ArchiveTypeEnum.HONOR_CERTIFICATE.getValue(), req, draft);
 
         ArchiveSubmitResponse merged = tryMergeExistingDraft(req.getArchiveId(), draft, userId,
                 ArchiveTypeEnum.HONOR_CERTIFICATE.getValue(), req.getCertificateName(),
-                req.getSemesterId(), req.getObtainTime(), template, req, now);
+                req.getSemesterId(), req.getObtainedTime(), template, req, now);
         if (merged != null) {
             return merged;
         }
 
         Archive archive = createArchiveBase(schoolId, userId, ArchiveTypeEnum.HONOR_CERTIFICATE.getValue(),
-                req.getCertificateName(), req.getSemesterId(), req.getObtainTime(), draft, now);
+                req.getCertificateName(), req.getSemesterId(), req.getObtainedTime(), draft, now);
         archive = archiveRepository.save(archive);
 
         ArchiveCertificate ext = new ArchiveCertificate();
@@ -302,6 +307,7 @@ public class ApplicationService {
         LocalDateTime now = LocalDateTime.now();
 
         requireOnSubmit(draft, req.getCompanyName(), "公司名称");
+        requireEvidenceOnSubmit(draft, req.getEvidenceFileIds());
 
         FormTemplate template = validateByTemplate(schoolId, ArchiveTypeEnum.INTERNSHIP.getValue(), req, draft);
 
@@ -343,6 +349,7 @@ public class ApplicationService {
         LocalDateTime now = LocalDateTime.now();
 
         requireOnSubmit(draft, req.getPositionTitle(), "职位名称");
+        requireEvidenceOnSubmit(draft, req.getEvidenceFileIds());
 
         FormTemplate template = validateByTemplate(schoolId, ArchiveTypeEnum.ORGANIZATION.getValue(), req, draft);
 
@@ -384,6 +391,7 @@ public class ApplicationService {
         LocalDateTime now = LocalDateTime.now();
 
         requireOnSubmit(draft, req.getProjectName(), "项目名称");
+        requireEvidenceOnSubmit(draft, req.getEvidenceFileIds());
 
         FormTemplate template = validateByTemplate(schoolId, ArchiveTypeEnum.TRAINING_PROJECT.getValue(), req, draft);
 
@@ -424,6 +432,7 @@ public class ApplicationService {
         LocalDateTime now = LocalDateTime.now();
 
         requireOnSubmit(draft, req.getActivityName(), "活动名称");
+        requireEvidenceOnSubmit(draft, req.getEvidenceFileIds());
 
         FormTemplate template = validateByTemplate(schoolId, ArchiveTypeEnum.SOCIAL_PRACTICE.getValue(), req, draft);
 
@@ -469,6 +478,7 @@ public class ApplicationService {
         requireOnSubmit(draft, req.getBookName(), "书名");
         requireOnSubmit(draft, req.getReadMonth(), "阅读时间");
         requireOnSubmit(draft, req.getReviewContent(), "心得体会");
+        requireEvidenceOnSubmit(draft, req.getEvidenceFileIds());
 
         FormTemplate template = validateByTemplate(schoolId, ArchiveTypeEnum.BOOK_REVIEW.getValue(), req, draft);
 
@@ -516,8 +526,8 @@ public class ApplicationService {
         if (body.containsKey("semesterId")) {
             archive.setSemesterId(toLong(body.get("semesterId")));
         }
-        if (body.containsKey("obtainTime")) {
-            archive.setObtainedAt(parseDate((String) body.get("obtainTime")));
+        if (body.containsKey("obtainedTime")) {
+            archive.setObtainedAt(parseDate((String) body.get("obtainedTime")));
         }
         ArchiveAuditInfo audit = archive.getAuditInfo();
         if (audit == null) {
@@ -703,8 +713,8 @@ public class ApplicationService {
         archive.setArchiveType(original.getArchiveType());
         archive.setTitle(body.containsKey("title") ? (String) body.get("title") : original.getTitle());
         archive.setSemesterId(body.containsKey("semesterId") ? toLong(body.get("semesterId")) : original.getSemesterId());
-        archive.setObtainedAt(body.containsKey("obtainTime")
-                ? parseDate((String) body.get("obtainTime")) : original.getObtainedAt());
+        archive.setObtainedAt(body.containsKey("obtainedTime")
+                ? parseDate((String) body.get("obtainedTime")) : original.getObtainedAt());
         archive.setDuplicateCheckStatus(0);
 
         ArchiveAuditInfo audit = new ArchiveAuditInfo();
@@ -836,6 +846,14 @@ public class ApplicationService {
                 || (value instanceof String s && s.isBlank());
         if (blank) {
             throw new BusinessException(ResultCode.PARAM_MISSING, label + "不能为空");
+        }
+    }
+
+    /** 提交态必填校验：各类申报正式提交时佐证材料至少上传 1 个文件；草稿放行 */
+    private void requireEvidenceOnSubmit(boolean draft, List<Long> evidenceFileIds) {
+        if (draft) return;
+        if (evidenceFileIds == null || evidenceFileIds.isEmpty()) {
+            throw new BusinessException(ResultCode.PARAM_MISSING, "佐证材料不能为空");
         }
     }
 
@@ -1333,7 +1351,7 @@ public class ApplicationService {
         /** 可选：传则按该档案 ID 原地更新（编辑提交），不传则新建 */
         private Long archiveId;
         private Long semesterId;
-        private LocalDate obtainTime;
+        private LocalDate obtainedTime;
         private List<Long> evidenceFileIds;
         private Integer isDraft;
         private String competitionName;
@@ -1349,7 +1367,7 @@ public class ApplicationService {
     public static class ScholarshipSubmitRequest {
         private Long archiveId;
         private Long semesterId;
-        private LocalDate obtainTime;
+        private LocalDate obtainedTime;
         private List<Long> evidenceFileIds;
         private Integer isDraft;
         private String scholarshipName;
@@ -1397,7 +1415,7 @@ public class ApplicationService {
     public static class CertificateSubmitRequest {
         private Long archiveId;
         private Long semesterId;
-        private LocalDate obtainTime;
+        private LocalDate obtainedTime;
         private List<Long> evidenceFileIds;
         private Integer isDraft;
         private String certificateType;

@@ -257,6 +257,8 @@ public class AwardService {
         boolean draft = isDraft(req.getIsDraft());
         LocalDateTime now = LocalDateTime.now();
 
+        requireEvidenceOnSubmit(draft, req.getEvidenceFileIds());
+
         String title = "竞赛之星-" + req.getCompetitionName();
         AwardApplication app = createAwardBase(schoolId, userId, AwardTypeEnum.COMPETITION_STAR.getValue(),
                 title, req.getSemesterId(), draft, now);
@@ -382,6 +384,7 @@ public class AwardService {
         if (rs.getPrimaryCategory() == null || rs.getPrimaryCategory().isEmpty()) {
             throw new BusinessException(ResultCode.PARAM_ERROR, "请至少添加一条子项目后再提交");
         }
+        requireAttachedEvidence(app.getId());
 
         String catLabel = switch (rs.getPrimaryCategory()) {
             case "project" -> "科研项目";
@@ -433,6 +436,8 @@ public class AwardService {
         Long schoolId = schoolId(user);
         boolean draft = isDraft(req.getIsDraft());
         LocalDateTime now = LocalDateTime.now();
+
+        requireEvidenceOnSubmit(draft, req.getEvidenceFileIds());
 
         String title = "双创之星-" + req.getCompanyName();
         AwardApplication app = createAwardBase(schoolId, userId, AwardTypeEnum.INNOVATION_STAR.getValue(),
@@ -504,7 +509,14 @@ public class AwardService {
         copyAwardExtension(original.getAwardType(), original.getId(), app.getId());
         updateExtension(app.getAwardType(), app.getId(), body);
 
-        bindFiles(toLongList(body.get("evidenceFileIds")), userId, app.getId());
+        // 佐证材料必填：更正请求未补传时沿用原记录附件（原附件行保留，另复制一份挂到新版本）
+        List<Long> evidenceFileIds = toLongList(body.get("evidenceFileIds"));
+        if (!evidenceFileIds.isEmpty()) {
+            bindFiles(evidenceFileIds, userId, app.getId());
+        } else {
+            requireAttachedEvidence(original.getId());
+            copyEvidence(original.getId(), app.getId());
+        }
         writeAwardVersion(app, userId);
         generatePendingApprovalIfSubmitted(app);
 
@@ -691,6 +703,43 @@ public class AwardService {
                 .orElseThrow(() -> new BusinessException(ResultCode.DATA_NOT_EXIST, "奖项报名不存在"));
         checkOwnership(app, userId);
         return app;
+    }
+
+    /** 提交态必填校验：奖项正式提交时佐证材料至少上传 1 个文件；草稿放行 */
+    private void requireEvidenceOnSubmit(boolean draft, List<Long> evidenceFileIds) {
+        if (draft) return;
+        if (evidenceFileIds == null || evidenceFileIds.isEmpty()) {
+            throw new BusinessException(ResultCode.PARAM_MISSING, "佐证材料不能为空");
+        }
+    }
+
+    /** 校验奖项报名已绑定佐证附件（科研之星等分步提交场景） */
+    private void requireAttachedEvidence(Long applicationId) {
+        if (attachmentRelationRepository.findByBizTypeAndBizId(
+                AttachmentBizTypeEnum.AWARD.getValue(), applicationId).isEmpty()) {
+            throw new BusinessException(ResultCode.PARAM_MISSING, "佐证材料不能为空");
+        }
+    }
+
+    /** 复制已绑定佐证附件到新版本报名（原记录附件行保留） */
+    private void copyEvidence(Long fromApplicationId, Long toApplicationId) {
+        for (AttachmentRelation file : attachmentRelationRepository.findByBizTypeAndBizId(
+                AttachmentBizTypeEnum.AWARD.getValue(), fromApplicationId)) {
+            AttachmentRelation copy = new AttachmentRelation();
+            copy.setUserId(file.getUserId());
+            copy.setBizType(AttachmentBizTypeEnum.AWARD.getValue());
+            copy.setBizId(toApplicationId);
+            copy.setFileCategory(file.getFileCategory());
+            copy.setOriginalName(file.getOriginalName());
+            copy.setFilePath(file.getFilePath());
+            copy.setFileSize(file.getFileSize());
+            copy.setMimeType(file.getMimeType());
+            copy.setDisk(file.getDisk());
+            copy.setConvertStatus(file.getConvertStatus());
+            copy.setSortOrder(file.getSortOrder());
+            copy.setFileStatus(FileStatusEnum.BOUND.getValue());
+            attachmentRelationRepository.save(copy);
+        }
     }
 
     private void bindFiles(List<Long> fileIds, Long userId, Long applicationId) {
