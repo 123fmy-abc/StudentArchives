@@ -130,6 +130,7 @@ public class ProfileGrowthTimelineService {
 
         validateEventType(request.getEventType());
         LocalDate eventDate = parseEventAt(request.getEventAt());
+        validateEventAt(user.getSchoolId(), eventDate);
         // 学期归集：传入 semesterId 则校验后使用；未传时按 eventAt 落入的学期日期区间自动归属
         Long semesterId = resolveSemesterId(user.getSchoolId(), request.getSemesterId(), eventDate);
         // 来源记录必填：必须关联一条已有来源记录，否则报错
@@ -200,6 +201,7 @@ public class ProfileGrowthTimelineService {
         LocalDate newEventAt = null;
         if (request.getEventAt() != null) {
             newEventAt = parseEventAt(request.getEventAt());
+            validateEventAt(timeline.getSchoolId(), newEventAt);
             timeline.setEventAt(newEventAt);
         }
         // 未显式传学期但修改了发生时间时，按新日期重新归集学期；未命中任何学期区间则保留原值
@@ -227,9 +229,6 @@ public class ProfileGrowthTimelineService {
         }
         if (request.getEventAt() != null) {
             timeline.setEventAt(parseEventAt(request.getEventAt()));
-        }
-        if (request.getStatus() != null) {
-            timeline.setStatus(request.getStatus());
         }
         // 来源变更：仅当来源引用实际变化时才校验审批状态；
         // 来源事后被退回/撤销的存量节点仍允许编辑其他字段（节点保留并在读取时标注）
@@ -394,6 +393,22 @@ public class ProfileGrowthTimelineService {
         } catch (Exception e) {
             throw new BusinessException(ResultCode.PARAM_FORMAT_ERROR, "日期格式必须为YYYY-MM-DD");
         }
+    }
+
+    /**
+     * 发生时间业务校验：不允许晚于当前日期（未来时间），
+     * 也不允许晚于当前学期（is_current=1）的结束日期；无当前学期时仅校验前者。
+     */
+    private void validateEventAt(Long schoolId, LocalDate eventDate) {
+        if (eventDate.isAfter(LocalDate.now())) {
+            throw new BusinessException(ResultCode.PARAM_ERROR, "发生时间不能晚于当前日期");
+        }
+        semesterRepository.findCurrentBySchoolId(schoolId)
+                .filter(s -> s.getEndDate() != null && eventDate.isAfter(s.getEndDate()))
+                .ifPresent(s -> {
+                    throw new BusinessException(ResultCode.PARAM_ERROR,
+                            "发生时间不能晚于当前学期（" + s.getName() + "）的结束日期");
+                });
     }
 
     /** 事件去重键唯一性校验（uk_gt_event_key），排除自身 */

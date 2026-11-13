@@ -50,14 +50,6 @@ public class GrowthTimelineCreateRequest {
     private String eventAt;
 
     /**
-     * 审核状态：0=草稿 1=待审核 2=已通过 3=已退回 4=已撤销。
-     * 不需要审核，新增时后端强制置为 2=已通过（直接生效），本字段可不传。
-     */
-    @Min(value = 0, message = "状态只能是0-4")
-    @Max(value = 4, message = "状态只能是0-4")
-    private Integer status;
-
-    /**
      * 来源记录 ID（必填，与 sourceType 配对）。
      * 必须关联一条已有来源记录（对应来源表中存在且归属当前用户），否则报错。
      */
