@@ -9,7 +9,8 @@
 -- 分值语义：单条该类事件对维度的得分贡献（0-100），画像按事件累加。
 -- ============================================================
 
-INSERT INTO `growth_event_score_rules` (`event_type`, `abilities`, `remark`) VALUES
+-- INSERT IGNORE：若某事件类型已存在规则（如管理员已通过接口配置），跳过该行，不覆盖已有配置
+INSERT IGNORE INTO `growth_event_score_rules` (`event_type`, `abilities`, `remark`) VALUES
 (1, '[{"dimensionCode":"practice","score":15.00},{"dimensionCode":"innovation","score":10.00},{"dimensionCode":"academic","score":10.00}]', '奖项：竞赛/评优获奖，偏实践与创新'),
 (2, '[{"dimensionCode":"academic","score":20.00}]', '成绩： GPA/课程成绩，主学业维度'),
 (3, '[{"dimensionCode":"practice","score":15.00}]', '实践：实习/社会实践/组织任职'),
