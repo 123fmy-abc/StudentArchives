@@ -31,6 +31,7 @@
 --   message_category      | string code | /common/dict           | 无           | 字典表 ✓
 --   political_status      | string code | /common/dict           | 无           | 字典表 ✓
 --   competition_type      | string code | /common/dict           | 无           | 字典表 ✓
+--   certificate_type      | string code | /common/dict           | 无           | 字典表 ✓
 --   gender                | int (0/1/2) | /common/enums          | 展示标签     | 代码 Enum ✓
 --   apply_status          | int (0~4)   | /common/enums          | 状态机       | 代码 Enum ✓
 --   scope_type            | int         | /common/enums          | 权限计算     | 代码 Enum ✓
@@ -174,3 +175,17 @@ INSERT IGNORE INTO `dictionaries` (`dict_type`, `dict_code`, `dict_name`, `sort`
 ('competition_type', 'art',         '文艺类',       4, 1),
 ('competition_type', 'sports',      '体育类',       5, 1),
 ('competition_type', 'other',       '其他',         6, 1);
+
+-- ============================================================
+-- 13. 证书类型（certificate_type）
+--     字段引用举例：archive_certificates.certificate_type
+--     与 Flyway V50__seed_certificate_type_dict.sql 口径一致
+-- ============================================================
+INSERT IGNORE INTO `dictionaries` (`dict_type`, `dict_code`, `dict_name`, `sort`, `status`) VALUES
+('certificate_type', 'language',     '语言等级证书',   1, 1),
+('certificate_type', 'computer',     '计算机等级证书', 2, 1),
+('certificate_type', 'mandarin',     '普通话等级证书', 3, 1),
+('certificate_type', 'professional', '职业资格证书',   4, 1),
+('certificate_type', 'skill',        '职业技能证书',   5, 1),
+('certificate_type', 'honor',        '荣誉获奖证书',   6, 1),
+('certificate_type', 'other',        '其他',           7, 1);

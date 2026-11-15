@@ -25,8 +25,10 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.orm.ObjectOptimisticLockingFailureException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -79,6 +81,7 @@ public class ApplicationService {
     private final FormTemplateQueryService formTemplateQueryService;
     private final FormTemplateValidator formTemplateValidator;
     private final FormSubmissionSnapshotRepository formSubmissionSnapshotRepository;
+    private final TransactionTemplate transactionTemplate;
 
     // ==================== 1. 学科竞赛 ====================
 
@@ -232,19 +235,22 @@ public class ApplicationService {
         requireOnSubmit(draft, req.getProjectType(), "项目类型");
         requireOnSubmit(draft, req.getStartDate(), "开始日期");
         requireOnSubmit(draft, req.getEndDate(), "结束日期");
+        requireDateRange(req.getStartDate(), req.getEndDate(), "开始日期", "结束日期");
+        // 仅允许申报已完成的研究：结束日期不得晚于当前时间
+        requireNotFuture(req.getEndDate(), "结束日期");
         requireEvidenceOnSubmit(draft, req.getEvidenceFileIds());
 
         FormTemplate template = validateByTemplate(schoolId, ArchiveTypeEnum.ACADEMIC_RESEARCH.getValue(), req, draft);
 
         ArchiveSubmitResponse merged = tryMergeExistingDraft(req.getArchiveId(), draft, userId,
                 ArchiveTypeEnum.ACADEMIC_RESEARCH.getValue(), req.getProjectName(),
-                req.getSemesterId(), req.getStartDate(), template, req, now);
+                req.getSemesterId(), req.getEndDate(), template, req, now);
         if (merged != null) {
             return merged;
         }
 
         Archive archive = createArchiveBase(schoolId, userId, ArchiveTypeEnum.ACADEMIC_RESEARCH.getValue(),
-                req.getProjectName(), req.getSemesterId(), req.getStartDate(), draft, now);
+                req.getProjectName(), req.getSemesterId(), req.getEndDate(), draft, now);
         archive = archiveRepository.save(archive);
 
         ArchiveResearch ext = new ArchiveResearch();
@@ -537,8 +543,29 @@ public class ApplicationService {
 
     // ==================== 自动保存草稿 ====================
 
-    @Transactional
+    /**
+     * 草稿自动保存（字段补丁语义，last-write-wins）。
+     * <p>
+     * 前端在输入、上传证书、定时器等时机可能并发触发多次自动保存，同用户的请求
+     * 互相重叠时后提交方仍持有旧版本号，会在 flush 时抛乐观锁冲突——这是自我冲突，
+     * 不应向用户报"数据已被他人修改"。此处每次尝试重载最新数据重新套用补丁，
+     * 最多重试 3 次；仍冲突才向上抛 409。
+     */
     public AutosaveResponse autosave(Long archiveId, Map<String, Object> body, Long userId) {
+        for (int attempt = 1; ; attempt++) {
+            try {
+                return transactionTemplate.execute(status -> doAutosave(archiveId, body, userId));
+            } catch (ObjectOptimisticLockingFailureException e) {
+                if (attempt >= 3) {
+                    log.warn("草稿自动保存连续乐观锁冲突: archiveId={}", archiveId);
+                    throw new BusinessException(ResultCode.DATA_VERSION_CONFLICT, "保存冲突，请刷新页面后重试");
+                }
+                log.info("草稿自动保存乐观锁冲突，第 {} 次重试: archiveId={}", attempt, archiveId);
+            }
+        }
+    }
+
+    private AutosaveResponse doAutosave(Long archiveId, Map<String, Object> body, Long userId) {
         Archive archive = archiveRepository.findById(archiveId)
                 .orElseThrow(() -> new BusinessException(ResultCode.DATA_NOT_EXIST, "档案不存在"));
         checkOwnership(archive, userId);
@@ -557,6 +584,10 @@ public class ApplicationService {
             LocalDate obtainedAt = parseDate((String) body.get("obtainedTime"));
             requireNotFuture(obtainedAt, "获得时间");
             archive.setObtainedAt(obtainedAt);
+        } else if (ArchiveTypeEnum.ACADEMIC_RESEARCH.getValue().equals(archive.getArchiveType())
+                && body.containsKey("endDate")) {
+            // 学术研究的取得时间与结束日期（结题时间）保持一致
+            archive.setObtainedAt(parseDate((String) body.get("endDate")));
         }
         ArchiveAuditInfo audit = archive.getAuditInfo();
         if (audit == null) {
@@ -748,8 +779,16 @@ public class ApplicationService {
         archive.setArchiveType(original.getArchiveType());
         archive.setTitle(body.containsKey("title") ? (String) body.get("title") : original.getTitle());
         archive.setSemesterId(body.containsKey("semesterId") ? toLong(body.get("semesterId")) : original.getSemesterId());
-        LocalDate correctedObtainedAt = body.containsKey("obtainedTime")
-                ? parseDate((String) body.get("obtainedTime")) : original.getObtainedAt();
+        LocalDate correctedObtainedAt;
+        if (body.containsKey("obtainedTime")) {
+            correctedObtainedAt = parseDate((String) body.get("obtainedTime"));
+        } else if (ArchiveTypeEnum.ACADEMIC_RESEARCH.getValue().equals(original.getArchiveType())
+                && body.containsKey("endDate")) {
+            // 学术研究的取得时间与结束日期（结题时间）保持一致
+            correctedObtainedAt = parseDate((String) body.get("endDate"));
+        } else {
+            correctedObtainedAt = original.getObtainedAt();
+        }
         requireNotFuture(correctedObtainedAt, "获得时间");
         archive.setObtainedAt(correctedObtainedAt);
         archive.setDuplicateCheckStatus(0);
@@ -891,6 +930,14 @@ public class ApplicationService {
         if (value == null) return;
         if (value.isAfter(LocalDate.now())) {
             throw new BusinessException(ResultCode.PARAM_ERROR, label + "不能大于当前时间");
+        }
+    }
+
+    /** 日期区间校验：任一侧为空时放行；两侧均有值时开始日期必须早于结束日期 */
+    private void requireDateRange(LocalDate start, LocalDate end, String startLabel, String endLabel) {
+        if (start == null || end == null) return;
+        if (!start.isBefore(end)) {
+            throw new BusinessException(ResultCode.PARAM_ERROR, startLabel + "必须早于" + endLabel);
         }
     }
 
@@ -1095,6 +1142,8 @@ public class ApplicationService {
                     if (body.containsKey("participantRole")) ext.setParticipantRole((String) body.get("participantRole"));
                     if (body.containsKey("startDate")) ext.setStartDate(parseDate((String) body.get("startDate")));
                     if (body.containsKey("endDate")) ext.setEndDate(parseDate((String) body.get("endDate")));
+                    requireDateRange(ext.getStartDate(), ext.getEndDate(), "开始日期", "结束日期");
+                    requireNotFuture(ext.getEndDate(), "结束日期");
                     researchRepository.save(ext);
                 });
             }
@@ -1218,10 +1267,14 @@ public class ApplicationService {
                         : old != null ? old.getProjectType() : null);
                 ext.setParticipantRole(body.containsKey("participantRole") ? (String) body.get("participantRole")
                         : old != null ? old.getParticipantRole() : null);
-                ext.setStartDate(body.containsKey("startDate") ? parseDate((String) body.get("startDate"))
-                        : old != null ? old.getStartDate() : null);
-                ext.setEndDate(body.containsKey("endDate") ? parseDate((String) body.get("endDate"))
-                        : old != null ? old.getEndDate() : null);
+                LocalDate startDate = body.containsKey("startDate") ? parseDate((String) body.get("startDate"))
+                        : old != null ? old.getStartDate() : null;
+                LocalDate endDate = body.containsKey("endDate") ? parseDate((String) body.get("endDate"))
+                        : old != null ? old.getEndDate() : null;
+                requireDateRange(startDate, endDate, "开始日期", "结束日期");
+                requireNotFuture(endDate, "结束日期");
+                ext.setStartDate(startDate);
+                ext.setEndDate(endDate);
                 researchRepository.save(ext);
             }
             case "honor_certificate" -> {

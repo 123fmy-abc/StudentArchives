@@ -16,8 +16,10 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.orm.ObjectOptimisticLockingFailureException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -55,6 +57,7 @@ public class AwardService {
     private final AwardTypeConfigRepository awardTypeConfigRepository;
     private final ObjectMapper objectMapper;
     private final ApprovalSubmitService approvalSubmitService;
+    private final TransactionTemplate transactionTemplate;
 
     // ==================== 8.1 奖项总览统计 ====================
 
@@ -131,8 +134,28 @@ public class AwardService {
 
     // ==================== 8.1.1 奖项草稿自动保存 ====================
 
-    @Transactional
+    /**
+     * 奖项草稿自动保存（字段补丁语义，last-write-wins）。
+     * <p>
+     * 前端并发触发的多次自动保存重叠时，后提交方持有旧版本号会抛乐观锁冲突——
+     * 这是同用户自我冲突，不应报"数据已被他人修改"。每次尝试重载最新数据
+     * 重新套用补丁，最多重试 3 次；仍冲突才向上抛 409。
+     */
     public AwardAutosaveResponse autosave(Long applicationId, Map<String, Object> body, Long userId) {
+        for (int attempt = 1; ; attempt++) {
+            try {
+                return transactionTemplate.execute(status -> doAutosave(applicationId, body, userId));
+            } catch (ObjectOptimisticLockingFailureException e) {
+                if (attempt >= 3) {
+                    log.warn("奖项草稿自动保存连续乐观锁冲突: applicationId={}", applicationId);
+                    throw new BusinessException(ResultCode.DATA_VERSION_CONFLICT, "保存冲突，请刷新页面后重试");
+                }
+                log.info("奖项草稿自动保存乐观锁冲突，第 {} 次重试: applicationId={}", attempt, applicationId);
+            }
+        }
+    }
+
+    private AwardAutosaveResponse doAutosave(Long applicationId, Map<String, Object> body, Long userId) {
         AwardApplication app = awardApplicationRepository.findById(applicationId)
                 .orElseThrow(() -> new BusinessException(ResultCode.DATA_NOT_EXIST, "奖项报名不存在"));
         checkOwnership(app, userId);
