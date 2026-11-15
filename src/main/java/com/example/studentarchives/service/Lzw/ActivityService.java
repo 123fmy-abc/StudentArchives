@@ -104,47 +104,44 @@ public class ActivityService {
         String filterType = request.getType();
         boolean fetchAll = (filterType == null || filterType.isEmpty());
 
-        // 1. 查询各源表
+        // 1. 查询各源表（先统一转为列表项 DTO，再统一筛选，
+        //    保证 keyword 能同时匹配标题与前端实际展示的动态内容 content）
         if (fetchAll || "archive".equals(filterType)) {
-            List<Archive> archives = archiveRepository.findByUserId(userId);
-            for (Archive a : archives) {
-                if (matchesFilter(a.getStatus(), a.getArchiveType(), a.getSemesterId(), a.getTitle(), request)) {
-                    allItems.add(toListItem(a));
-                }
+            for (Archive a : archiveRepository.findByUserId(userId)) {
+                allItems.add(toListItem(a));
             }
         }
 
         if (fetchAll || "award".equals(filterType)) {
-            List<AwardApplication> awards = awardApplicationRepository.findByUserId(userId);
-            for (AwardApplication a : awards) {
-                if (matchesFilter(a.getStatus(), a.getAwardType(), a.getSemesterId(), a.getTitle(), request)) {
-                    allItems.add(toListItem(a));
-                }
+            for (AwardApplication a : awardApplicationRepository.findByUserId(userId)) {
+                allItems.add(toListItem(a));
             }
         }
 
         if (fetchAll || "career_plan".equals(filterType)) {
-            List<CareerPlan> plans = careerPlanRepository.findByUserId(userId);
-            for (CareerPlan p : plans) {
-                if (matchesFilter(p.getStatus(), null, p.getSemesterId(), p.getTitle(), request)) {
-                    allItems.add(toListItem(p));
-                }
+            for (CareerPlan p : careerPlanRepository.findByUserId(userId)) {
+                allItems.add(toListItem(p));
             }
         }
 
-        // 2. 排序：按 submitTime 倒序（nulls last），再按 id 倒序
-        allItems.sort(Comparator
+        // 2. 筛选
+        List<ActivityListItemResponse> filtered = allItems.stream()
+                .filter(item -> matchesFilter(item, request))
+                .collect(Collectors.toList());
+
+        // 3. 排序：按 submitTime 倒序（nulls last），再按 id 倒序
+        filtered.sort(Comparator
                 .comparing(ActivityListItemResponse::getSubmitTime,
                         Comparator.nullsLast(Comparator.reverseOrder()))
                 .thenComparing(ActivityListItemResponse::getId, Comparator.reverseOrder()));
 
-        // 3. 分页
-        int total = allItems.size();
+        // 4. 分页
+        int total = filtered.size();
         int fromIndex = request.getOffset();
         int toIndex = Math.min(fromIndex + request.getPerPage(), total);
 
         List<ActivityListItemResponse> page = (fromIndex < total)
-                ? allItems.subList(fromIndex, toIndex)
+                ? filtered.subList(fromIndex, toIndex)
                 : Collections.emptyList();
 
         return PageResult.of(page, total, request);
@@ -349,13 +346,19 @@ public class ActivityService {
 
     // ==================== 私有：筛选匹配 ====================
 
-    private boolean matchesFilter(Integer status, String typeCode, Long semesterId, String title, ActivityListRequest req) {
-        if (req.getStatus() != null && !req.getStatus().equals(status)) return false;
+    private boolean matchesFilter(ActivityListItemResponse item, ActivityListRequest req) {
+        if (req.getStatus() != null && !req.getStatus().equals(item.getStatus())) return false;
         if (req.getArchiveType() != null && !req.getArchiveType().isEmpty()
-                && !req.getArchiveType().equals(typeCode)) return false;
-        if (req.getSemesterId() != null && !req.getSemesterId().equals(semesterId)) return false;
-        if (req.getKeyword() != null && !req.getKeyword().isEmpty()
-                && (title == null || !title.toLowerCase().contains(req.getKeyword().toLowerCase()))) return false;
+                && !req.getArchiveType().equals(item.getArchiveType())) return false;
+        if (req.getSemesterId() != null && !req.getSemesterId().equals(item.getSemesterId())) return false;
+        // keyword 同时匹配标题与动态内容（前端列表仅展示 content，不展示 title，
+        // 若只匹配 title，用户搜索页面上可见的文字会得到"搜不出任何结果"的体验）
+        if (req.getKeyword() != null && !req.getKeyword().isEmpty()) {
+            String keyword = req.getKeyword().toLowerCase();
+            boolean hitTitle = item.getTitle() != null && item.getTitle().toLowerCase().contains(keyword);
+            boolean hitContent = item.getContent() != null && item.getContent().toLowerCase().contains(keyword);
+            if (!hitTitle && !hitContent) return false;
+        }
         return true;
     }
 
