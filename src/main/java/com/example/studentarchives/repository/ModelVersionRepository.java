@@ -14,4 +14,7 @@ public interface ModelVersionRepository extends JpaRepository<ModelVersion, Long
 
     /** 按模型类型 + 模型 ID 查询版本历史，按版本号正序 */
     List<ModelVersion> findByModelTypeAndModelIdOrderByVersionAsc(String modelType, Long modelId);
+
+    /** 按模型类型 + 模型 ID + 版本号精确定位（用于版本留痕幂等写入） */
+    java.util.Optional<ModelVersion> findByModelTypeAndModelIdAndVersion(String modelType, Long modelId, Integer version);
 }

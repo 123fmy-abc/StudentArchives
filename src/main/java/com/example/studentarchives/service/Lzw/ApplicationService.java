@@ -94,6 +94,7 @@ public class ApplicationService {
         requireOnSubmit(draft, req.getCompetitionType(), "竞赛类型");
         requireOnSubmit(draft, req.getAwardLevel(), "获奖等级");
         requireOnSubmit(draft, req.getObtainedTime(), "获奖时间");
+        requireNotFuture(req.getObtainedTime(), "获奖时间");
         requireEvidenceOnSubmit(draft, req.getEvidenceFileIds());
 
         FormTemplate template = validateByTemplate(schoolId, ArchiveTypeEnum.ACADEMIC_COMPETITION.getValue(), req, draft);
@@ -139,6 +140,7 @@ public class ApplicationService {
         requireOnSubmit(draft, req.getScholarshipCategory(), "奖学金类别");
         requireOnSubmit(draft, req.getAwardLevel(), "获奖等级");
         requireOnSubmit(draft, req.getObtainedTime(), "获得时间");
+        requireNotFuture(req.getObtainedTime(), "获得时间");
         requireEvidenceOnSubmit(draft, req.getEvidenceFileIds());
 
         FormTemplate template = validateByTemplate(schoolId, ArchiveTypeEnum.SCHOLARSHIP.getValue(), req, draft);
@@ -276,6 +278,7 @@ public class ApplicationService {
         requireOnSubmit(draft, req.getCertificateName(), "证书名称");
         requireOnSubmit(draft, req.getCertificateType(), "证书类型");
         requireOnSubmit(draft, req.getObtainedTime(), "获得时间");
+        requireNotFuture(req.getObtainedTime(), "获得时间");
         requireEvidenceOnSubmit(draft, req.getEvidenceFileIds());
 
         FormTemplate template = validateByTemplate(schoolId, ArchiveTypeEnum.HONOR_CERTIFICATE.getValue(), req, draft);
@@ -551,7 +554,9 @@ public class ApplicationService {
             archive.setSemesterId(toLong(body.get("semesterId")));
         }
         if (body.containsKey("obtainedTime")) {
-            archive.setObtainedAt(parseDate((String) body.get("obtainedTime")));
+            LocalDate obtainedAt = parseDate((String) body.get("obtainedTime"));
+            requireNotFuture(obtainedAt, "获得时间");
+            archive.setObtainedAt(obtainedAt);
         }
         ArchiveAuditInfo audit = archive.getAuditInfo();
         if (audit == null) {
@@ -562,6 +567,12 @@ public class ApplicationService {
 
         // 更新扩展表（仅更新 body 中提供的字段）
         updateExtension(archive.getArchiveType(), archiveId, body);
+
+        // 佐证材料：自动保存/从草稿提交时按 evidenceFileIds 增量绑定
+        // （bindFile 幂等，已绑定本档案的文件直接放行，草稿重复保存不会报错）
+        if (body.containsKey("evidenceFileIds")) {
+            bindFiles(toLongList(body.get("evidenceFileIds")), userId, archiveId);
+        }
 
         // 如果从草稿提交，更新状态
         boolean submit = body.containsKey("isDraft") && toInt(body.get("isDraft")) == 0;
@@ -737,8 +748,10 @@ public class ApplicationService {
         archive.setArchiveType(original.getArchiveType());
         archive.setTitle(body.containsKey("title") ? (String) body.get("title") : original.getTitle());
         archive.setSemesterId(body.containsKey("semesterId") ? toLong(body.get("semesterId")) : original.getSemesterId());
-        archive.setObtainedAt(body.containsKey("obtainedTime")
-                ? parseDate((String) body.get("obtainedTime")) : original.getObtainedAt());
+        LocalDate correctedObtainedAt = body.containsKey("obtainedTime")
+                ? parseDate((String) body.get("obtainedTime")) : original.getObtainedAt();
+        requireNotFuture(correctedObtainedAt, "获得时间");
+        archive.setObtainedAt(correctedObtainedAt);
         archive.setDuplicateCheckStatus(0);
 
         ArchiveAuditInfo audit = new ArchiveAuditInfo();
@@ -873,6 +886,14 @@ public class ApplicationService {
         }
     }
 
+    /** 获得时间等日期不能晚于当前真实时间（未来时间），值为空时放行 */
+    private void requireNotFuture(LocalDate value, String label) {
+        if (value == null) return;
+        if (value.isAfter(LocalDate.now())) {
+            throw new BusinessException(ResultCode.PARAM_ERROR, label + "不能大于当前时间");
+        }
+    }
+
     /** 提交态必填校验：各类申报正式提交时佐证材料至少上传 1 个文件；草稿放行 */
     private void requireEvidenceOnSubmit(boolean draft, List<Long> evidenceFileIds) {
         if (draft) return;
@@ -934,8 +955,13 @@ public class ApplicationService {
         if (relation.getDeletedAt() != null) {
             throw new BusinessException(ResultCode.DATA_NOT_EXIST, "文件不存在");
         }
-        if (relation.getFileStatus() == null || FileStatusEnum.of(relation.getFileStatus()) == null
-                || !FileStatusEnum.of(relation.getFileStatus()).isBindable()) {
+        FileStatusEnum fileStatus = FileStatusEnum.of(relation.getFileStatus());
+        // 幂等：已绑定同一申报（草稿重复保存 / 编辑重复提交）直接放行
+        if (fileStatus == FileStatusEnum.BOUND
+                && bizType.equals(relation.getBizType()) && bizId.equals(relation.getBizId())) {
+            return relation;
+        }
+        if (fileStatus == null || !fileStatus.isBindable()) {
             throw new BusinessException(ResultCode.BIZ_STATUS_NOT_OPERABLE, "文件已关联，不能重复绑定");
         }
         relation.setBizType(bizType);
@@ -955,10 +981,14 @@ public class ApplicationService {
         snapshot.put("status", archive.getStatus());
 
         ArchiveAuditInfo audit = archive.getAuditInfo();
-        ModelVersion mv = new ModelVersion();
+        int version = audit != null && audit.getCurrentVersion() != null ? audit.getCurrentVersion() : 1;
+        // 幂等写入：草稿合并保存等场景版本号不递增，同版本已存在时更新快照，避免撞 uk_mv_version
+        ModelVersion mv = modelVersionRepository
+                .findByModelTypeAndModelIdAndVersion(ModelVersionModelTypeEnum.ARCHIVE.getValue(), archive.getId(), version)
+                .orElseGet(ModelVersion::new);
         mv.setModelType(ModelVersionModelTypeEnum.ARCHIVE.getValue());
         mv.setModelId(archive.getId());
-        mv.setVersion(audit != null && audit.getCurrentVersion() != null ? audit.getCurrentVersion() : 1);
+        mv.setVersion(version);
         mv.setTitle(archive.getTitle());
         mv.setDataSnapshot(writeJson(snapshot));
         mv.setStatus(archive.getStatus());

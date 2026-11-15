@@ -86,7 +86,8 @@ INSERT IGNORE INTO `dictionaries` (`dict_type`, `dict_code`, `dict_name`, `sort`
 ('scholarship_award_level', 'special', '特等奖', 1, 1),
 ('scholarship_award_level', 'first',   '一等奖', 2, 1),
 ('scholarship_award_level', 'second',  '二等奖', 3, 1),
-('scholarship_award_level', 'third',   '三等奖', 4, 1);
+('scholarship_award_level', 'third',   '三等奖', 4, 1),
+('scholarship_award_level', 'none',    '不分等级', 5, 1);
 
 -- ============================================================
 -- 5. 公司类型（company_type，创新创业业务使用）

@@ -3,6 +3,7 @@ package com.example.studentarchives.service.Lzw;
 import com.example.studentarchives.common.PageParam;
 import com.example.studentarchives.common.PageResult;
 import com.example.studentarchives.common.ResultCode;
+import com.example.studentarchives.config.Fmy.OssProperties;
 import com.example.studentarchives.dto.Lzw.activity.request.ActivityListRequest;
 import com.example.studentarchives.dto.Lzw.activity.response.ActivityDetailResponse;
 import com.example.studentarchives.dto.Lzw.activity.response.ActivityListItemResponse;
@@ -20,7 +21,9 @@ import com.example.studentarchives.enums.ActivityTypeEnum;
 import com.example.studentarchives.enums.ApplyStatusEnum;
 import com.example.studentarchives.enums.ApprovalInstanceStatusEnum;
 import com.example.studentarchives.enums.ArchiveTypeEnum;
+import com.example.studentarchives.enums.AttachmentBizTypeEnum;
 import com.example.studentarchives.enums.AwardTypeEnum;
+import com.example.studentarchives.enums.FileStatusEnum;
 import com.example.studentarchives.enums.ModelVersionModelTypeEnum;
 import com.example.studentarchives.exception.BusinessException;
 import com.example.studentarchives.repository.*;
@@ -81,6 +84,7 @@ public class ActivityService {
     private final AwardResearchProjectRepository researchProjectRepository;
     private final AwardSoftwareCopyrightRepository softwareCopyrightRepository;
     private final AwardPublishedPaperRepository publishedPaperRepository;
+    private final OssProperties ossProperties;
 
     /** 允许的排序字段白名单 */
     private static final Set<String> ALLOWED_SORT_FIELDS = Set.of("submit_time", "created_at", "updated_at", "id");
@@ -203,6 +207,7 @@ public class ActivityService {
                         .orElseThrow(() -> new BusinessException(ResultCode.DATA_NOT_EXIST, "档案记录不存在"));
                 checkOwnership(a.getUserId(), userId);
                 checkDeletable(a.getStatus());
+                unbindFiles(AttachmentBizTypeEnum.ARCHIVE.getValue(), activityId);
                 archiveRepository.softDeleteById(activityId, LocalDateTime.now());
             }
             case AWARD -> {
@@ -210,6 +215,7 @@ public class ActivityService {
                         .orElseThrow(() -> new BusinessException(ResultCode.DATA_NOT_EXIST, "奖项记录不存在"));
                 checkOwnership(a.getUserId(), userId);
                 checkDeletable(a.getStatus());
+                unbindFiles(AttachmentBizTypeEnum.AWARD.getValue(), activityId);
                 awardApplicationRepository.softDeleteById(activityId, LocalDateTime.now());
             }
             case CAREER_PLAN -> {
@@ -217,6 +223,7 @@ public class ActivityService {
                         .orElseThrow(() -> new BusinessException(ResultCode.DATA_NOT_EXIST, "规划记录不存在"));
                 checkOwnership(p.getUserId(), userId);
                 checkDeletable(p.getStatus());
+                unbindFiles(AttachmentBizTypeEnum.CAREER_PLAN.getValue(), activityId);
                 careerPlanRepository.softDeleteById(activityId, LocalDateTime.now());
             }
         }
@@ -238,6 +245,7 @@ public class ActivityService {
                 a.setStatus(ApplyStatusEnum.REVOKED.getValue());
                 a.getAuditInfo().setRevokedAt(LocalDateTime.now());
                 archiveRepository.save(a);
+                unbindFiles(AttachmentBizTypeEnum.ARCHIVE.getValue(), a.getId());
                 List<Long> closedTaskIds = closeOpenApprovalTasks("Archive", a.getId());
                 yield ActivityStatusResponse.builder()
                         .id(a.getId()).type("archive")
@@ -254,6 +262,7 @@ public class ActivityService {
                 a.setStatus(ApplyStatusEnum.REVOKED.getValue());
                 a.getAuditInfo().setRevokedAt(LocalDateTime.now());
                 awardApplicationRepository.save(a);
+                unbindFiles(AttachmentBizTypeEnum.AWARD.getValue(), a.getId());
                 List<Long> closedTaskIds = closeOpenApprovalTasks("AwardApplication", a.getId());
                 yield ActivityStatusResponse.builder()
                         .id(a.getId()).type("award")
@@ -270,6 +279,7 @@ public class ActivityService {
                 p.setStatus(ApplyStatusEnum.REVOKED.getValue());
                 p.getAuditInfo().setRevokedAt(LocalDateTime.now());
                 careerPlanRepository.save(p);
+                unbindFiles(AttachmentBizTypeEnum.CAREER_PLAN.getValue(), p.getId());
                 List<Long> closedTaskIds = closeOpenApprovalTasks("CareerPlan", p.getId());
                 yield ActivityStatusResponse.builder()
                         .id(p.getId()).type("career_plan")
@@ -279,6 +289,25 @@ public class ActivityService {
                         .closedTaskIds(closedTaskIds).build();
             }
         };
+    }
+
+    /**
+     * 删除/撤销申报时解除附件关联：文件回到暂存态（file_status=1，清空 biz_type/biz_id），
+     * 并重置临时过期时间；暂存文件可再次绑定其他申报，超期后由临时文件清理回收。
+     */
+    private void unbindFiles(String bizType, Long bizId) {
+        List<AttachmentRelation> files = attachmentRelationRepository.findByBizTypeAndBizId(bizType, bizId);
+        if (files.isEmpty()) {
+            return;
+        }
+        LocalDateTime tempExpireAt = LocalDateTime.now().plusHours(ossProperties.getTempExpireHours());
+        for (AttachmentRelation file : files) {
+            file.setBizType(null);
+            file.setBizId(null);
+            file.setFileStatus(FileStatusEnum.TEMP.getValue());
+            file.setTempExpireAt(tempExpireAt);
+            attachmentRelationRepository.save(file);
+        }
     }
 
     /**
