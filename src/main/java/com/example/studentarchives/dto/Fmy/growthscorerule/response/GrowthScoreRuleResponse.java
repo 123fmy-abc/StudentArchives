@@ -10,7 +10,7 @@ import java.time.LocalDateTime;
 import java.util.List;
 
 /**
- * 成长事件计分规则响应（GET / POST / PUT /admin/growth-event-score-rules）
+ * 成长事件计分规则响应（GET / POST / PUT /admin/growth-source-score-rules）
  */
 @Data
 @Builder
@@ -21,13 +21,13 @@ public class GrowthScoreRuleResponse {
     /** 规则 ID */
     private Long id;
 
-    /** 事件类型：1=奖项 2=成绩 3=实践 4=职业规划 5=短板改进 6=能力提升 */
-    private Integer eventType;
+    /** 来源记录类型：archives / award_applications / archive_internships 等 */
+    private String sourceType;
 
-    /** 事件类型标签（奖项/成绩/实践/职业规划/短板改进/能力提升） */
-    private String eventTypeLabel;
+    /** 来源记录类型标签（学生档案/奖项申报/实习经历 等） */
+    private String sourceTypeLabel;
 
-    /** 该类事件的能力维度得分项 */
+    /** 该类来源记录的维度得分项 */
     private List<GrowthScoreRuleItem> abilities;
 
     /** 备注 */

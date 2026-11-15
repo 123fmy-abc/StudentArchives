@@ -17,7 +17,7 @@ import java.math.BigDecimal;
 /**
  * 成长事件计分规则能力维度得分项
  * <p>
- * 与 growth_event_score_rules.abilities JSON 元素结构一致：
+ * 与 growth_source_score_rules.abilities JSON 元素结构一致：
  * dimensionCode 对应 ability_dimensions.dimension_code，score 为该类事件对该维度的得分贡献（0-100）。
  */
 @Data

@@ -1,6 +1,6 @@
 package com.example.studentarchives.repository;
 
-import com.example.studentarchives.entity.foundation.GrowthEventScoreRule;
+import com.example.studentarchives.entity.foundation.GrowthSourceScoreRule;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
@@ -12,25 +12,25 @@ import java.util.List;
 import java.util.Optional;
 
 /**
- * 成长事件计分规则 Repository
+ * 成长事件计分规则 Repository（按来源记录类型）
  */
 @Repository
-public interface GrowthEventScoreRuleRepository extends JpaRepository<GrowthEventScoreRule, Long> {
+public interface GrowthSourceScoreRuleRepository extends JpaRepository<GrowthSourceScoreRule, Long> {
 
     /**
-     * 按事件类型查询规则（未删除）
+     * 按来源记录类型查询规则（未删除）
      */
-    Optional<GrowthEventScoreRule> findByEventType(Integer eventType);
+    Optional<GrowthSourceScoreRule> findBySourceType(String sourceType);
 
     /**
-     * 查询全部规则，按事件类型正序
+     * 查询全部规则，按来源类型正序
      */
-    List<GrowthEventScoreRule> findAllByOrderByEventTypeAsc();
+    List<GrowthSourceScoreRule> findAllByOrderBySourceTypeAsc();
 
     /**
      * 软删除计分规则（置 deleted_at）
      */
     @Modifying
-    @Query(value = "UPDATE growth_event_score_rules SET deleted_at = :deletedAt WHERE id = :id AND deleted_at IS NULL", nativeQuery = true)
+    @Query(value = "UPDATE growth_source_score_rules SET deleted_at = :deletedAt WHERE id = :id AND deleted_at IS NULL", nativeQuery = true)
     int softDeleteById(@Param("id") Long id, @Param("deletedAt") LocalDateTime deletedAt);
 }

@@ -60,8 +60,8 @@ public class GrowthTimelineUpdateRequest {
     private String eventKey;
 
     /**
-     * 能力维度得分列表（已废弃：能力得分由管理端计分规则按事件类型自动生成，
-     * 本字段传入即被后端忽略；仅当事件类型实际变更时按新类型规则重建得分）
+     * 能力维度得分列表（已废弃：能力得分由管理端计分规则按来源记录类型自动生成，
+     * 本字段传入即被后端忽略；仅当来源记录类型实际变更时按新类型规则重建得分）
      */
     @Valid
     private List<GrowthTimelineAbilityItem> abilityData;
