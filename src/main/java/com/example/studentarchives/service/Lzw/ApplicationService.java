@@ -377,6 +377,7 @@ public class ApplicationService {
 
         requireOnSubmit(draft, req.getSemesterId(), "学期ID");
         requireOnSubmit(draft, req.getOrgLevel(), "组织级别");
+        requireOnSubmit(draft, req.getDepartment(), "部门");
         requireOnSubmit(draft, req.getPositionTitle(), "职位名称");
         requireOnSubmit(draft, req.getStartDate(), "任职开始");
         requireOnSubmit(draft, req.getEndDate(), "任职结束");
