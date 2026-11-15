@@ -328,8 +328,12 @@ public class ApplicationService {
 
         requireOnSubmit(draft, req.getSemesterId(), "学期ID");
         requireOnSubmit(draft, req.getCompanyName(), "公司名称");
+        requireOnSubmit(draft, req.getLocation(), "实习地点");
+        requireOnSubmit(draft, req.getPosition(), "实习岗位");
         requireOnSubmit(draft, req.getStartDate(), "开始时间");
         requireOnSubmit(draft, req.getEndDate(), "结束时间");
+        // 数据库存在 ck_aint_date 约束，提前校验避免落入 500 兜底
+        requireDateRange(req.getStartDate(), req.getEndDate(), "开始时间", "结束时间");
         requireEvidenceOnSubmit(draft, req.getEvidenceFileIds());
 
         FormTemplate template = validateByTemplate(schoolId, ArchiveTypeEnum.INTERNSHIP.getValue(), req, draft);
@@ -372,9 +376,12 @@ public class ApplicationService {
         LocalDateTime now = LocalDateTime.now();
 
         requireOnSubmit(draft, req.getSemesterId(), "学期ID");
+        requireOnSubmit(draft, req.getOrgLevel(), "组织级别");
         requireOnSubmit(draft, req.getPositionTitle(), "职位名称");
         requireOnSubmit(draft, req.getStartDate(), "任职开始");
         requireOnSubmit(draft, req.getEndDate(), "任职结束");
+        // 数据库存在 ck_ao_date 约束，提前校验避免落入 500 兜底
+        requireDateRange(req.getStartDate(), req.getEndDate(), "任职开始", "任职结束");
         requireEvidenceOnSubmit(draft, req.getEvidenceFileIds());
 
         FormTemplate template = validateByTemplate(schoolId, ArchiveTypeEnum.ORGANIZATION.getValue(), req, draft);
@@ -418,8 +425,11 @@ public class ApplicationService {
 
         requireOnSubmit(draft, req.getSemesterId(), "学期ID");
         requireOnSubmit(draft, req.getProjectName(), "项目名称");
+        requireOnSubmit(draft, req.getProjectContent(), "项目内容");
         requireOnSubmit(draft, req.getStartDate(), "开始时间");
         requireOnSubmit(draft, req.getEndDate(), "结束时间");
+        // 数据库存在 ck_atp_date 约束，提前校验避免落入 500 兜底
+        requireDateRange(req.getStartDate(), req.getEndDate(), "开始时间", "结束时间");
         requireEvidenceOnSubmit(draft, req.getEvidenceFileIds());
 
         FormTemplate template = validateByTemplate(schoolId, ArchiveTypeEnum.TRAINING_PROJECT.getValue(), req, draft);
@@ -462,8 +472,13 @@ public class ApplicationService {
 
         requireOnSubmit(draft, req.getSemesterId(), "学期ID");
         requireOnSubmit(draft, req.getActivityName(), "活动名称");
+        requireOnSubmit(draft, req.getPracticeLocation(), "活动地点");
+        requireOnSubmit(draft, req.getPracticeUnit(), "组织单位");
         requireOnSubmit(draft, req.getStartDate(), "开始时间");
         requireOnSubmit(draft, req.getEndDate(), "结束时间");
+        // 数据库存在 ck_asp_date 约束，提前校验避免落入 500 兜底
+        requireDateRange(req.getStartDate(), req.getEndDate(), "开始时间", "结束时间");
+        requireNonNegativeVolunteerHours(req.getVolunteerHours());
         requireEvidenceOnSubmit(draft, req.getEvidenceFileIds());
 
         FormTemplate template = validateByTemplate(schoolId, ArchiveTypeEnum.SOCIAL_PRACTICE.getValue(), req, draft);
@@ -887,6 +902,7 @@ public class ApplicationService {
             audit.setCurrentVersion(audit.getCurrentVersion() != null ? audit.getCurrentVersion() + 1 : 2);
         }
         archive.setAuditInfo(audit);
+        syncLockVersionForOwnerSubmit(archiveId, archive);
         archive = archiveRepository.save(archive);
 
         // 更新扩展表（按字段名映射）+ 重新绑定附件 + 版本留痕 + 表单快照
@@ -915,6 +931,27 @@ public class ApplicationService {
         return isDraft != null && isDraft == 1;
     }
 
+    /**
+     * 提交落库前的并发兜底：前端在提交请求仍在处理时可能触发自动保存，两者并发写同一行，
+     * 后落库的一方会因乐观锁冲突误报「数据已被他人修改，请刷新后重试」。
+     * 草稿/退回状态仅本人可编辑（checkOwnership 已校验），冲突写入者只可能是用户自己的自动保存，
+     * 这里基于库中最新状态复核可编辑性，并同步最新乐观锁版本，实现同用户并发写的「最后写入者胜出」。
+     * 行不存在或投影为空时保留当前版本，交由 save 按乐观锁正常兜底。
+     */
+    private void syncLockVersionForOwnerSubmit(Long archiveId, Archive archive) {
+        Object[] fresh = archiveRepository.findStatusAndLockVersionById(archiveId);
+        if (fresh == null || fresh.length < 2 || fresh[0] == null) {
+            return;
+        }
+        int freshStatus = (Integer) fresh[0];
+        if (freshStatus != ApplyStatusEnum.DRAFT.getValue() && freshStatus != ApplyStatusEnum.REJECTED.getValue()) {
+            throw new BusinessException(ResultCode.BIZ_STATUS_NOT_OPERABLE, "仅草稿或已退回状态可编辑");
+        }
+        if (fresh[1] != null) {
+            archive.setLockVersion((Integer) fresh[1]);
+        }
+    }
+
     /** 提交态必填校验：草稿放行；正式提交时字段为空则返回 400（PARAM_MISSING） */
     private void requireOnSubmit(boolean draft, Object value, String label) {
         if (draft) return;
@@ -938,6 +975,14 @@ public class ApplicationService {
         if (start == null || end == null) return;
         if (!start.isBefore(end)) {
             throw new BusinessException(ResultCode.PARAM_ERROR, startLabel + "必须早于" + endLabel);
+        }
+    }
+
+    /** 志愿时长校验：为空放行（表示不计时长/未填写），小于 0 拒绝，0 允许 */
+    private void requireNonNegativeVolunteerHours(BigDecimal value) {
+        if (value == null) return;
+        if (value.compareTo(BigDecimal.ZERO) < 0) {
+            throw new BusinessException(ResultCode.PARAM_ERROR, "志愿时长不能为负数");
         }
     }
 
@@ -1194,7 +1239,11 @@ public class ApplicationService {
                     if (body.containsKey("participantRole")) ext.setParticipantRole((String) body.get("participantRole"));
                     if (body.containsKey("startDate")) ext.setStartDate(parseDate((String) body.get("startDate")));
                     if (body.containsKey("endDate")) ext.setEndDate(parseDate((String) body.get("endDate")));
-                    if (body.containsKey("volunteerHours")) ext.setVolunteerHours(toBigDecimal(body.get("volunteerHours")));
+                    if (body.containsKey("volunteerHours")) {
+                        BigDecimal hours = toBigDecimal(body.get("volunteerHours"));
+                        requireNonNegativeVolunteerHours(hours);
+                        ext.setVolunteerHours(hours);
+                    }
                     socialPracticeRepository.save(ext);
                 });
             }
@@ -1307,6 +1356,7 @@ public class ApplicationService {
                         : old != null ? old.getStartDate() : null);
                 ext.setEndDate(body.containsKey("endDate") ? parseDate((String) body.get("endDate"))
                         : old != null ? old.getEndDate() : null);
+                requireDateRange(ext.getStartDate(), ext.getEndDate(), "开始日期", "结束日期");
                 internshipRepository.save(ext);
             }
             case "organization" -> {
@@ -1323,6 +1373,7 @@ public class ApplicationService {
                         : old != null ? old.getStartDate() : null);
                 ext.setEndDate(body.containsKey("endDate") ? parseDate((String) body.get("endDate"))
                         : old != null ? old.getEndDate() : null);
+                requireDateRange(ext.getStartDate(), ext.getEndDate(), "开始日期", "结束日期");
                 organizationRepository.save(ext);
             }
             case "training_project" -> {
@@ -1337,6 +1388,7 @@ public class ApplicationService {
                         : old != null ? old.getStartDate() : null);
                 ext.setEndDate(body.containsKey("endDate") ? parseDate((String) body.get("endDate"))
                         : old != null ? old.getEndDate() : null);
+                requireDateRange(ext.getStartDate(), ext.getEndDate(), "开始日期", "结束日期");
                 trainingProjectRepository.save(ext);
             }
             case "social_practice" -> {
@@ -1355,8 +1407,11 @@ public class ApplicationService {
                         : old != null ? old.getStartDate() : null);
                 ext.setEndDate(body.containsKey("endDate") ? parseDate((String) body.get("endDate"))
                         : old != null ? old.getEndDate() : null);
-                ext.setVolunteerHours(body.containsKey("volunteerHours") ? toBigDecimal(body.get("volunteerHours"))
-                        : old != null ? old.getVolunteerHours() : null);
+                BigDecimal volunteerHours = body.containsKey("volunteerHours") ? toBigDecimal(body.get("volunteerHours"))
+                        : old != null ? old.getVolunteerHours() : null;
+                requireNonNegativeVolunteerHours(volunteerHours);
+                ext.setVolunteerHours(volunteerHours);
+                requireDateRange(ext.getStartDate(), ext.getEndDate(), "开始日期", "结束日期");
                 socialPracticeRepository.save(ext);
             }
             case "book_review" -> {

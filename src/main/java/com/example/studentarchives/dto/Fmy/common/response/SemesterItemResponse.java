@@ -27,4 +27,10 @@ public class SemesterItemResponse {
 
     /** 是否为当前学期：0=否 1=是 */
     private Integer isCurrent;
+
+    /** 学期开始日期，格式 yyyy-MM-dd，供前端做时间归属校验 */
+    private String startDate;
+
+    /** 学期结束日期，格式 yyyy-MM-dd，供前端做时间归属校验 */
+    private String endDate;
 }

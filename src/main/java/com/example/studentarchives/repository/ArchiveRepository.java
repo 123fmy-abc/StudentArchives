@@ -37,6 +37,14 @@ public interface ArchiveRepository extends JpaRepository<Archive, Long> {
     List<Archive> findByUserIdAndArchiveType(Long userId, String archiveType);
 
     /**
+     * 查询档案最新状态与乐观锁版本（JPQL 标量投影，绕过持久化上下文一级缓存）。
+     * 返回 [status, lockVersion]，行不存在时返回 null。
+     * 用于提交/自动保存并发写同一行时同步版本，避免同一用户的连续操作误报乐观锁冲突。
+     */
+    @Query("SELECT a.status, a.lockVersion FROM Archive a WHERE a.id = :id")
+    Object[] findStatusAndLockVersionById(@Param("id") Long id);
+
+    /**
      * 按学生 + 状态筛选（评分重算仅统计已通过 status=2 的档案）
      */
     List<Archive> findByUserIdAndStatus(Long userId, Integer status);

@@ -488,6 +488,8 @@ public class CommonService {
                         .label(generateSemesterLabel(s.getName()))
                         .name(s.getName())
                         .isCurrent(s.getIsCurrent())
+                        .startDate(s.getStartDate() != null ? s.getStartDate().toString() : null)
+                        .endDate(s.getEndDate() != null ? s.getEndDate().toString() : null)
                         .build())
                 .collect(Collectors.toList());
     }

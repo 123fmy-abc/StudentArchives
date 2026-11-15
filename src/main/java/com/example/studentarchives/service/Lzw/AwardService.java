@@ -5,6 +5,7 @@ import com.example.studentarchives.entity.award.*;
 import com.example.studentarchives.entity.embed.ArchiveAuditInfo;
 import com.example.studentarchives.entity.file.AttachmentRelation;
 import com.example.studentarchives.entity.foundation.AwardTypeConfig;
+import com.example.studentarchives.entity.org.Semester;
 import com.example.studentarchives.entity.user.User;
 import com.example.studentarchives.entity.version.ModelVersion;
 import com.example.studentarchives.enums.*;
@@ -55,6 +56,7 @@ public class AwardService {
     private final AttachmentRelationRepository attachmentRelationRepository;
     private final ModelVersionRepository modelVersionRepository;
     private final AwardTypeConfigRepository awardTypeConfigRepository;
+    private final SemesterRepository semesterRepository;
     private final ObjectMapper objectMapper;
     private final ApprovalSubmitService approvalSubmitService;
     private final TransactionTemplate transactionTemplate;
@@ -280,7 +282,13 @@ public class AwardService {
         boolean draft = isDraft(req.getIsDraft());
         LocalDateTime now = LocalDateTime.now();
 
+        requireOnSubmit(draft, req.getSemesterId(), "学期ID");
+        requireOnSubmit(draft, req.getCompetitionName(), "竞赛名称");
+        requireOnSubmit(draft, req.getParticipatedTime(), "参赛时间");
+        requireOnSubmit(draft, req.getCompetitionLevel(), "竞赛级别");
+        requireOnSubmit(draft, req.getAwardLevel(), "获奖级别");
         requireEvidenceOnSubmit(draft, req.getEvidenceFileIds());
+        requireEventTimeWithinSemester(req.getSemesterId(), req.getParticipatedTime(), "参赛时间");
 
         String title = "竞赛之星-" + req.getCompetitionName();
         AwardApplication app = createAwardBase(schoolId, userId, AwardTypeEnum.COMPETITION_STAR.getValue(),
@@ -315,6 +323,8 @@ public class AwardService {
         boolean draft = true;
         LocalDateTime now = LocalDateTime.now();
 
+        requireText(req.getSemesterId(), "学期ID");
+
         AwardApplication app = createAwardBase(schoolId, userId, AwardTypeEnum.RESEARCH_STAR.getValue(),
                 "科研之星", req.getSemesterId(), draft, now);
         app.setCertificateNo(req.getCertificateNo());
@@ -339,6 +349,13 @@ public class AwardService {
         AwardResearchStar rs = loadResearchStar(researchStarId, userId);
         AwardApplication app = loadApplication(rs.getApplicationId(), userId);
 
+        requireText(req.getProjectName(), "项目名称");
+        requireText(req.getProjectLevel(), "项目级别");
+        requireText(req.getRankTotal(), "排名/总人数");
+        requireText(req.getEstablishedTime(), "立项时间");
+        requireEventTimeWithinSemester(app.getSemesterId(), req.getEstablishedTime(), "立项时间");
+        requireValidRankTotal(req.getRankTotal());
+
         AwardResearchProject project = new AwardResearchProject();
         project.setResearchStarId(rs.getId());
         project.setProjectName(req.getProjectName());
@@ -361,6 +378,12 @@ public class AwardService {
         AwardResearchStar rs = loadResearchStar(researchStarId, userId);
         AwardApplication app = loadApplication(rs.getApplicationId(), userId);
 
+        requireText(req.getSoftwareName(), "软著名称");
+        requireText(req.getRankTotal(), "排名/总人数");
+        requireText(req.getApprovedTime(), "获批时间");
+        requireEventTimeWithinSemester(app.getSemesterId(), req.getApprovedTime(), "获批时间");
+        requireValidRankTotal(req.getRankTotal());
+
         AwardSoftwareCopyright sw = new AwardSoftwareCopyright();
         sw.setResearchStarId(rs.getId());
         sw.setSoftwareName(req.getSoftwareName());
@@ -381,6 +404,13 @@ public class AwardService {
     public AwardSubmitResponse addPaper(Long researchStarId, PublishedPaperRequest req, Long userId) {
         AwardResearchStar rs = loadResearchStar(researchStarId, userId);
         AwardApplication app = loadApplication(rs.getApplicationId(), userId);
+
+        requireText(req.getJournalName(), "期刊名称");
+        requireText(req.getPaperTitle(), "论文名称");
+        requireText(req.getRankTotal(), "排名/总人数");
+        requireText(req.getPublishedTime(), "发表时间");
+        requireEventTimeWithinSemester(app.getSemesterId(), req.getPublishedTime(), "发表时间");
+        requireValidRankTotal(req.getRankTotal());
 
         AwardPublishedPaper paper = new AwardPublishedPaper();
         paper.setResearchStarId(rs.getId());
@@ -460,7 +490,14 @@ public class AwardService {
         boolean draft = isDraft(req.getIsDraft());
         LocalDateTime now = LocalDateTime.now();
 
+        requireOnSubmit(draft, req.getSemesterId(), "学期ID");
+        requireOnSubmit(draft, req.getCompanyName(), "公司名称");
+        requireOnSubmit(draft, req.getIndustryType(), "行业类型");
+        requireOnSubmit(draft, req.getApplicantRank(), "申报人排名");
+        requireOnSubmit(draft, req.getRegisteredTime(), "注册时间");
         requireEvidenceOnSubmit(draft, req.getEvidenceFileIds());
+        requireEventTimeWithinSemester(req.getSemesterId(), req.getRegisteredTime(), "注册时间");
+        requireValidRankTotal(req.getApplicantRank());
 
         String title = "双创之星-" + req.getCompanyName();
         AwardApplication app = createAwardBase(schoolId, userId, AwardTypeEnum.INNOVATION_STAR.getValue(),
@@ -675,8 +712,31 @@ public class AwardService {
         return isDraft != null && isDraft == 1;
     }
 
+    /**
+     * 同一学生、同一奖项类型、同一学期只保留一条申报记录（已撤销除外）。
+     * <p>
+     * 学期是材料归属学期，跨学期可以再次申报；同学期重复新建会产生多条待审记录、
+     * 重复审批待办与重复计分，因此在创建入口统一拦截。草稿与已撤销允许继续编辑或重报。
+     */
+    private void requireNoExistingAwardInSemester(Long userId, String awardType, Long semesterId) {
+        if (semesterId == null) return;
+        AwardApplication existing = awardApplicationRepository
+                .findByUserIdAndAwardTypeAndSemesterId(userId, awardType, semesterId).stream()
+                .filter(a -> a.getStatus() == null || a.getStatus() != ApplyStatusEnum.REVOKED.getValue())
+                .findFirst().orElse(null);
+        if (existing == null) return;
+        if (existing.getStatus() != null && existing.getStatus() == ApplyStatusEnum.DRAFT.getValue()) {
+            throw new BusinessException(ResultCode.BIZ_STATUS_NOT_OPERABLE,
+                    "本学期已存在该奖项的草稿，请继续编辑该草稿后提交");
+        }
+        throw new BusinessException(ResultCode.BIZ_STATUS_NOT_OPERABLE,
+                "本学期已存在该奖项的申报记录，请修改原记录后重新提交");
+    }
+
     private AwardApplication createAwardBase(Long schoolId, Long userId, String awardType,
                                               String title, Long semesterId, boolean draft, LocalDateTime now) {
+        requireNoExistingAwardInSemester(userId, awardType, semesterId);
+
         AwardApplication app = new AwardApplication();
         app.setSchoolId(schoolId);
         app.setUserId(userId);
@@ -726,6 +786,65 @@ public class AwardService {
                 .orElseThrow(() -> new BusinessException(ResultCode.DATA_NOT_EXIST, "奖项报名不存在"));
         checkOwnership(app, userId);
         return app;
+    }
+
+    /** 提交态必填校验：草稿放行；正式提交时字段为空则返回 400（PARAM_MISSING），与档案申报口径一致 */
+    private void requireOnSubmit(boolean draft, Object value, String label) {
+        if (draft) return;
+        if (value == null || (value instanceof String s && s.isBlank())) {
+            throw new BusinessException(ResultCode.PARAM_MISSING, label + "不能为空");
+        }
+    }
+
+    /** 即时必填校验：用于无草稿语义的科研之星子项接口（添加即落库），字段为空则返回 400 */
+    private void requireText(Object value, String label) {
+        if (value == null || (value instanceof String s && s.isBlank())) {
+            throw new BusinessException(ResultCode.PARAM_MISSING, label + "不能为空");
+        }
+    }
+
+    /**
+     * 排名/总人数校验：格式必须是「正整数/正整数」，且排名不能大于总人数。
+     * 为空时放行（草稿场景），非空即按完整格式校验，避免 51/2、0/0 这类矛盾数据落库。
+     */
+    private void requireValidRankTotal(String rankTotal) {
+        if (rankTotal == null || rankTotal.trim().isEmpty()) return;
+        String value = rankTotal.trim();
+        if (!value.matches("\\d+/\\d+")) {
+            throw new BusinessException(ResultCode.PARAM_ERROR, "排名/总人数格式有误，请按「排名/总人数」填写，如 2/5");
+        }
+        String[] parts = value.split("/");
+        int rank;
+        int total;
+        try {
+            rank = Integer.parseInt(parts[0]);
+            total = Integer.parseInt(parts[1]);
+        } catch (NumberFormatException e) {
+            throw new BusinessException(ResultCode.PARAM_ERROR, "排名/总人数格式有误，请按「排名/总人数」填写，如 2/5");
+        }
+        if (rank < 1 || total < 1) {
+            throw new BusinessException(ResultCode.PARAM_ERROR, "排名和总人数都必须大于 0");
+        }
+        if (rank > total) {
+            throw new BusinessException(ResultCode.PARAM_ERROR, "排名不能大于总人数");
+        }
+    }
+
+    /**
+     * 事件时间与学期解耦校验：只要求「事件时间 ≤ 所选学期结束日期」。
+     * <p>
+     * 学期表示材料归属学期（决定计入哪一学期的统计与评分），事件时间是事实发生时间，
+     * 二者无需落在同一区间；跨学期取得的成果允许归属到其后的任意学期。
+     * 事件时间为空或未选学期时放行（由必填校验负责）。
+     */
+    private void requireEventTimeWithinSemester(Long semesterId, LocalDate eventTime, String label) {
+        if (semesterId == null || eventTime == null) return;
+        Semester semester = semesterRepository.findById(semesterId)
+                .orElseThrow(() -> new BusinessException(ResultCode.DATA_NOT_EXIST, "学期不存在"));
+        if (semester.getEndDate() != null && eventTime.isAfter(semester.getEndDate())) {
+            throw new BusinessException(ResultCode.PARAM_ERROR,
+                    label + "不能晚于所选学期的结束日期（" + semester.getEndDate() + "）");
+        }
     }
 
     /** 提交态必填校验：奖项正式提交时佐证材料至少上传 1 个文件；草稿放行 */
