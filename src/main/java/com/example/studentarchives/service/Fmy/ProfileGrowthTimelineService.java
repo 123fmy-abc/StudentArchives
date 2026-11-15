@@ -1,12 +1,13 @@
 package com.example.studentarchives.service.Fmy;
 
 import com.example.studentarchives.common.ResultCode;
-import com.example.studentarchives.dto.Fmy.profile.request.GrowthTimelineAbilityItem;
+import com.example.studentarchives.dto.Fmy.growthscorerule.request.GrowthScoreRuleItem;
 import com.example.studentarchives.dto.Fmy.profile.request.GrowthTimelineCreateRequest;
 import com.example.studentarchives.dto.Fmy.profile.request.GrowthTimelineUpdateRequest;
 import com.example.studentarchives.dto.Fmy.profile.response.GrowthTimelineDetailResponse;
 import com.example.studentarchives.dto.Fmy.profile.response.GrowthTimelineDetailResponse.AbilityItem;
 import com.example.studentarchives.entity.foundation.AbilityDimension;
+import com.example.studentarchives.entity.foundation.GrowthEventScoreRule;
 import com.example.studentarchives.entity.growth.GrowthTimeline;
 import com.example.studentarchives.entity.growth.GrowthTimelineAbility;
 import com.example.studentarchives.entity.growth.GrowthTimelineTag;
@@ -16,11 +17,15 @@ import com.example.studentarchives.enums.ApplyStatusEnum;
 import com.example.studentarchives.enums.EventTypeEnum;
 import com.example.studentarchives.exception.BusinessException;
 import com.example.studentarchives.repository.AbilityDimensionRepository;
+import com.example.studentarchives.repository.GrowthEventScoreRuleRepository;
 import com.example.studentarchives.repository.GrowthTimelineAbilityRepository;
 import com.example.studentarchives.repository.GrowthTimelineRepository;
 import com.example.studentarchives.repository.GrowthTimelineTagRepository;
 import com.example.studentarchives.repository.SemesterRepository;
 import com.example.studentarchives.repository.UserRepository;
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.Query;
 import lombok.RequiredArgsConstructor;
@@ -54,6 +59,9 @@ import java.util.stream.Collectors;
  * - 不需要审核：新增即直接生效（status 固定为 2=已通过）；任意状态均可直接修改/删除
  * - 来源记录必填：每条时间轴事件必须关联一条已有来源记录（sourceType + sourceId），
  *   且该来源记录须真实存在（未软删除）并归属当前用户，否则报错
+ * - 能力得分由管理端计分规则表 growth_event_score_rules 按事件类型自动生成，
+ *   请求中的 abilityData 已废弃（传入即忽略）；无规则的事件类型不产生能力得分行；
+ *   仅当修改事件改变了 event_type 时按新类型规则重建能力得分，存量自填分数保留不动
  * - 条件唯一索引：uk_gt_event_key(user_id, event_key)、uk_gt_source(source_type, source_id)
  * - 数据权限：学生仅可操作本人（user_id）的时间轴节点，越权返回 20005
  */
@@ -115,6 +123,8 @@ public class ProfileGrowthTimelineService {
     private final GrowthTimelineTagRepository growthTimelineTagRepository;
     private final EntityManager entityManager;
     private final GrowthTimelineStatusResolver growthTimelineStatusResolver;
+    private final GrowthEventScoreRuleRepository growthEventScoreRuleRepository;
+    private final ObjectMapper objectMapper;
 
     /**
      * 新增成长时间轴事件（POST /profile/growth-timeline）
@@ -159,7 +169,7 @@ public class ProfileGrowthTimelineService {
         timeline.setStatus(2);
         growthTimelineRepository.save(timeline);
 
-        saveAbilities(timeline.getId(), request.getAbilityData());
+        saveAbilitiesFromRule(timeline.getId(), request.getEventType());
         saveTags(timeline.getId(), request.getTags());
 
         log.info("新增成长时间轴事件: id={}, userId={}, eventType={}, eventName={}",
@@ -182,7 +192,8 @@ public class ProfileGrowthTimelineService {
     /**
      * 修改成长时间轴事件（PUT /profile/growth-timeline/{id}）
      * <p>
-     * 全部字段可选，仅更新传入的非空字段；abilityData / tags 传入时整体替换子表数据。
+     * 全部字段可选，仅更新传入的非空字段；tags 传入时整体替换子表数据；
+     * abilityData 已废弃（传入即忽略），能力得分仅在事件类型实际变更时按规则重建。
      * 不需要审核：任意状态（含已通过 2）均可直接修改；来源记录仍须关联已有来源记录。
      *
      * @param userId  当前登录用户 ID
@@ -211,6 +222,7 @@ public class ProfileGrowthTimelineService {
                     .map(Semester::getId)
                     .ifPresent(timeline::setSemesterId);
         }
+        Integer originalEventType = timeline.getEventType();
         if (request.getEventType() != null) {
             validateEventType(request.getEventType());
             timeline.setEventType(request.getEventType());
@@ -265,9 +277,11 @@ public class ProfileGrowthTimelineService {
                 timeline.setEventKey(request.getEventKey().trim());
             }
         }
-        if (request.getAbilityData() != null) {
+        // 能力得分由计分规则自动生成（abilityData 已废弃，传入即忽略）：
+        // 仅当事件类型实际变更时按新类型规则重建，其余修改不影响存量得分
+        if (request.getEventType() != null && !Objects.equals(originalEventType, request.getEventType())) {
             softDeleteAbilities(id);
-            saveAbilities(id, request.getAbilityData());
+            saveAbilitiesFromRule(id, request.getEventType());
         }
         if (request.getTags() != null) {
             softDeleteTags(id);
@@ -444,8 +458,26 @@ public class ProfileGrowthTimelineService {
         }
     }
 
-    /** 批量保存能力得分子表 */
-    private void saveAbilities(Long timelineId, List<GrowthTimelineAbilityItem> items) {
+    /**
+     * 按计分规则保存能力得分子表（方案 A：得分由管理端配置，学生不自填）。
+     * <p>
+     * 查询 growth_event_score_rules 中该事件类型的规则，将其 abilities JSON
+     * （[{"dimensionCode":"xxx","score":10.00}]）反序列化后写入 growth_timeline_abilities。
+     * 无规则时直接返回，事件不产生能力得分行（画像中相关维度计 0 分），不报错。
+     */
+    private void saveAbilitiesFromRule(Long timelineId, Integer eventType) {
+        GrowthEventScoreRule rule = growthEventScoreRuleRepository.findByEventType(eventType).orElse(null);
+        if (rule == null) {
+            return;
+        }
+        List<GrowthScoreRuleItem> items;
+        try {
+            items = objectMapper.readValue(rule.getAbilities(), new TypeReference<List<GrowthScoreRuleItem>>() {
+            });
+        } catch (JsonProcessingException e) {
+            log.error("计分规则 abilities 解析失败: ruleId={}, eventType={}", rule.getId(), eventType, e);
+            throw new BusinessException(ResultCode.SYSTEM_ERROR, "计分规则解析失败");
+        }
         if (items == null || items.isEmpty()) {
             return;
         }

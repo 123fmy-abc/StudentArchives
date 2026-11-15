@@ -69,7 +69,10 @@ public class GrowthTimelineCreateRequest {
     @Size(max = 64, message = "事件去重键长度不能超过64")
     private String eventKey;
 
-    /** 能力维度得分列表（可空） */
+    /**
+     * 能力维度得分列表（已废弃：能力得分由管理端计分规则按事件类型自动生成，
+     * 本字段传入即被后端忽略，仅为兼容旧客户端保留）
+     */
     @Valid
     private List<GrowthTimelineAbilityItem> abilityData;
 

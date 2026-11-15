@@ -15,7 +15,7 @@ import java.util.List;
  * 修改成长时间轴事件请求 DTO（PUT /profile/growth-timeline/{id}）
  * <p>
  * 全部字段可选，仅更新传入的非空字段；content / coverImage 传空字符串表示清空。
- * abilityData / tags 传入（非 null，含空数组）时整体替换子表数据。
+ * tags 传入（非 null，含空数组）时整体替换子表数据。
  */
 @Data
 @NoArgsConstructor
@@ -59,7 +59,10 @@ public class GrowthTimelineUpdateRequest {
     @Size(max = 64, message = "事件去重键长度不能超过64")
     private String eventKey;
 
-    /** 能力维度得分列表，传入（含空数组）时整体替换 */
+    /**
+     * 能力维度得分列表（已废弃：能力得分由管理端计分规则按事件类型自动生成，
+     * 本字段传入即被后端忽略；仅当事件类型实际变更时按新类型规则重建得分）
+     */
     @Valid
     private List<GrowthTimelineAbilityItem> abilityData;
 
