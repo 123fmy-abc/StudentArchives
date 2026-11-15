@@ -329,6 +329,13 @@ public class ProfileService {
      */
     @Transactional
     public ContactUpdateResponse updateContact(Long userId, ContactUpdateRequest request) {
+        // 手机号与紧急联系人电话不得相同（空串表示清空，允许两者同时清空）
+        String phone = request.getPhone() == null ? "" : request.getPhone().trim();
+        String emergencyPhone = request.getEmergencyPhone() == null ? "" : request.getEmergencyPhone().trim();
+        if (!phone.isEmpty() && phone.equals(emergencyPhone)) {
+            throw new BusinessException(ResultCode.PARAM_ERROR, "手机号与紧急联系人电话不能相同");
+        }
+
         UserContactInfo contact = userContactInfoRepository.findByUserId(userId)
                 .orElseGet(UserContactInfo::new);
         contact.setUserId(userId);
