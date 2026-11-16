@@ -42,6 +42,12 @@ public class CareerPlanDetailResponse {
 
     private String submittedAt;
 
+    /** 当前版本号（对齐列表项 CareerPlanListItem.currentVersion） */
+    private Integer currentVersion;
+
+    /** 累计提交次数（对齐列表项 CareerPlanListItem.submitCount） */
+    private Integer submitCount;
+
     private String auditedAt;
 
     private String auditorName;

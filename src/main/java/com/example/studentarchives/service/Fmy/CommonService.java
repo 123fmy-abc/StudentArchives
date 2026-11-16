@@ -7,6 +7,7 @@ import com.example.studentarchives.enums.AttachmentBizTypeEnum;
 import com.example.studentarchives.enums.AuditActionEnum;
 import com.example.studentarchives.enums.EventTypeEnum;
 import com.example.studentarchives.enums.GenderEnum;
+import com.example.studentarchives.enums.FileStatusEnum;
 import com.example.studentarchives.enums.RoleLevelEnum;
 import com.example.studentarchives.enums.ScopeTypeEnum;
 import com.example.studentarchives.enums.StatusEnum;
@@ -74,6 +75,7 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.EnumSet;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -400,6 +402,44 @@ public class CommonService {
         attachmentRelationRepository.softDeleteById(fileId, LocalDateTime.now(), userId);
 
         log.info("文件删除成功: fileId={}, objectKey={}, userId={}", fileId, relation.getFilePath(), userId);
+    }
+
+    /** 允许通过通用接口解除关联的业务类型白名单（仅职业规划家族的学生自传附件，防止误解绑已审批档案/系统导出文件） */
+    private static final Set<AttachmentBizTypeEnum> UNBINDABLE_BIZ_TYPES = EnumSet.of(
+            AttachmentBizTypeEnum.CAREER_PLAN,
+            AttachmentBizTypeEnum.CAREER_ACTION,
+            AttachmentBizTypeEnum.CAREER_MILESTONE);
+
+    /**
+     * 解除文件与业务的关联（file_status=2 → 1）
+     * <p>
+     * 仅允许文件所有者操作；仅放开职业规划家族业务（career_plan/career_action/career_milestone）
+     * 的已绑定附件。解绑后文件回到暂存状态：清空业务归属、恢复临时过期时间，
+     * 之后可通过 DELETE /common/files/{id} 删除或重新绑定到其他业务，文件本身不删除。
+     *
+     * @param fileId 文件 ID
+     * @param userId 当前用户 ID（须为文件所有者）
+     */
+    @Transactional
+    public void unbindFile(Long fileId, Long userId) {
+        AttachmentRelation relation = attachmentRelationRepository.findByIdAndUserId(fileId, userId)
+                .orElseThrow(() -> new BusinessException(ResultCode.DATA_NOT_EXIST, "文件不存在"));
+        if (relation.getDeletedAt() != null) {
+            throw new BusinessException(ResultCode.DATA_NOT_EXIST, "文件不存在");
+        }
+        if (relation.getFileStatus() == null || relation.getFileStatus() != FileStatusEnum.BOUND.getValue()) {
+            throw new BusinessException(ResultCode.BIZ_STATUS_NOT_OPERABLE, "文件未关联业务，无需解除");
+        }
+        AttachmentBizTypeEnum bizType = AttachmentBizTypeEnum.of(relation.getBizType());
+        if (bizType == null || !UNBINDABLE_BIZ_TYPES.contains(bizType)) {
+            throw new BusinessException(ResultCode.BIZ_STATUS_NOT_OPERABLE, "该类型文件不支持解除关联");
+        }
+        relation.setBizType(null);
+        relation.setBizId(null);
+        relation.setFileStatus(FileStatusEnum.TEMP.getValue());
+        relation.setTempExpireAt(LocalDateTime.now().plusHours(ossProperties.getTempExpireHours()));
+        attachmentRelationRepository.save(relation);
+        log.info("文件解绑成功: fileId={}, bizType={}, userId={}", fileId, bizType.getValue(), userId);
     }
 
     // ==================== 头像上传 ====================

@@ -362,6 +362,8 @@ public class AiConversationService {
             int action = teacherActionMap.getOrDefault(s.getId(), 0);
             item.setTeacherAction(action);
             item.setTeacherActionLabel(teacherActionLabel(action));
+            // 未被当前学生采纳过才可再次采纳（列表已按本人 weakness 圈定，归属无需再校验）
+            item.setCanAdopt(!careerPlanRepository.existsByUserIdAndSourceAndAiSuggestionId(userId, 2, s.getId()));
             item.setCreatedAt(toIso(s.getCreatedAt()));
             items.add(item);
         }
@@ -686,6 +688,8 @@ public class AiConversationService {
         private String aiWarning;
         private Integer teacherAction;
         private String teacherActionLabel;
+        /** 是否可被当前学生采纳为计划（未被采纳过且归属本人），供前端预判按钮可用性 */
+        private boolean canAdopt;
         private String createdAt;
     }
 

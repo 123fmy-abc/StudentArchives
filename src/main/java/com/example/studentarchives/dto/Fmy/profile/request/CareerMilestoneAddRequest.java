@@ -23,4 +23,7 @@ public class CareerMilestoneAddRequest {
 
     @Pattern(regexp = "^\\d{4}-\\d{2}-\\d{2}$", message = "日期格式必须为YYYY-MM-DD")
     private String milestoneDate;
+
+    /** 成果证明文件 ID（先上传暂存再传入，新增时直接绑定，免二次 PUT）；不传则不绑定 */
+    private Long proofFileId;
 }

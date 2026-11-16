@@ -132,6 +132,7 @@ public class AuditTaskService {
     private final AttachmentRelationRepository attachmentRelationRepository;
 
     private final ActivityService activityService;
+    private final ArchiveCorrectionSnapshotService correctionSnapshotService;
     private final OssFileService ossFileService;
     private final AdminAuthService adminAuthService;
     private final TeacherScopeValidator scopeValidator;
@@ -869,6 +870,8 @@ public class AuditTaskService {
             ai.setAuditorId(teacherId);
             a.setAuditInfo(ai);
             archiveRepository.save(a);
+            // 更正驳回：按提交更正前的快照还原原已通过版本（原地更正语义，无独立新记录）
+            correctionSnapshotService.restoreOnRejected(a);
             return new ApprovableRef(a.getSemesterId(), ai.getCurrentVersion());
         }
         if ("AwardApplication".equals(at)) {

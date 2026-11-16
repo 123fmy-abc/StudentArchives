@@ -15,6 +15,10 @@ public class ImprovementSuggestion extends BaseEntity {
     @Column(name = "weakness_id")
     private Long weaknessId;
 
+    /** 归属学生用户 ID（users.id）；历史数据经 V54 回填，未关联短板时由写入路径直接写入 */
+    @Column(name = "user_id")
+    private Long userId;
+
     @Column(name = "suggestion_type", length = 50)
     private String suggestionType;
 

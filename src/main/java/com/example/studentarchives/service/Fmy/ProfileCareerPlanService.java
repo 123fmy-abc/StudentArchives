@@ -271,22 +271,23 @@ public class ProfileCareerPlanService {
     // ==================== 下载（4.5） ====================
 
     /**
-     * 获取职业规划下载 URL（GET /profile/career-plans/{planId}/download）
+     * 解析职业规划下载文件名（GET /profile/career-plans/{planId}/download 的 Content-Disposition 用）
      * <p>
-     * 惰性生成并缓存职业规划独立文档（不再返回上传佐证）：优先取已生成的主文件
-     * （career_plans.file_id），规划被编辑/审批状态变化（updatedAt 晚于文件更新时间）后
-     * 自动重新生成，保证文档反映最新状态。
-     * <p>
-     * external 用途用于外部投递，不添加屏幕水印，且不缓存复用，确保每次拿到干净文件。
+     * 下载经后端代理流式返回（与预览共用同一份生成/缓存文件），文件名改为后端可控：
+     * 优先用规划标题，非法字符替换为下划线，标题为空时回退固定名。
      *
      * @param userId  当前登录用户 ID
      * @param planId  规划 ID
-     * @param purpose 导出用途：internal（内部查看，屏幕水印+打印隐藏）/ external（外部投递，默认，屏幕和打印均无水印）
-     * @return OSS 签名下载 URL
+     * @return 下载文件名（含 .pdf 后缀）
      */
     @Transactional
-    public String getCareerPlanDownloadUrl(Long userId, Long planId, String purpose) {
-        return downloadUrl(resolveExportFile(userId, planId, purpose));
+    public String getCareerPlanExportFileName(Long userId, Long planId) {
+        CareerPlan plan = getOwnedPlan(userId, planId);
+        String title = plan.getTitle() != null ? plan.getTitle().trim() : "";
+        if (title.isEmpty()) {
+            return EXPORT_FILE_NAME;
+        }
+        return title.replaceAll("[\\\\/:*?\"<>|]", "_") + ".pdf";
     }
 
     /**
@@ -622,21 +623,6 @@ public class ProfileCareerPlanService {
     }
 
     /**
-     * 校验并返回下载 URL，文件缺失/不存在时抛业务异常。
-     */
-    private String downloadUrl(AttachmentRelation relation) {
-        if (relation == null || relation.getFilePath() == null) {
-            throw new BusinessException(ResultCode.DATA_NOT_EXIST, "未找到规划文件");
-        }
-        // 显式携带中文文件名（response-content-disposition 覆盖），避免回退到 OSS 对象上可能旧乱码的元数据
-        String url = ossFileService.getFileUrl(relation.getFilePath(), relation.getOriginalName());
-        if (url == null) {
-            throw new BusinessException(ResultCode.DATA_NOT_EXIST, "规划文件不存在");
-        }
-        return url;
-    }
-
-    /**
      * 起止日期拼接："2005-03-15 ~ 2005-06-30"，仅一端存在时返回该端，两端为空返回空串。
      */
     private String formatTimeRange(LocalDate start, LocalDate end) {
@@ -786,6 +772,8 @@ public class ProfileCareerPlanService {
                 .status(plan.getStatus())
                 .statusLabel(ApplyStatusEnum.of(plan.getStatus()).getLabel())
                 .submittedAt(audit != null ? toIso(audit.getSubmittedAt()) : null)
+                .currentVersion(audit != null ? audit.getCurrentVersion() : null)
+                .submitCount(audit != null ? audit.getSubmitCount() : null)
                 .auditedAt(audit != null ? toIso(audit.getAuditedAt()) : null)
                 .auditorName(audit != null && audit.getAuditorId() != null
                         ? userNameMap.get(audit.getAuditorId()) : null)
@@ -933,8 +921,11 @@ public class ProfileCareerPlanService {
         action.setActionDesc(request.getActionDesc());
         action.setStatus(0);
         action.setSource(1);
-        action.setStartDate(parseDate(request.getStartDate()));
-        action.setEndDate(parseDate(request.getEndDate()));
+        LocalDate actionStart = parseDate(request.getStartDate());
+        LocalDate actionEnd = parseDate(request.getEndDate());
+        requireDateRange(actionStart, actionEnd, "开始日期", "结束日期");
+        action.setStartDate(actionStart);
+        action.setEndDate(actionEnd);
         action.setCompletionRate(0);
         action.setSort(sort);
         action = careerActionRepository.save(action);
@@ -948,21 +939,32 @@ public class ProfileCareerPlanService {
      * 添加里程碑（POST /profile/career-plans/{planId}/actions/{actionId}/milestones）
      * <p>
      * 归属行动经路径 actionId 指定，校验行动属于当前规划后创建。
+     * 支持可选 proofFileId 在新增时直接绑定成果证明文件（一次请求完成，替代「新增+二次 PUT」）。
      */
     @Transactional
     public CareerPlanIdResponse addMilestone(Long userId, Long planId, Long actionId, CareerMilestoneAddRequest request) {
         CareerPlan plan = getOwnedPlan(userId, planId);
         ensureEditable(plan);
-        requireActionInPlan(actionId, planId);
+        CareerAction action = requireActionInPlan(actionId, planId);
         int sort = careerMilestoneRepository.findTopByActionIdOrderBySortDesc(actionId)
                 .map(m -> m.getSort() + 1).orElse(0);
+        LocalDate milestoneDate = parseDate(request.getMilestoneDate());
+        requireNotFuture(milestoneDate, "里程碑日期");
+        requireMilestoneInRange(milestoneDate, action.getStartDate(), action.getEndDate());
         CareerMilestone milestone = new CareerMilestone();
         milestone.setActionId(actionId);
         milestone.setMilestoneTitle(request.getMilestoneTitle());
-        milestone.setMilestoneDate(parseDate(request.getMilestoneDate()));
+        milestone.setMilestoneDate(milestoneDate);
         milestone.setIsAchieved(0);
         milestone.setSort(sort);
         milestone = careerMilestoneRepository.save(milestone);
+        // 新增时直接绑定成果证明文件（暂存文件校验同 updateMilestone，一次请求完成，免二次 PUT）
+        if (request.getProofFileId() != null && request.getProofFileId() > 0) {
+            AttachmentRelation relation = bindFile(request.getProofFileId(), userId,
+                    AttachmentBizTypeEnum.CAREER_MILESTONE.getValue(), milestone.getId());
+            milestone.setProofFileId(relation.getId());
+            milestone = careerMilestoneRepository.save(milestone);
+        }
         // 新增未达成里程碑后，若行动已有里程碑则按达成占比重算状态与完成率
         syncActionProgress(actionId);
         return CareerPlanIdResponse.builder().milestoneId(milestone.getId()).build();
@@ -1024,12 +1026,20 @@ public class ProfileCareerPlanService {
         if (request.getActionDesc() != null) {
             action.setActionDesc(request.getActionDesc());
         }
+        LocalDate newStart = null;
+        LocalDate newEnd = null;
         if (request.getStartDate() != null) {
-            action.setStartDate(parseDate(request.getStartDate()));
+            newStart = parseDate(request.getStartDate());
+            action.setStartDate(newStart);
         }
         if (request.getEndDate() != null) {
-            action.setEndDate(parseDate(request.getEndDate()));
+            newEnd = parseDate(request.getEndDate());
+            action.setEndDate(newEnd);
         }
+        // 更新后重算：两侧均有值（更新后）则校验区间
+        LocalDate effectiveStart = newStart != null ? newStart : action.getStartDate();
+        LocalDate effectiveEnd = newEnd != null ? newEnd : action.getEndDate();
+        requireDateRange(effectiveStart, effectiveEnd, "开始日期", "结束日期");
         if (request.getSort() != null) {
             action.setSort(request.getSort());
         }
@@ -1054,13 +1064,35 @@ public class ProfileCareerPlanService {
     public CareerPlanIdResponse updateMilestone(Long userId, Long planId, Long milestoneId,
                                                 CareerMilestoneUpdateRequest request) {
         CareerPlan plan = getOwnedPlan(userId, planId);
-        ensureEditable(plan);
+        int status = plan.getStatus() != null ? plan.getStatus() : 0;
+        // 草稿/已退回/已撤销：全部字段可编辑
+        boolean fullEditable = ApplyStatusEnum.of(status).isEditable();
+        // 已通过：仅允许进度跟踪字段（isAchieved、proofFileId），禁止修改标题和日期
+        boolean approved = status == ApplyStatusEnum.APPROVED.getValue();
+        if (!fullEditable && !approved) {
+            throw new BusinessException(ResultCode.BIZ_STATUS_NOT_OPERABLE, "当前状态不可编辑");
+        }
+
         CareerMilestone milestone = careerMilestoneRepository.findById(milestoneId)
                 .orElseThrow(() -> new BusinessException(ResultCode.DATA_NOT_EXIST, "里程碑不存在"));
-        requireActionInPlan(milestone.getActionId(), planId);
+        CareerAction action = requireActionInPlan(milestone.getActionId(), planId);
+
+        // 已通过规划仅允许进度跟踪，禁止修改结构字段
+        if (approved) {
+            if (!milestone.getMilestoneTitle().equals(request.getMilestoneTitle())) {
+                throw new BusinessException(ResultCode.BIZ_STATUS_NOT_OPERABLE, "已通过规划不可修改里程碑标题");
+            }
+            if (request.getMilestoneDate() != null) {
+                throw new BusinessException(ResultCode.BIZ_STATUS_NOT_OPERABLE, "已通过规划不可修改里程碑日期");
+            }
+        }
+
         milestone.setMilestoneTitle(request.getMilestoneTitle());
         if (request.getMilestoneDate() != null) {
-            milestone.setMilestoneDate(parseDate(request.getMilestoneDate()));
+            LocalDate newDate = parseDate(request.getMilestoneDate());
+            requireNotFuture(newDate, "里程碑日期");
+            requireMilestoneInRange(newDate, action.getStartDate(), action.getEndDate());
+            milestone.setMilestoneDate(newDate);
         }
         if (request.getIsAchieved() != null) {
             boolean achieved = request.getIsAchieved() == 1;
@@ -1287,6 +1319,38 @@ public class ProfileCareerPlanService {
                 .build();
     }
 
+    /**
+     * 解除行动成果文件（DELETE /profile/career-plans/{planId}/actions/{actionId}/files/{fileId}）
+     * <p>
+     * 校验文件归属当前用户且绑定在该行动上后，软删附件关系并删除 OSS 物理文件，
+     * 与删除行动时的级联清理（{@link #deleteActionFiles}）口径一致。
+     * 归属校验口径与 {@link #bindActionFile} 一致（规划归属 + 行动归属）。
+     *
+     * @param userId   当前登录用户 ID
+     * @param planId   规划 ID
+     * @param actionId 行动 ID
+     * @param fileId   行动成果文件 ID
+     */
+    @Transactional
+    public void unbindActionFile(Long userId, Long planId, Long actionId, Long fileId) {
+        getOwnedPlan(userId, planId);
+        requireActionInPlan(actionId, planId);
+        AttachmentRelation relation = attachmentRelationRepository.findByIdAndUserId(fileId, userId)
+                .orElseThrow(() -> new BusinessException(ResultCode.DATA_NOT_EXIST, "文件不存在"));
+        if (relation.getDeletedAt() != null
+                || !AttachmentBizTypeEnum.CAREER_ACTION.getValue().equals(relation.getBizType())
+                || !actionId.equals(relation.getBizId())) {
+            throw new BusinessException(ResultCode.DATA_NOT_EXIST, "文件不存在");
+        }
+        try {
+            ossFileService.deleteFile(relation.getFilePath());
+        } catch (Exception e) {
+            log.warn("OSS 文件删除失败（可能已被清理）: objectKey={}", relation.getFilePath(), e);
+        }
+        attachmentRelationRepository.softDeleteById(fileId, LocalDateTime.now(), userId);
+        log.info("行动成果文件解绑成功: fileId={}, actionId={}, userId={}", fileId, actionId, userId);
+    }
+
     // ==================== 添加阶段反思（4.14） ====================
 
     /**
@@ -1324,14 +1388,20 @@ public class ProfileCareerPlanService {
         if (careerPlanRepository.existsByUserIdAndSourceAndAiSuggestionId(userId, 2, suggestion.getId())) {
             throw new BusinessException(ResultCode.BIZ_OPERATION_FAILED, "该AI建议已被采纳为计划，请勿重复添加");
         }
-        // 归属校验（方案B）：仅信任经 weakness_id → weakness_analyses.user_id 可溯源归属的建议；
-        // 未关联任何短板分析时无法确认归属，拒绝采纳以防越权
-        if (suggestion.getWeaknessId() == null) {
-            throw new BusinessException(ResultCode.FORBIDDEN, "该AI建议未关联短板分析，无法确认归属，不能采纳");
-        }
-        WeaknessAnalysis weakness = weaknessAnalysisRepository.findById(suggestion.getWeaknessId()).orElse(null);
-        if (weakness != null && !userId.equals(weakness.getUserId())) {
-            throw new BusinessException(ResultCode.FORBIDDEN, "无访问权限");
+        // 归属校验：优先 suggestion.user_id 直查（V54 起写入路径均带归属）；
+        // 历史数据无 user_id 时回退 weakness_id → weakness_analyses.user_id 溯源，
+        // 两者皆无则无法确认归属，拒绝采纳以防越权
+        if (suggestion.getUserId() != null) {
+            if (!userId.equals(suggestion.getUserId())) {
+                throw new BusinessException(ResultCode.FORBIDDEN, "无访问权限");
+            }
+        } else if (suggestion.getWeaknessId() != null) {
+            WeaknessAnalysis weakness = weaknessAnalysisRepository.findById(suggestion.getWeaknessId()).orElse(null);
+            if (weakness == null || !userId.equals(weakness.getUserId())) {
+                throw new BusinessException(ResultCode.FORBIDDEN, "无访问权限");
+            }
+        } else {
+            throw new BusinessException(ResultCode.FORBIDDEN, "该AI建议无法确认归属，不能采纳");
         }
         semesterRepository.findById(request.getSemesterId())
                 .orElseThrow(() -> new BusinessException(ResultCode.DATA_NOT_EXIST, "目标学期不存在"));
@@ -1427,6 +1497,7 @@ public class ProfileCareerPlanService {
 
         ImprovementSuggestion suggestion = new ImprovementSuggestion();
         suggestion.setWeaknessId(request.getWeaknessId());
+        suggestion.setUserId(userId);
         suggestion.setSuggestionContent(request.getSuggestionContent());
         suggestion.setSource(1);
         suggestion.setTeacherId(null);
@@ -1593,8 +1664,11 @@ public class ProfileCareerPlanService {
                 action.setActionDesc(a.getActionDesc());
                 action.setStatus(0);
                 action.setSource(1);
-                action.setStartDate(parseDate(a.getStartDate()));
-                action.setEndDate(parseDate(a.getEndDate()));
+                LocalDate actionStart = parseDate(a.getStartDate());
+                LocalDate actionEnd = parseDate(a.getEndDate());
+                requireDateRange(actionStart, actionEnd, "开始日期", "结束日期");
+                action.setStartDate(actionStart);
+                action.setEndDate(actionEnd);
                 action.setCompletionRate(0);
                 action.setSort(actionSort++);
                 action = careerActionRepository.save(action);
@@ -1602,10 +1676,13 @@ public class ProfileCareerPlanService {
                 if (a.getMilestones() == null) continue;
                 int milestoneSort = 0;
                 for (CareerPlanCreateRequest.MilestoneItem m : a.getMilestones()) {
+                    LocalDate milestoneDate = parseDate(m.getMilestoneDate());
+                    requireNotFuture(milestoneDate, "里程碑日期");
+                    requireMilestoneInRange(milestoneDate, actionStart, actionEnd);
                     CareerMilestone milestone = new CareerMilestone();
                     milestone.setActionId(action.getId());
                     milestone.setMilestoneTitle(m.getMilestoneTitle());
-                    milestone.setMilestoneDate(parseDate(m.getMilestoneDate()));
+                    milestone.setMilestoneDate(milestoneDate);
                     milestone.setIsAchieved(0);
                     milestone.setSort(milestoneSort++);
                     careerMilestoneRepository.save(milestone);
@@ -1838,6 +1915,34 @@ public class ProfileCareerPlanService {
             return LocalDate.parse(value);
         } catch (DateTimeParseException e) {
             throw new BusinessException(ResultCode.PARAM_ERROR, "日期格式必须为YYYY-MM-DD");
+        }
+    }
+
+    /** 日期区间校验：任一侧为空时放行；两侧均有值时开始日期必须早于结束日期 */
+    private void requireDateRange(LocalDate start, LocalDate end, String startLabel, String endLabel) {
+        if (start == null || end == null) return;
+        if (!start.isBefore(end)) {
+            throw new BusinessException(ResultCode.PARAM_ERROR, startLabel + "必须早于" + endLabel);
+        }
+    }
+
+    /** 日期不能晚于当前系统日期校验：为空放行 */
+    private void requireNotFuture(LocalDate value, String label) {
+        if (value == null) return;
+        if (value.isAfter(LocalDate.now())) {
+            throw new BusinessException(ResultCode.PARAM_ERROR, label + "不能晚于当前日期");
+        }
+    }
+
+    /**
+     * 里程碑日期需在行动时间范围内校验：任一侧为空时放行；
+     * 两侧均有值时里程碑日期必须 >= 开始日期且 <= 结束日期（允许同日）。
+     */
+    private void requireMilestoneInRange(LocalDate milestoneDate, LocalDate actionStart, LocalDate actionEnd) {
+        if (milestoneDate == null || actionStart == null || actionEnd == null) return;
+        if (milestoneDate.isBefore(actionStart) || milestoneDate.isAfter(actionEnd)) {
+            throw new BusinessException(ResultCode.PARAM_ERROR,
+                    "里程碑日期必须在行动时间范围内（" + actionStart + " 至 " + actionEnd + "）");
         }
     }
 

@@ -77,6 +77,7 @@ public class ApplicationService {
 
     private final ObjectMapper objectMapper;
     private final ApprovalSubmitService approvalSubmitService;
+    private final ArchiveCorrectionSnapshotService correctionSnapshotService;
 
     private final FormTemplateQueryService formTemplateQueryService;
     private final FormTemplateValidator formTemplateValidator;
@@ -781,20 +782,23 @@ public class ApplicationService {
 
         String correctionReason = (String) body.get("correctionReason");
 
-        // 创建新版本档案
-        User user = loadUser(userId);
-        Long schoolId = schoolId(user);
-        // 纠错语义固定为「新建版本并提交待审」：缺省 isDraft 视为提交（0），
+        // 纠错语义固定为「原地更新并提交待审」：缺省 isDraft 视为提交（0），
         // 不再默认成草稿。若调用方显式传 isDraft=1 才存为草稿。
         boolean draft = isDraft(body.containsKey("isDraft") ? toInt(body.get("isDraft")) : 0);
         LocalDateTime now = LocalDateTime.now();
 
-        Archive archive = new Archive();
-        archive.setSchoolId(schoolId);
-        archive.setUserId(userId);
-        archive.setArchiveType(original.getArchiveType());
-        archive.setTitle(body.containsKey("title") ? (String) body.get("title") : original.getTitle());
-        archive.setSemesterId(body.containsKey("semesterId") ? toLong(body.get("semesterId")) : original.getSemesterId());
+        // 先快照当前已通过版本（含扩展表），供驳回时还原
+        correctionSnapshotService.writePreCorrectionSnapshot(original, userId);
+        int preVersion = original.getAuditInfo() != null && original.getAuditInfo().getCurrentVersion() != null
+                ? original.getAuditInfo().getCurrentVersion() : 1;
+
+        // 原地应用修改：不新增记录，ID 不变、版本递增，避免同一条档案出现新旧两条已通过数据
+        if (body.containsKey("title")) {
+            original.setTitle((String) body.get("title"));
+        }
+        if (body.containsKey("semesterId")) {
+            original.setSemesterId(toLong(body.get("semesterId")));
+        }
         LocalDate correctedObtainedAt;
         if (body.containsKey("obtainedTime")) {
             correctedObtainedAt = parseDate((String) body.get("obtainedTime"));
@@ -806,38 +810,33 @@ public class ApplicationService {
             correctedObtainedAt = original.getObtainedAt();
         }
         requireNotFuture(correctedObtainedAt, "获得时间");
-        archive.setObtainedAt(correctedObtainedAt);
-        archive.setDuplicateCheckStatus(0);
+        original.setObtainedAt(correctedObtainedAt);
+        original.setDuplicateCheckStatus(0);
 
-        ArchiveAuditInfo audit = new ArchiveAuditInfo();
-        ArchiveAuditInfo origAudit = original.getAuditInfo();
-        audit.setCurrentVersion(origAudit != null && origAudit.getCurrentVersion() != null
-                ? origAudit.getCurrentVersion() + 1 : 2);
-        audit.setSubmitCount(draft ? 0 : 1);
+        ArchiveAuditInfo audit = original.getAuditInfo() != null ? original.getAuditInfo() : new ArchiveAuditInfo();
+        audit.setCurrentVersion(preVersion + 1);
         if (draft) {
             audit.setDraftSavedAt(now);
-            archive.setStatus(ApplyStatusEnum.DRAFT.getValue());
+            original.setStatus(ApplyStatusEnum.DRAFT.getValue());
         } else {
             audit.setSubmittedAt(now);
-            archive.setStatus(ApplyStatusEnum.PENDING.getValue());
+            audit.setSubmitCount(audit.getSubmitCount() != null ? audit.getSubmitCount() + 1 : 1);
+            original.setStatus(ApplyStatusEnum.PENDING.getValue());
         }
-        archive.setAuditInfo(audit);
-        archive = archiveRepository.save(archive);
-
-        // 复制并合并扩展表数据
-        copyAndMergeExtension(original.getArchiveType(), original.getId(), archive.getId(), body);
-
-        // 标记原始档案的更正原因
+        original.setAuditInfo(audit);
         original.setCorrectionReason(correctionReason);
         archiveRepository.save(original);
 
+        // 扩展表原地合并修改字段
+        updateExtension(original.getArchiveType(), original.getId(), body);
+
         bindFiles(body.containsKey("evidenceFileIds")
                 ? toLongList(body.get("evidenceFileIds"))
-                : Collections.emptyList(), userId, archive.getId());
-        writeArchiveVersion(archive, userId);
-        generatePendingApprovalIfSubmitted(archive);
+                : Collections.emptyList(), userId, original.getId());
+        writeArchiveVersion(original, userId);
+        generatePendingApprovalIfSubmitted(original);
 
-        return buildResponse(archive);
+        return buildResponse(original);
     }
 
     private ArchiveSubmitResponse tryMergeExistingDraft(Long archiveId, boolean draft, Long userId,
@@ -1255,177 +1254,6 @@ public class ApplicationService {
                     if (body.containsKey("reviewContent")) ext.setReviewContent((String) body.get("reviewContent"));
                     bookReviewRepository.save(ext);
                 });
-            }
-        }
-    }
-
-    @SuppressWarnings("unchecked")
-    private void copyAndMergeExtension(String archiveType, Long oldArchiveId, Long newArchiveId,
-                                        Map<String, Object> body) {
-        switch (archiveType) {
-            case "academic_competition" -> {
-                ArchiveCompetition old = competitionRepository.findByArchiveId(oldArchiveId).orElse(null);
-                ArchiveCompetition ext = new ArchiveCompetition();
-                ext.setArchiveId(newArchiveId);
-                ext.setCompetitionName(body.containsKey("competitionName") ? (String) body.get("competitionName")
-                        : old != null ? old.getCompetitionName() : null);
-                ext.setCompetitionType(body.containsKey("competitionType") ? (String) body.get("competitionType")
-                        : old != null ? old.getCompetitionType() : null);
-                ext.setAwardLevel(body.containsKey("awardLevel") ? (String) body.get("awardLevel")
-                        : old != null ? old.getAwardLevel() : null);
-                ext.setParticipantRole(body.containsKey("participantRole") ? (String) body.get("participantRole")
-                        : old != null ? old.getParticipantRole() : null);
-                competitionRepository.save(ext);
-            }
-            case "scholarship" -> {
-                ArchiveScholarship old = scholarshipRepository.findByArchiveId(oldArchiveId).orElse(null);
-                ArchiveScholarship ext = new ArchiveScholarship();
-                ext.setArchiveId(newArchiveId);
-                ext.setScholarshipName(body.containsKey("scholarshipName") ? (String) body.get("scholarshipName")
-                        : old != null ? old.getScholarshipName() : null);
-                ext.setScholarshipCategory(body.containsKey("scholarshipCategory") ? (String) body.get("scholarshipCategory")
-                        : old != null ? old.getScholarshipCategory() : null);
-                ext.setAwardLevel(body.containsKey("awardLevel") ? (String) body.get("awardLevel")
-                        : old != null ? old.getAwardLevel() : null);
-                scholarshipRepository.save(ext);
-            }
-            case "innovation_entrepreneurship" -> {
-                ArchiveInnovation old = innovationRepository.findByArchiveId(oldArchiveId).orElse(null);
-                ArchiveInnovation ext = new ArchiveInnovation();
-                ext.setArchiveId(newArchiveId);
-                ext.setCompanyName(body.containsKey("companyName") ? (String) body.get("companyName")
-                        : old != null ? old.getCompanyName() : null);
-                ext.setIndustryType(body.containsKey("industryType") ? (String) body.get("industryType")
-                        : old != null ? old.getIndustryType() : null);
-                ext.setProjectType(body.containsKey("projectType") ? (String) body.get("projectType")
-                        : old != null ? old.getProjectType() : null);
-                ext.setParticipantRole(body.containsKey("participantRole") ? (String) body.get("participantRole")
-                        : old != null ? old.getParticipantRole() : null);
-                ext.setRegisteredAt(body.containsKey("registeredTime") ? parseDate((String) body.get("registeredTime"))
-                        : old != null ? old.getRegisteredAt() : null);
-                innovationRepository.save(ext);
-            }
-            case "academic_research" -> {
-                ArchiveResearch old = researchRepository.findByArchiveId(oldArchiveId).orElse(null);
-                ArchiveResearch ext = new ArchiveResearch();
-                ext.setArchiveId(newArchiveId);
-                ext.setProjectName(body.containsKey("projectName") ? (String) body.get("projectName")
-                        : old != null ? old.getProjectName() : null);
-                ext.setProjectLevel(body.containsKey("projectLevel") ? (String) body.get("projectLevel")
-                        : old != null ? old.getProjectLevel() : null);
-                ext.setProjectType(body.containsKey("projectType") ? (String) body.get("projectType")
-                        : old != null ? old.getProjectType() : null);
-                ext.setParticipantRole(body.containsKey("participantRole") ? (String) body.get("participantRole")
-                        : old != null ? old.getParticipantRole() : null);
-                LocalDate startDate = body.containsKey("startDate") ? parseDate((String) body.get("startDate"))
-                        : old != null ? old.getStartDate() : null;
-                LocalDate endDate = body.containsKey("endDate") ? parseDate((String) body.get("endDate"))
-                        : old != null ? old.getEndDate() : null;
-                requireDateRange(startDate, endDate, "开始日期", "结束日期");
-                requireNotFuture(endDate, "结束日期");
-                ext.setStartDate(startDate);
-                ext.setEndDate(endDate);
-                researchRepository.save(ext);
-            }
-            case "honor_certificate" -> {
-                ArchiveCertificate old = certificateRepository.findByArchiveId(oldArchiveId).orElse(null);
-                ArchiveCertificate ext = new ArchiveCertificate();
-                ext.setArchiveId(newArchiveId);
-                ext.setCertificateType(body.containsKey("certificateType") ? (String) body.get("certificateType")
-                        : old != null ? old.getCertificateType() : null);
-                ext.setCertificateName(body.containsKey("certificateName") ? (String) body.get("certificateName")
-                        : old != null ? old.getCertificateName() : null);
-                ext.setCertificateNo(body.containsKey("certificateNo") ? (String) body.get("certificateNo")
-                        : old != null ? old.getCertificateNo() : null);
-                ext.setIssuingUnit(body.containsKey("issuingUnit") ? (String) body.get("issuingUnit")
-                        : old != null ? old.getIssuingUnit() : null);
-                ext.setValidUntil(body.containsKey("validUntil") ? parseDate((String) body.get("validUntil"))
-                        : old != null ? old.getValidUntil() : null);
-                certificateRepository.save(ext);
-            }
-            case "internship" -> {
-                ArchiveInternship old = internshipRepository.findByArchiveId(oldArchiveId).orElse(null);
-                ArchiveInternship ext = new ArchiveInternship();
-                ext.setArchiveId(newArchiveId);
-                ext.setCompanyName(body.containsKey("companyName") ? (String) body.get("companyName")
-                        : old != null ? old.getCompanyName() : null);
-                ext.setLocation(body.containsKey("location") ? (String) body.get("location")
-                        : old != null ? old.getLocation() : null);
-                ext.setPosition(body.containsKey("position") ? (String) body.get("position")
-                        : old != null ? old.getPosition() : null);
-                ext.setStartDate(body.containsKey("startDate") ? parseDate((String) body.get("startDate"))
-                        : old != null ? old.getStartDate() : null);
-                ext.setEndDate(body.containsKey("endDate") ? parseDate((String) body.get("endDate"))
-                        : old != null ? old.getEndDate() : null);
-                requireDateRange(ext.getStartDate(), ext.getEndDate(), "开始日期", "结束日期");
-                internshipRepository.save(ext);
-            }
-            case "organization" -> {
-                ArchiveOrganization old = organizationRepository.findByArchiveId(oldArchiveId).orElse(null);
-                ArchiveOrganization ext = new ArchiveOrganization();
-                ext.setArchiveId(newArchiveId);
-                ext.setOrgLevel(body.containsKey("orgLevel") ? (String) body.get("orgLevel")
-                        : old != null ? old.getOrgLevel() : null);
-                ext.setDepartment(body.containsKey("department") ? (String) body.get("department")
-                        : old != null ? old.getDepartment() : null);
-                ext.setPositionTitle(body.containsKey("positionTitle") ? (String) body.get("positionTitle")
-                        : old != null ? old.getPositionTitle() : null);
-                ext.setStartDate(body.containsKey("startDate") ? parseDate((String) body.get("startDate"))
-                        : old != null ? old.getStartDate() : null);
-                ext.setEndDate(body.containsKey("endDate") ? parseDate((String) body.get("endDate"))
-                        : old != null ? old.getEndDate() : null);
-                requireDateRange(ext.getStartDate(), ext.getEndDate(), "开始日期", "结束日期");
-                organizationRepository.save(ext);
-            }
-            case "training_project" -> {
-                ArchiveTrainingProject old = trainingProjectRepository.findByArchiveId(oldArchiveId).orElse(null);
-                ArchiveTrainingProject ext = new ArchiveTrainingProject();
-                ext.setArchiveId(newArchiveId);
-                ext.setProjectName(body.containsKey("projectName") ? (String) body.get("projectName")
-                        : old != null ? old.getProjectName() : null);
-                ext.setProjectContent(body.containsKey("projectContent") ? (String) body.get("projectContent")
-                        : old != null ? old.getProjectContent() : null);
-                ext.setStartDate(body.containsKey("startDate") ? parseDate((String) body.get("startDate"))
-                        : old != null ? old.getStartDate() : null);
-                ext.setEndDate(body.containsKey("endDate") ? parseDate((String) body.get("endDate"))
-                        : old != null ? old.getEndDate() : null);
-                requireDateRange(ext.getStartDate(), ext.getEndDate(), "开始日期", "结束日期");
-                trainingProjectRepository.save(ext);
-            }
-            case "social_practice" -> {
-                ArchiveSocialPractice old = socialPracticeRepository.findByArchiveId(oldArchiveId).orElse(null);
-                ArchiveSocialPractice ext = new ArchiveSocialPractice();
-                ext.setArchiveId(newArchiveId);
-                ext.setActivityName(body.containsKey("activityName") ? (String) body.get("activityName")
-                        : old != null ? old.getActivityName() : null);
-                ext.setPracticeLocation(body.containsKey("practiceLocation") ? (String) body.get("practiceLocation")
-                        : old != null ? old.getPracticeLocation() : null);
-                ext.setPracticeUnit(body.containsKey("practiceUnit") ? (String) body.get("practiceUnit")
-                        : old != null ? old.getPracticeUnit() : null);
-                ext.setParticipantRole(body.containsKey("participantRole") ? (String) body.get("participantRole")
-                        : old != null ? old.getParticipantRole() : null);
-                ext.setStartDate(body.containsKey("startDate") ? parseDate((String) body.get("startDate"))
-                        : old != null ? old.getStartDate() : null);
-                ext.setEndDate(body.containsKey("endDate") ? parseDate((String) body.get("endDate"))
-                        : old != null ? old.getEndDate() : null);
-                BigDecimal volunteerHours = body.containsKey("volunteerHours") ? toBigDecimal(body.get("volunteerHours"))
-                        : old != null ? old.getVolunteerHours() : null;
-                requireNonNegativeVolunteerHours(volunteerHours);
-                ext.setVolunteerHours(volunteerHours);
-                requireDateRange(ext.getStartDate(), ext.getEndDate(), "开始日期", "结束日期");
-                socialPracticeRepository.save(ext);
-            }
-            case "book_review" -> {
-                ArchiveBookReview old = bookReviewRepository.findByArchiveId(oldArchiveId).orElse(null);
-                ArchiveBookReview ext = new ArchiveBookReview();
-                ext.setArchiveId(newArchiveId);
-                ext.setBookName(body.containsKey("bookName") ? (String) body.get("bookName")
-                        : old != null ? old.getBookName() : null);
-                ext.setReadMonth(body.containsKey("readMonth") ? parseDate((String) body.get("readMonth"))
-                        : old != null ? old.getReadMonth() : null);
-                ext.setReviewContent(body.containsKey("reviewContent") ? (String) body.get("reviewContent")
-                        : old != null ? old.getReviewContent() : null);
-                bookReviewRepository.save(ext);
             }
         }
     }

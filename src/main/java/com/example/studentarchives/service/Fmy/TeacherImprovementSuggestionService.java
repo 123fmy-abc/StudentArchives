@@ -53,6 +53,7 @@ public class TeacherImprovementSuggestionService {
 
         ImprovementSuggestion suggestion = new ImprovementSuggestion();
         suggestion.setWeaknessId(request.getWeaknessId());
+        suggestion.setUserId(studentId);
         suggestion.setSuggestionType(request.getSuggestionType());
         suggestion.setSuggestionContent(request.getContent());
         suggestion.setRelatedGoalId(request.getRelatedGoalId());

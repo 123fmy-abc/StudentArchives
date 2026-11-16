@@ -59,6 +59,8 @@ public class ActivityController {
 
     /**
      * 编辑动态记录（仅限草稿/已退回状态，编辑后自动提交为待审批）
+     * <p>
+     * career_plan 支持可选 isDraft=1 仅保存草稿（不重新提交、不升版本、不生成审批任务）。
      */
     @PutMapping("/{type}/{activityId}")
     public ApiResult<ActivityStatusResponse> edit(

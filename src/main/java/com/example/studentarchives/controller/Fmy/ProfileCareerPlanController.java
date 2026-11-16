@@ -160,12 +160,14 @@ public class ProfileCareerPlanController {
     /**
      * 下载职业规划文件（4.5）
      * <p>
-     * 校验归属后重定向至 OSS 签名 URL，浏览器自动下载。
+     * 后端代理流式返回 PDF 字节流（与预览共用同一份生成/缓存文件），响应头携带
+     * Content-Disposition: attachment + 规划标题文件名，不再 302 重定向 OSS
+     * （文件名由后端可控，规避 OSS 响应头缺 Content-Disposition 导致的文件名错误）。
      *
      * @param userId   当前登录用户 ID
      * @param planId   规划 ID
      * @param purpose  导出用途：internal（内部查看，屏幕水印+打印隐藏）/ external（外部投递，默认，屏幕和打印均无水印）
-     * @param response HTTP 响应（用于重定向）
+     * @param response HTTP 响应（用于流式写出 PDF）
      */
     @GetMapping("/{planId}/download")
     public void downloadPlan(
@@ -173,8 +175,17 @@ public class ProfileCareerPlanController {
             @PathVariable Long planId,
             @RequestParam(value = "purpose", required = false, defaultValue = "external") String purpose,
             HttpServletResponse response) throws IOException {
-        String url = profileCareerPlanService.getCareerPlanDownloadUrl(userId, planId, purpose);
-        response.sendRedirect(url);
+        byte[] bytes = profileCareerPlanService.getCareerPlanPreviewBytes(userId, planId, purpose);
+        String fileName = profileCareerPlanService.getCareerPlanExportFileName(userId, planId);
+        response.setContentType("application/pdf");
+        response.setHeader(HttpHeaders.CONTENT_DISPOSITION, ContentDisposition.attachment()
+                .filename(fileName, StandardCharsets.UTF_8)
+                .build()
+                .toString());
+        response.setContentLength(bytes.length);
+        OutputStream out = response.getOutputStream();
+        out.write(bytes);
+        out.flush();
     }
 
     /**
@@ -424,6 +435,27 @@ public class ProfileCareerPlanController {
             @Valid @RequestBody CareerActionFileRequest request) {
         return ApiResult.success("上传成功",
                 profileCareerPlanService.bindActionFile(userId, planId, actionId, request));
+    }
+
+    /**
+     * 解除行动成果文件（4.13.1）
+     * <p>
+     * 校验文件归属当前用户且绑定在该行动上后，软删附件关系并删除 OSS 物理文件。
+     *
+     * @param userId   当前登录用户 ID
+     * @param planId   规划 ID
+     * @param actionId 行动 ID
+     * @param fileId   行动成果文件 ID
+     * @return 操作结果
+     */
+    @DeleteMapping("/{planId}/actions/{actionId}/files/{fileId}")
+    public ApiResult<Void> unbindActionFile(
+            @AuthenticationPrincipal Long userId,
+            @PathVariable Long planId,
+            @PathVariable Long actionId,
+            @PathVariable Long fileId) {
+        profileCareerPlanService.unbindActionFile(userId, planId, actionId, fileId);
+        return ApiResult.success("已解除关联", null);
     }
 
     /**

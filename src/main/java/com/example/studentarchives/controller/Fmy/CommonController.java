@@ -132,6 +132,26 @@ public class CommonController {
         return ApiResult.success("附件已删除", null);
     }
 
+    /**
+     * 解除文件与业务的关联
+     * <p>
+     * 仅允许文件所有者操作，且仅支持职业规划家族业务（career_plan/career_action/career_milestone）
+     * 的已绑定附件。解绑后文件回到暂存状态（file_status=1），可再次绑定或调用删除接口移除。
+     *
+     * @param fileId 附件文件 ID
+     * @param userId 当前登录用户 ID
+     * @return 操作结果
+     */
+    @AuditLog(module = "file", action = "unbind", description = "解除文件关联: #fileId")
+    @DeleteMapping("/files/{fileId}/binding")
+    public ApiResult<Void> unbindFile(
+            @PathVariable Long fileId,
+            @AuthenticationPrincipal Long userId) {
+
+        commonService.unbindFile(fileId, userId);
+        return ApiResult.success("已解除关联", null);
+    }
+
     // ==================== 头像上传 ====================
 
     /**

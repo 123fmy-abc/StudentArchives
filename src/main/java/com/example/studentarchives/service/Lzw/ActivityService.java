@@ -604,16 +604,25 @@ public class ActivityService {
         if (body.getRequirement() != null) p.setRequirement(body.getRequirement());
         if (body.getProgressRate() != null) p.setProgressRate(body.getProgressRate());
 
-        p.setStatus(1);
-        p.getAuditInfo().setSubmittedAt(LocalDateTime.now());
-        p.getAuditInfo().setSubmitCount(p.getAuditInfo().getSubmitCount() + 1);
-        p.getAuditInfo().setCurrentVersion(p.getAuditInfo().getCurrentVersion() + 1);
+        boolean draft = body.getIsDraft() != null && body.getIsDraft() == 1;
+        if (draft) {
+            // 仅保存草稿：置草稿并记录时间，不升版本、不重新提交、不生成审批任务
+            p.setStatus(0);
+            p.getAuditInfo().setDraftSavedAt(LocalDateTime.now());
+        } else {
+            // 编辑并重新提交：置待审批、升版本并生成教师端待审核任务
+            p.setStatus(1);
+            p.getAuditInfo().setSubmittedAt(LocalDateTime.now());
+            p.getAuditInfo().setSubmitCount(p.getAuditInfo().getSubmitCount() + 1);
+            p.getAuditInfo().setCurrentVersion(p.getAuditInfo().getCurrentVersion() + 1);
+        }
         careerPlanRepository.save(p);
         generatePendingApprovalIfSubmitted(p);
 
         return ActivityStatusResponse.builder()
                 .id(p.getId()).type("career_plan")
-                .status(1).statusLabel("待审批")
+                .status(p.getStatus())
+                .statusLabel(ApplyStatusEnum.of(p.getStatus()).getLabel())
                 .currentVersion(p.getAuditInfo().getCurrentVersion())
                 .submitCount(p.getAuditInfo().getSubmitCount()).build();
     }
@@ -966,5 +975,7 @@ public class ActivityService {
         private String content;
         private String requirement;
         private Integer progressRate;
+        /** 0=编辑并重新提交（默认，置待审批并升版本） 1=仅保存草稿（置草稿，不升版本、不生成审批任务） */
+        private Integer isDraft;
     }
 }
