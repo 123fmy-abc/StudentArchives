@@ -31,6 +31,7 @@
 --   message_category      | string code | /common/dict           | 无           | 字典表 ✓
 --   political_status      | string code | /common/dict           | 无           | 字典表 ✓
 --   competition_type      | string code | /common/dict           | 无           | 字典表 ✓
+--   participant_role      | string code | /common/dict           | 无           | 字典表 ✓
 --   certificate_type      | string code | /common/dict           | 无           | 字典表 ✓
 --   gender                | int (0/1/2) | /common/enums          | 展示标签     | 代码 Enum ✓
 --   apply_status          | int (0~4)   | /common/enums          | 状态机       | 代码 Enum ✓
@@ -189,3 +190,18 @@ INSERT IGNORE INTO `dictionaries` (`dict_type`, `dict_code`, `dict_name`, `sort`
 ('certificate_type', 'skill',        '职业技能证书',   5, 1),
 ('certificate_type', 'honor',        '荣誉获奖证书',   6, 1),
 ('certificate_type', 'other',        '其他',           7, 1);
+
+-- ============================================================
+-- 14. 本人角色（participant_role）
+--     字段引用举例：archive_competitions.participant_role /
+--     archive_researches.participant_role /
+--     archive_innovations.participant_role /
+--     archive_social_practices.participant_role /
+--     award_applications.participant_role
+--     与学生端接口文档口径一致：solo/leader/member；
+--     创新创业、学术研究等类型允许自由文本，字典未命中时前端回退原始值
+-- ============================================================
+INSERT IGNORE INTO `dictionaries` (`dict_type`, `dict_code`, `dict_name`, `sort`, `status`) VALUES
+('participant_role', 'solo',   '独立完成', 1, 1),
+('participant_role', 'leader', '负责人',   2, 1),
+('participant_role', 'member', '成员',     3, 1);
