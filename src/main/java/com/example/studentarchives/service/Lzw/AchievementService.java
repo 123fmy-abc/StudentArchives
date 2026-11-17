@@ -21,6 +21,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
 import java.util.function.Function;
@@ -200,7 +201,9 @@ public class AchievementService {
                 .fileName(composeDownloadName(userId, archive, attachment))
                 .mimeType(attachment.getMimeType())
                 .size(attachment.getFileSize())
-                .expiresAt(LocalDateTime.now().plusMinutes(10).format(ISO_WITH_ZONE))
+                .expiresAt(LocalDateTime.now().plusMinutes(10)
+                        .atZone(ZoneId.systemDefault())
+                        .format(ISO_WITH_ZONE))
                 .build();
     }
 
