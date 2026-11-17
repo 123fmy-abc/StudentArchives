@@ -837,7 +837,10 @@ public class ActivityService {
         if (a.getCertificateNo() != null) detail.put("certificateNo", a.getCertificateNo());
         if (a.getIssuingUnit() != null) detail.put("issuingUnit", a.getIssuingUnit());
         if (a.getValidUntil() != null) detail.put("validUntil", formatDate(a.getValidUntil()));
-        if (a.getParticipantRole() != null) detail.put("participantRole", a.getParticipantRole());
+        if (a.getParticipantRole() != null) {
+            detail.put("participantRole", a.getParticipantRole());
+            detail.put("participantRoleLabel", resolveLabel("participant_role", a.getParticipantRole()));
+        }
 
         // 各星类专属子表字段回填（与提交/编辑契约 body key 一致，round-trip）
         if (at != null) {
@@ -845,12 +848,21 @@ public class ActivityService {
                 case COMPETITION_STAR -> competitionStarRepository.findByApplicationId(a.getId()).ifPresent(ext -> {
                     if (ext.getCompetitionName() != null) detail.put("competitionName", ext.getCompetitionName());
                     if (ext.getParticipatedAt() != null) detail.put("participatedTime", formatDate(ext.getParticipatedAt()));
-                    if (ext.getCompetitionLevel() != null) detail.put("competitionLevel", ext.getCompetitionLevel());
-                    if (ext.getAwardLevel() != null) detail.put("awardLevel", ext.getAwardLevel());
+                    if (ext.getCompetitionLevel() != null) {
+                        detail.put("competitionLevel", ext.getCompetitionLevel());
+                        detail.put("competitionLevelLabel", resolveLabel("competition_level", ext.getCompetitionLevel()));
+                    }
+                    if (ext.getAwardLevel() != null) {
+                        detail.put("awardLevel", ext.getAwardLevel());
+                        detail.put("awardLevelLabel", resolveLabel("award_level", ext.getAwardLevel()));
+                    }
                 });
                 case INNOVATION_STAR -> innovationStarRepository.findByApplicationId(a.getId()).ifPresent(ext -> {
                     if (ext.getCompanyName() != null) detail.put("companyName", ext.getCompanyName());
-                    if (ext.getIndustryType() != null) detail.put("industryType", ext.getIndustryType());
+                    if (ext.getIndustryType() != null) {
+                        detail.put("industryType", ext.getIndustryType());
+                        detail.put("industryTypeLabel", resolveLabel("industry_type", ext.getIndustryType()));
+                    }
                     if (ext.getApplicantRank() != null) detail.put("applicantRank", ext.getApplicantRank());
                     if (ext.getRegisteredAt() != null) detail.put("registeredTime", formatDate(ext.getRegisteredAt()));
                 });
@@ -859,7 +871,10 @@ public class ActivityService {
                     if ("project".equals(cat)) {
                         researchProjectRepository.findByResearchStarId(rs.getId()).stream().findFirst().ifPresent(p -> {
                             if (p.getProjectName() != null) detail.put("projectName", p.getProjectName());
-                            if (p.getProjectLevel() != null) detail.put("projectLevel", p.getProjectLevel());
+                            if (p.getProjectLevel() != null) {
+                                detail.put("projectLevel", p.getProjectLevel());
+                                detail.put("projectLevelLabel", resolveLabel("project_level", p.getProjectLevel()));
+                            }
                             if (p.getRankTotal() != null) detail.put("rankTotal", p.getRankTotal());
                             if (p.getEstablishedAt() != null) detail.put("establishedTime", formatDate(p.getEstablishedAt()));
                         });
