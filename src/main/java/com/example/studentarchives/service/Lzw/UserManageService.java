@@ -17,8 +17,10 @@ import com.example.studentarchives.entity.user.TeacherProfile;
 import com.example.studentarchives.entity.user.User;
 import com.example.studentarchives.entity.user.UserContactInfo;
 import com.example.studentarchives.entity.user.UserRole;
+import com.example.studentarchives.enums.DegreeTypeEnum;
 import com.example.studentarchives.enums.GenderEnum;
 import com.example.studentarchives.enums.ScopeTypeEnum;
+import com.example.studentarchives.enums.StudentStatusEnum;
 import com.example.studentarchives.exception.BusinessException;
 import com.example.studentarchives.repository.ClazzRepository;
 import com.example.studentarchives.repository.CollegeRepository;
@@ -33,6 +35,7 @@ import com.example.studentarchives.repository.TeacherProfileRepository;
 import com.example.studentarchives.repository.UserContactInfoRepository;
 import com.example.studentarchives.repository.UserRepository;
 import com.example.studentarchives.repository.UserRoleRepository;
+import com.example.studentarchives.service.Fmy.DataCompletenessService;
 import com.example.studentarchives.service.common.AdminAuthService;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import jakarta.persistence.criteria.Predicate;
@@ -56,6 +59,7 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
+import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashSet;
@@ -116,6 +120,7 @@ public class UserManageService {
     private final LoginLogRepository loginLogRepository;
     private final PasswordEncoder passwordEncoder;
     private final AdminAuthService adminAuthService;
+    private final DataCompletenessService dataCompletenessService;
 
     // ==================== 6.1 获取用户列表 ====================
 
@@ -146,6 +151,8 @@ public class UserManageService {
                 .orElseThrow(() -> new BusinessException(ResultCode.DATA_NOT_EXIST, "用户不存在"));
         UserContactInfo contact = userContactInfoRepository.findByUserId(userId).orElse(null);
         School school = user.getSchoolId() != null ? schoolRepository.findById(user.getSchoolId()).orElse(null) : null;
+        // 学籍字段只存在于学生档案，教师账号没有对应记录
+        StudentProfile studentProfile = studentProfileRepository.findByUserId(userId).orElse(null);
 
         List<UserRole> userRoles = userRoleRepository.findByUserId(userId);
         List<Role> roles = userRoles.isEmpty()
@@ -167,6 +174,13 @@ public class UserManageService {
                 .gender(user.getGender())
                 .genderLabel(GenderEnum.of(user.getGender()).getLabel())
                 .birthDate(user.getBirthDate() != null ? user.getBirthDate().toString() : null)
+                .degreeType(studentProfile != null ? studentProfile.getDegreeType() : null)
+                .degreeTypeLabel(degreeTypeLabel(studentProfile != null ? studentProfile.getDegreeType() : null))
+                .politicalStatus(studentProfile != null ? studentProfile.getPoliticalStatus() : null)
+                .politicalStatusLabel(politicalStatusLabel(
+                        studentProfile != null ? studentProfile.getPoliticalStatus() : null))
+                .studentStatus(studentProfile != null ? studentProfile.getStudentStatus() : null)
+                .studentStatusLabel(studentStatusLabel(studentProfile != null ? studentProfile.getStudentStatus() : null))
                 .schoolId(user.getSchoolId())
                 .schoolName(school != null ? school.getName() : null)
                 .roles(roles.stream()
@@ -287,6 +301,10 @@ public class UserManageService {
         if (body.getGender() != null) {
             user.setGender(body.getGender());
         }
+        if (body.getBirthDate() != null) {
+            // 空串表示清空；非空必须是 YYYY-MM-DD 且不晚于今天
+            user.setBirthDate(parseBirthDate(body.getBirthDate()));
+        }
         userRepository.save(user);
 
         if (body.getEmail() != null || body.getPhone() != null) {
@@ -299,6 +317,56 @@ public class UserManageService {
             upsertTeacherProfile(userId, body.getCollegeId());
         }
         // majorId：无对应存储列（学生归属由 classId 决定，教师归属由 collegeId 决定），接受但不落库。
+
+        boolean academicChanged = updateStudentAcademic(userId, body);
+        if (academicChanged || body.getBirthDate() != null) {
+            refreshCompleteness(userId);
+        }
+    }
+
+    /**
+     * 更新学生学籍字段（学历层次 / 政治面貌 / 学生状态）。
+     * <p>
+     * 仅管理员端可写：这些字段影响学籍真实性与评优资格，学生端只读。
+     * 语义：字段为 null 表示不修改，空串表示清空，非空必须是合法编码。
+     *
+     * @return 是否有学籍字段发生变更
+     */
+    private boolean updateStudentAcademic(Long userId, UpdateUserRequest body) {
+        boolean hasDegreeType = body.getDegreeType() != null;
+        boolean hasPoliticalStatus = body.getPoliticalStatus() != null;
+        boolean hasStudentStatus = body.getStudentStatus() != null;
+        if (!hasDegreeType && !hasPoliticalStatus && !hasStudentStatus) {
+            return false;
+        }
+
+        StudentProfile profile = studentProfileRepository.findByUserId(userId)
+                .orElseThrow(() -> new BusinessException(
+                        ResultCode.DATA_NOT_EXIST, "该用户没有学生档案，不能设置学籍信息"));
+
+        if (hasDegreeType) {
+            String degreeType = trimToNull(body.getDegreeType());
+            if (degreeType != null && DegreeTypeEnum.of(degreeType) == null) {
+                throw new BusinessException(ResultCode.PARAM_ERROR, "学历层次编码不存在");
+            }
+            profile.setDegreeType(degreeType);
+        }
+        if (hasPoliticalStatus) {
+            String politicalStatus = trimToNull(body.getPoliticalStatus());
+            if (politicalStatus != null && !isValidPoliticalStatus(politicalStatus)) {
+                throw new BusinessException(ResultCode.PARAM_ERROR, "政治面貌编码不存在");
+            }
+            profile.setPoliticalStatus(politicalStatus);
+        }
+        if (hasStudentStatus) {
+            String studentStatus = trimToNull(body.getStudentStatus());
+            if (studentStatus != null && StudentStatusEnum.of(studentStatus) == null) {
+                throw new BusinessException(ResultCode.PARAM_ERROR, "学生状态编码不存在");
+            }
+            profile.setStudentStatus(studentStatus);
+        }
+        studentProfileRepository.save(profile);
+        return true;
     }
 
     // ==================== 6.5 启用/禁用用户 ====================
@@ -710,6 +778,76 @@ public class UserManageService {
         teacherProfileRepository.save(tp);
     }
 
+    /**
+     * 解析出生日期：空串返回 null（表示清空）；非空必须是 YYYY-MM-DD 且不晚于今天。
+     */
+    private LocalDate parseBirthDate(String value) {
+        String text = value.trim();
+        if (text.isEmpty()) {
+            return null;
+        }
+        LocalDate date;
+        try {
+            date = LocalDate.parse(text, DateTimeFormatter.ISO_LOCAL_DATE);
+        } catch (DateTimeParseException e) {
+            throw new BusinessException(ResultCode.PARAM_ERROR, "出生日期格式不正确，应为 YYYY-MM-DD");
+        }
+        if (date.isAfter(LocalDate.now())) {
+            throw new BusinessException(ResultCode.PARAM_ERROR, "出生日期不能晚于今天");
+        }
+        return date;
+    }
+
+    /**
+     * 政治面貌编码校验：以字典表 political_status 为准，避免前端传入未配置的值。
+     */
+    private boolean isValidPoliticalStatus(String code) {
+        return dictionaryRepository.findActiveByDictType("political_status").stream()
+                .anyMatch(d -> code.equals(d.getDictCode()));
+    }
+
+    private String degreeTypeLabel(String code) {
+        DegreeTypeEnum e = DegreeTypeEnum.of(code);
+        return e != null ? e.getLabel() : null;
+    }
+
+    private String politicalStatusLabel(String code) {
+        if (code == null) {
+            return null;
+        }
+        return dictionaryRepository.findActiveByDictType("political_status").stream()
+                .filter(d -> code.equals(d.getDictCode()))
+                .map(Dictionary::getDictName)
+                .findFirst().orElse(null);
+    }
+
+    private String studentStatusLabel(String code) {
+        StudentStatusEnum e = StudentStatusEnum.of(code);
+        return e != null ? e.getLabel() : null;
+    }
+
+    private String trimToNull(String value) {
+        if (value == null) {
+            return null;
+        }
+        String text = value.trim();
+        return text.isEmpty() ? null : text;
+    }
+
+    /**
+     * 学籍字段/出生日期变更后增量刷新数据完整度。
+     * <p>
+     * 完整度属可重建的派生数据，计算失败仅记日志、不阻塞主流程
+     * （与 ProfileService.refreshCompleteness 口径一致）。
+     */
+    private void refreshCompleteness(Long userId) {
+        try {
+            dataCompletenessService.recalculateCurrentSemester(userId);
+        } catch (Exception e) {
+            log.warn("数据完整度增量刷新失败: userId={}", userId, e);
+        }
+    }
+
     // ==================== 通用辅助 ====================
 
     /**
@@ -865,6 +1003,15 @@ public class UserManageService {
         private Integer gender;
         private String genderLabel;
         private String birthDate;
+        /** 学历层次（学生档案字段，管理员维护） */
+        private String degreeType;
+        private String degreeTypeLabel;
+        /** 政治面貌（学生档案字段，管理员维护） */
+        private String politicalStatus;
+        private String politicalStatusLabel;
+        /** 学生状态（学生档案字段，管理员维护） */
+        private String studentStatus;
+        private String studentStatusLabel;
         private Long schoolId;
         private String schoolName;
         private List<RoleItem> roles;
@@ -943,6 +1090,14 @@ public class UserManageService {
         private Long classId;
         private Long majorId;
         private Long collegeId;
+        /** 出生日期 yyyy-MM-dd；null=不修改，""=清空 */
+        private String birthDate;
+        /** 学历层次枚举编码；null=不修改，""=清空 */
+        private String degreeType;
+        /** 政治面貌字典编码；null=不修改，""=清空 */
+        private String politicalStatus;
+        /** 学生状态枚举编码；null=不修改，""=清空 */
+        private String studentStatus;
     }
 
     /** 6.5 启用/禁用请求 */

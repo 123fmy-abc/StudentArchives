@@ -1,14 +1,12 @@
 package com.example.studentarchives.service.Fmy;
 
 import com.example.studentarchives.common.ResultCode;
-import com.example.studentarchives.dto.Fmy.profile.request.BasicInfoUpdateRequest;
+import com.example.studentarchives.dto.Fmy.profile.request.BirthDateUpdateRequest;
 import com.example.studentarchives.dto.Fmy.profile.request.ContactUpdateRequest;
 import com.example.studentarchives.dto.Fmy.profile.request.InterestUpdateRequest;
 import com.example.studentarchives.dto.Fmy.profile.request.SelfEvaluationUpdateRequest;
-import com.example.studentarchives.dto.Fmy.profile.request.StudentStatusUpdateRequest;
-import com.example.studentarchives.dto.Fmy.profile.response.BasicInfoUpdateResponse;
+import com.example.studentarchives.dto.Fmy.profile.response.BirthDateUpdateResponse;
 import com.example.studentarchives.dto.Fmy.profile.response.ContactUpdateResponse;
-import com.example.studentarchives.dto.Fmy.profile.response.StudentStatusUpdateResponse;
 import com.example.studentarchives.dto.Fmy.profile.response.DataCompletenessResponse;
 import com.example.studentarchives.dto.Fmy.profile.response.DataCompletenessResponse.CompletenessItem;
 import com.example.studentarchives.dto.Fmy.profile.response.GrowthTimelineResponse;
@@ -98,6 +96,7 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
+import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
@@ -116,7 +115,7 @@ import java.util.stream.Collectors;
  * <p>
  * 提供学生端个人中心（GET /profile/info、PUT /profile/contact、GET /profile/scores、
  * GET /profile/scores/{calculationId}/details、GET /profile/data-completeness、
- * PUT /profile/political-status、PUT /profile/interests）数据聚合与更新：
+ * PUT /profile/birth-date、PUT /profile/interests）数据聚合与更新：
  * 学籍信息、联系信息、志愿时长、画像分数、兴趣标签、学期成绩、个人奖项汇总、
  * 短板分析、评分明细、数据完整度。
  * <p>
@@ -616,69 +615,42 @@ public class ProfileService {
         return e != null ? e.getLabel() : null;
     }
 
-    // ==================== 更新个人基本信息（4.1.5） ====================
+    // ==================== 更新出生日期（4.1.5） ====================
 
     /**
-     * 更新政治面貌（PUT /profile/political-status）
+     * 更新出生日期（PUT /profile/birth-date）
      * <p>
-     * 仅可更新 student_profiles.political_status（政治面貌字典编码）。
-     * 全量更新语义：politicalStatus 必填（@NotBlank 校验，缺失返回 PARAM_ERROR），
-     * 且必须是政治面貌字典中的有效编码。
+     * 出生日期由学生本人维护，写入 users.birth_date；传空字符串表示清空。
+     * 学号、姓名、年级、专业、学历层次、政治面貌、学生状态等学籍信息不在学生端开放修改。
      *
      * @param userId  当前登录用户 ID
-     * @param request 基本信息更新请求
-     * @return 更新后的政治面貌及展示名称
+     * @param request 出生日期更新请求
+     * @return 更新后的出生日期
      */
     @Transactional
-    public BasicInfoUpdateResponse updateBasicInfo(Long userId, BasicInfoUpdateRequest request) {
-        StudentProfile profile = studentProfileRepository.findByUserId(userId)
-                .orElseThrow(() -> new BusinessException(ResultCode.DATA_NOT_EXIST, "学生档案不存在"));
+    public BirthDateUpdateResponse updateBirthDate(Long userId, BirthDateUpdateRequest request) {
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new BusinessException(ResultCode.TOKEN_INVALID, "用户不存在"));
 
-        String politicalStatus = request.getPoliticalStatus();
-        if (politicalStatus == null || politicalStatus.isBlank()) {
-            throw new BusinessException(ResultCode.PARAM_ERROR, "政治面貌不能为空");
+        // 空字符串表示清空出生日期；非空必须是合法日期且不晚于今天
+        String raw = request.getBirthDate() == null ? "" : request.getBirthDate().trim();
+        LocalDate birthDate = null;
+        if (!raw.isEmpty()) {
+            try {
+                birthDate = LocalDate.parse(raw, DateTimeFormatter.ISO_LOCAL_DATE);
+            } catch (DateTimeParseException e) {
+                throw new BusinessException(ResultCode.PARAM_ERROR, "出生日期格式不正确，应为 YYYY-MM-DD");
+            }
+            if (birthDate.isAfter(LocalDate.now())) {
+                throw new BusinessException(ResultCode.PARAM_ERROR, "出生日期不能晚于今天");
+            }
         }
-        Dictionary dict = dictionaryRepository.findActiveByDictType("political_status").stream()
-                .filter(d -> Objects.equals(politicalStatus, d.getDictCode()))
-                .findFirst()
-                .orElse(null);
-        if (dict == null) {
-            throw new BusinessException(ResultCode.PARAM_ERROR, "政治面貌编码不存在");
-        }
-        profile.setPoliticalStatus(politicalStatus);
-        studentProfileRepository.save(profile);
+        user.setBirthDate(birthDate);
+        userRepository.save(user);
         refreshCompleteness(userId);
 
-        return BasicInfoUpdateResponse.builder()
-                .politicalStatus(profile.getPoliticalStatus())
-                .politicalStatusLabel(dict.getDictName())
-                .build();
-    }
-
-    /**
-     * 更新学生状态（PUT /profile/student-status）
-     *
-     * @param userId  当前登录用户 ID
-     * @param request 学生状态更新请求
-     * @return 更新后的学生状态及展示名称
-     */
-    @Transactional
-    public StudentStatusUpdateResponse updateStudentStatus(Long userId, StudentStatusUpdateRequest request) {
-        StudentProfile profile = studentProfileRepository.findByUserId(userId)
-                .orElseThrow(() -> new BusinessException(ResultCode.DATA_NOT_EXIST, "学生档案不存在"));
-
-        String studentStatus = request.getStudentStatus();
-        StudentStatusEnum statusEnum = StudentStatusEnum.of(studentStatus);
-        if (statusEnum == null) {
-            throw new BusinessException(ResultCode.PARAM_ERROR, "学生状态编码不存在");
-        }
-        profile.setStudentStatus(studentStatus);
-        studentProfileRepository.save(profile);
-        refreshCompleteness(userId);
-
-        return StudentStatusUpdateResponse.builder()
-                .studentStatus(profile.getStudentStatus())
-                .studentStatusLabel(statusEnum.getLabel())
+        return BirthDateUpdateResponse.builder()
+                .birthDate(birthDate != null ? formatDate(birthDate) : null)
                 .build();
     }
 

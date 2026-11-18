@@ -1,15 +1,13 @@
 package com.example.studentarchives.controller.Fmy;
 
 import com.example.studentarchives.common.ApiResult;
-import com.example.studentarchives.dto.Fmy.profile.request.BasicInfoUpdateRequest;
+import com.example.studentarchives.dto.Fmy.profile.request.BirthDateUpdateRequest;
 import com.example.studentarchives.dto.Fmy.profile.request.ContactUpdateRequest;
 import com.example.studentarchives.dto.Fmy.profile.request.ExportRequest;
 import com.example.studentarchives.dto.Fmy.profile.request.InterestUpdateRequest;
 import com.example.studentarchives.dto.Fmy.profile.request.SelfEvaluationUpdateRequest;
-import com.example.studentarchives.dto.Fmy.profile.request.StudentStatusUpdateRequest;
-import com.example.studentarchives.dto.Fmy.profile.response.BasicInfoUpdateResponse;
+import com.example.studentarchives.dto.Fmy.profile.response.BirthDateUpdateResponse;
 import com.example.studentarchives.dto.Fmy.profile.response.ContactUpdateResponse;
-import com.example.studentarchives.dto.Fmy.profile.response.StudentStatusUpdateResponse;
 import com.example.studentarchives.dto.Fmy.profile.response.DataCompletenessResponse;
 import com.example.studentarchives.dto.Fmy.profile.response.ExportPreviewResponse;
 import com.example.studentarchives.dto.Fmy.profile.response.ExportSubmitResponse;
@@ -124,31 +122,17 @@ public class ProfileController {
     }
 
     /**
-     * 更新政治面貌（4.1.5）
+     * 更新出生日期（4.1.5）
      *
      * @param userId  当前登录用户 ID
-     * @param request 政治面貌更新请求
-     * @return 更新后的政治面貌
+     * @param request 出生日期更新请求
+     * @return 更新后的出生日期
      */
-    @PutMapping("/political-status")
-    public ApiResult<BasicInfoUpdateResponse> updateBasicInfo(
+    @PutMapping("/birth-date")
+    public ApiResult<BirthDateUpdateResponse> updateBirthDate(
             @AuthenticationPrincipal Long userId,
-            @Valid @RequestBody BasicInfoUpdateRequest request) {
-        return ApiResult.success("更新成功", profileService.updateBasicInfo(userId, request));
-    }
-
-    /**
-     * 更新学生状态（4.1.5.1）
-     *
-     * @param userId  当前登录用户 ID
-     * @param request 学生状态更新请求
-     * @return 更新后的学生状态
-     */
-    @PutMapping("/student-status")
-    public ApiResult<StudentStatusUpdateResponse> updateStudentStatus(
-            @AuthenticationPrincipal Long userId,
-            @Valid @RequestBody StudentStatusUpdateRequest request) {
-        return ApiResult.success("更新成功", profileService.updateStudentStatus(userId, request));
+            @Valid @RequestBody BirthDateUpdateRequest request) {
+        return ApiResult.success("更新成功", profileService.updateBirthDate(userId, request));
     }
 
     /**

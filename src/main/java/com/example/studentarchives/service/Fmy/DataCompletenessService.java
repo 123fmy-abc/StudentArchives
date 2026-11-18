@@ -56,7 +56,8 @@ import java.util.stream.Collectors;
  * <ul>
  *   <li>评分重算（AdminScoreService.processStudent）——批量 / 档案审核通过自动评分 / 成绩导入后重算；</li>
  *   <li>档案审核通过但无生效指标规则版本（AdminScoreService.recalculateStudent 无规则分支）；</li>
- *   <li>学生档案信息变更（ProfileService 更新联系方式 / 政治面貌 / 学生状态 / 兴趣 / 自我评价）；</li>
+ *   <li>学生档案信息变更（ProfileService 更新联系方式 / 出生日期 / 兴趣 / 自我评价）；</li>
+ *   <li>管理员更新学籍字段（UserManageService 更新出生日期 / 学历层次 / 政治面貌 / 学生状态）；</li>
  *   <li>读取兜底（ProfileService.getDataCompleteness 查询为空时现场计算并落库）。</li>
  * </ul>
  * <p>
