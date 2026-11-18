@@ -224,7 +224,15 @@ public class DataCompletenessService {
         return checks;
     }
 
-    /** 竞赛实践：竞赛 / 实践 / 创新 / 获奖 / 志愿 */
+    /**
+     * 竞赛实践：竞赛 / 实践 / 创新 / 获奖。
+     * <p>
+     * 注意：「志愿服务」原先在此与 {@link #qualityChecks} 同时作为检查项，两处判据完全相同的
+     * {@link #hasVolunteerContribution}。由于 overallRate = 各维度 rate 的算术平均（见
+     * ProfileService.getDataCompleteness），同一事实会在两个维度各扣一次分，学生补一次材料
+     * 总分却涨两档，与前端「同一项在多个维度中重复出现时只计一次分」的说明矛盾。
+     * 现统一归口到「综合素质」维度，请勿再在此处重复添加跨维度共用的检查项。
+     */
     private List<Check> competitionChecks(DataContext ctx) {
         List<Check> checks = new ArrayList<>();
         checks.add(new Check("竞赛获奖", hasAnyArchiveType(ctx, "competition", "academic_competition")));
@@ -232,7 +240,6 @@ public class DataCompletenessService {
         checks.add(new Check("科研创新", hasAnyArchiveType(ctx, "research", "academic_research",
                 "innovation_entrepreneurship", "training_project")));
         checks.add(new Check("奖学金荣誉", hasAnyArchiveType(ctx, "scholarship", "honor_certificate")));
-        checks.add(new Check("志愿服务", hasVolunteerContribution(ctx)));
         return checks;
     }
 
@@ -248,6 +255,7 @@ public class DataCompletenessService {
         checks.add(new Check("自我评价", ctx.profile != null && notBlank(ctx.profile.getSelfEvaluation())));
         checks.add(new Check("组织任职", hasAnyArchiveType(ctx, "organization")));
         checks.add(new Check("证书资质", hasAnyArchiveType(ctx, "certificate", "training")));
+        // 志愿服务的唯一计分归口（competitionChecks 不再重复检查，避免 overallRate 重复扣分）
         checks.add(new Check("志愿服务", hasVolunteerContribution(ctx)));
         return checks;
     }
