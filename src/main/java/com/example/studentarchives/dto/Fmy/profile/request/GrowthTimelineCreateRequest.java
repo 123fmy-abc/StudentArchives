@@ -1,10 +1,7 @@
 package com.example.studentarchives.dto.Fmy.profile.request;
 
 import jakarta.validation.Valid;
-import jakarta.validation.constraints.Max;
-import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
-import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
 import lombok.AllArgsConstructor;
@@ -26,10 +23,10 @@ public class GrowthTimelineCreateRequest {
     /** 学期 ID（growth_timelines.semester_id，可空） */
     private Long semesterId;
 
-    /** 事件类型：1=奖项 2=成绩 3=实践 4=职业规划 5=短板改进 6=能力提升 */
-    @NotNull(message = "事件类型不能为空")
-    @Min(value = 1, message = "事件类型只能是1-6")
-    @Max(value = 6, message = "事件类型只能是1-6")
+    /**
+     * 事件类型（已废弃：由后端按来源记录自动推导，本字段传入即被忽略，
+     * 仅为兼容旧客户端保留）。1=奖项 2=成绩 3=实践 4=职业规划 5=短板改进 6=能力提升
+     */
     private Integer eventType;
 
     /** 事件名称 */

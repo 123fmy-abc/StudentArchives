@@ -55,7 +55,8 @@ import java.util.stream.Collectors;
  * 唯一性与软删除通过 {@link EntityManager} 动态查询完成，未修改既有 Repository。
  * <p>
  * 数据口径（与《学生端接口文档》4.2 一致）：
- * - event_type：1=奖项 2=成绩 3=实践 4=职业规划 5=短板改进 6=能力提升
+ * - event_type：1=奖项 2=成绩 3=实践 4=职业规划 5=短板改进 6=能力提升；由后端按来源记录推导
+ *   （见 {@link GrowthTimelineEventTypeResolver}），请求中的 eventType 已废弃（传入即忽略）
  * - 不需要审核：新增即直接生效（status 固定为 2=已通过）；任意状态均可直接修改/删除
  * - 来源记录必填：每条时间轴事件必须关联一条已有来源记录（sourceType + sourceId），
  *   且该来源记录须真实存在（未软删除）并归属当前用户，否则报错
@@ -124,6 +125,7 @@ public class ProfileGrowthTimelineService {
     private final GrowthTimelineTagRepository growthTimelineTagRepository;
     private final EntityManager entityManager;
     private final GrowthTimelineStatusResolver growthTimelineStatusResolver;
+    private final GrowthTimelineEventTypeResolver growthTimelineEventTypeResolver;
     private final GrowthSourceScoreRuleRepository growthSourceScoreRuleRepository;
     private final ObjectMapper objectMapper;
 
@@ -139,7 +141,6 @@ public class ProfileGrowthTimelineService {
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new BusinessException(ResultCode.TOKEN_INVALID, "用户不存在"));
 
-        validateEventType(request.getEventType());
         LocalDate eventDate = parseEventAt(request.getEventAt());
         validateEventAt(user.getSchoolId(), eventDate);
         // 学期归集：传入 semesterId 则校验后使用；未传时按 eventAt 落入的学期日期区间自动归属
@@ -149,6 +150,8 @@ public class ProfileGrowthTimelineService {
         String sourceType = request.getSourceType().trim();
         validateSourceRecord(userId, sourceType, request.getSourceId());
         validateSourceApproved(sourceType, request.getSourceId());
+        // 事件类型由来源记录推导（入参 eventType 已废弃，传入即忽略）
+        int eventType = growthTimelineEventTypeResolver.resolve(sourceType, request.getSourceId());
         checkSourceUnique(userId, sourceType, request.getSourceId(), null);
         if (request.getEventKey() != null && !request.getEventKey().isBlank()) {
             checkEventKeyUnique(userId, request.getEventKey().trim(), null);
@@ -158,7 +161,7 @@ public class ProfileGrowthTimelineService {
         timeline.setSchoolId(user.getSchoolId());
         timeline.setUserId(userId);
         timeline.setSemesterId(semesterId);
-        timeline.setEventType(request.getEventType());
+        timeline.setEventType(eventType);
         timeline.setEventName(request.getEventName().trim());
         timeline.setContent(request.getContent());
         timeline.setCoverImage(request.getCoverImage());
@@ -194,7 +197,8 @@ public class ProfileGrowthTimelineService {
      * 修改成长时间轴事件（PUT /profile/growth-timeline/{id}）
      * <p>
      * 全部字段可选，仅更新传入的非空字段；tags 传入时整体替换子表数据；
-     * abilityData 已废弃（传入即忽略），能力得分仅在事件类型实际变更时按规则重建。
+     * abilityData / eventType 已废弃（传入即忽略）；能力得分仅在来源记录类型实际变更时按规则重建，
+     * 事件类型随来源记录自动重算。
      * 不需要审核：任意状态（含已通过 2）均可直接修改；来源记录仍须关联已有来源记录。
      *
      * @param userId  当前登录用户 ID
@@ -224,10 +228,7 @@ public class ProfileGrowthTimelineService {
                     .ifPresent(timeline::setSemesterId);
         }
         String originalSourceType = timeline.getSourceType();
-        if (request.getEventType() != null) {
-            validateEventType(request.getEventType());
-            timeline.setEventType(request.getEventType());
-        }
+        Long originalSourceId = timeline.getSourceId();
         if (request.getEventName() != null) {
             if (request.getEventName().isBlank()) {
                 throw new BusinessException(ResultCode.PARAM_ERROR, "事件名称不能为空");
@@ -270,6 +271,21 @@ public class ProfileGrowthTimelineService {
             timeline.setSourceType(targetSourceType);
             timeline.setSourceId(targetSourceId);
         }
+        // 事件类型由来源记录推导（入参 eventType 已废弃）：
+        // 来源引用变更时必须推导成功（新来源已校验存在）；未变更时沿用原分类，
+        // 仅当可正常推导才回写，避免历史失效来源 / 未登记档案类型阻塞其他字段编辑
+        boolean sourceRefChanged = !Objects.equals(originalSourceType, timeline.getSourceType())
+                || !Objects.equals(originalSourceId, timeline.getSourceId());
+        if (sourceRefChanged) {
+            timeline.setEventType(growthTimelineEventTypeResolver.resolve(
+                    timeline.getSourceType(), timeline.getSourceId()));
+        } else {
+            Integer derivedEventType = growthTimelineEventTypeResolver.tryResolve(
+                    timeline.getSourceType(), timeline.getSourceId());
+            if (derivedEventType != null) {
+                timeline.setEventType(derivedEventType);
+            }
+        }
         if (request.getEventKey() != null) {
             if (request.getEventKey().isBlank()) {
                 timeline.setEventKey(null);
@@ -280,7 +296,7 @@ public class ProfileGrowthTimelineService {
         }
         // 能力得分由计分规则自动生成（abilityData 已废弃，传入即忽略）：
         // 仅当来源记录类型实际变更时按新类型规则重建，其余修改不影响存量得分；
-        // event_type 仅供前端分类筛选，不参与计分
+        // event_type 由来源推导，仅供分类筛选，不参与计分
         if (!Objects.equals(originalSourceType, timeline.getSourceType())) {
             softDeleteAbilities(id);
             saveAbilitiesFromRule(id, timeline.getSourceType());
@@ -332,13 +348,6 @@ public class ProfileGrowthTimelineService {
             throw new BusinessException(ResultCode.ACCESS_DENIED, "无访问权限");
         }
         return timeline;
-    }
-
-    /** 校验事件类型合法（1-6） */
-    private void validateEventType(Integer eventType) {
-        if (EventTypeEnum.of(eventType) == null) {
-            throw new BusinessException(ResultCode.PARAM_ILLEGAL, "事件类型只能是1-6");
-        }
     }
 
     /** 校验学期存在 */
