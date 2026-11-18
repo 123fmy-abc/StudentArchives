@@ -22,6 +22,7 @@ import com.example.studentarchives.dto.Fmy.profile.response.InterestUpdateRespon
 import com.example.studentarchives.dto.Fmy.profile.response.ProfileInfoResponse;
 import com.example.studentarchives.dto.Fmy.profile.response.ProfileInfoResponse.AcademicInfo;
 import com.example.studentarchives.dto.Fmy.profile.response.ProfileInfoResponse.ContactInfo;
+import com.example.studentarchives.dto.Fmy.profile.response.ProfileInfoResponse.CourseGradeItem;
 import com.example.studentarchives.dto.Fmy.profile.response.ProfileInfoResponse.DimensionProfileItem;
 import com.example.studentarchives.dto.Fmy.profile.response.ProfileInfoResponse.InterestItem;
 import com.example.studentarchives.dto.Fmy.profile.response.ProfileInfoResponse.PersonalAwardItem;
@@ -41,6 +42,7 @@ import com.example.studentarchives.entity.evaluation.ScoreCalculationDetail;
 import com.example.studentarchives.entity.foundation.AbilityDimension;
 import com.example.studentarchives.entity.foundation.Dictionary;
 import com.example.studentarchives.entity.foundation.EvaluationIndicator;
+import com.example.studentarchives.entity.grade.GpaRecord;
 import com.example.studentarchives.entity.grade.SemesterGpaSummary;
 import com.example.studentarchives.entity.growth.GrowthTimeline;
 import com.example.studentarchives.entity.growth.GrowthTimelineAbility;
@@ -68,6 +70,7 @@ import com.example.studentarchives.repository.CollegeRepository;
 import com.example.studentarchives.repository.DataCompletenessRepository;
 import com.example.studentarchives.repository.DictionaryRepository;
 import com.example.studentarchives.repository.EvaluationIndicatorRepository;
+import com.example.studentarchives.repository.GpaRecordRepository;
 import com.example.studentarchives.repository.GrowthTimelineAbilityRepository;
 import com.example.studentarchives.repository.GrowthTimelineRepository;
 import com.example.studentarchives.repository.GrowthTimelineTagRepository;
@@ -158,6 +161,7 @@ public class ProfileService {
     private final CollegeRepository collegeRepository;
     private final SemesterRepository semesterRepository;
     private final SemesterGpaSummaryRepository semesterGpaSummaryRepository;
+    private final GpaRecordRepository gpaRecordRepository;
     private final PortraitEvaluationScoreRepository portraitEvaluationScoreRepository;
     private final AbilityDimensionRepository abilityDimensionRepository;
     private final UserInterestRepository userInterestRepository;
@@ -262,9 +266,16 @@ public class ProfileService {
         // ==================== 学期成绩 ====================
         List<SemesterGpaSummary> gpaSummaries = semesterGpaSummaryRepository.findByUserId(userId);
         Map<Long, String> semesterNameMap = buildSemesterNameMap(gpaSummaries);
+        // 课程成绩明细：一次查询后按学期分组，避免按学期逐个查询（N+1）
+        Map<Long, List<GpaRecord>> coursesBySemester = gpaRecordRepository
+                .findByUserIdOrderByCourseCodeAsc(userId)
+                .stream()
+                .filter(r -> r.getSemesterId() != null)
+                .collect(Collectors.groupingBy(GpaRecord::getSemesterId));
         List<SemesterGradeItem> semesterGrades = gpaSummaries.stream()
                 .sorted(Comparator.comparing(s -> s.getSemesterId() != null ? s.getSemesterId() : 0L))
-                .map(s -> toSemesterGradeItem(s, semesterNameMap))
+                .map(s -> toSemesterGradeItem(s, semesterNameMap,
+                        coursesBySemester.getOrDefault(s.getSemesterId(), Collections.emptyList())))
                 .collect(Collectors.toList());
 
         // ==================== 累计绩点（学分加权累计口径） ====================
@@ -272,6 +283,9 @@ public class ProfileService {
                 .map(SemesterGpaSummary::getTotalCredit)
                 .filter(Objects::nonNull)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
+        int overallCourseCount = gpaSummaries.stream()
+                .mapToInt(SemesterGpaSummary::getCourseCount)
+                .sum();
         BigDecimal overallGpa = null;
         BigDecimal overallAverageScore = null;
         if (overallTotalCredit.compareTo(BigDecimal.ZERO) > 0) {
@@ -308,6 +322,8 @@ public class ProfileService {
                 .semesterGrades(semesterGrades)
                 .overallGpa(overallGpa)
                 .overallAverageScore(overallAverageScore)
+                .overallTotalCredit(cleanDecimal(overallTotalCredit))
+                .overallCourseCount(overallCourseCount)
                 .personalAwards(personalAwards)
                 .weaknessAnalysis(weaknessAnalysis)
                 .selfEvaluation(profile != null ? profile.getSelfEvaluation() : null)
@@ -1082,9 +1098,18 @@ public class ProfileService {
     // ==================== 学期成绩 ====================
 
     /**
-     * 成绩汇总实体 → 学期成绩项
+     * 成绩汇总实体 → 学期成绩项（含本学期每门课程明细）
+     *
+     * @param summary      学期成绩汇总（semester_gpa_summaries）
+     * @param semesterNameMap 学期 ID → 学期名称
+     * @param records      本学期课程成绩明细（gpa_records）
      */
-    private SemesterGradeItem toSemesterGradeItem(SemesterGpaSummary summary, Map<Long, String> semesterNameMap) {
+    private SemesterGradeItem toSemesterGradeItem(SemesterGpaSummary summary,
+                                                  Map<Long, String> semesterNameMap,
+                                                  List<GpaRecord> records) {
+        List<CourseGradeItem> courses = records.stream()
+                .map(this::toCourseGradeItem)
+                .collect(Collectors.toList());
         return SemesterGradeItem.builder()
                 .semesterId(summary.getSemesterId())
                 .semester(semesterNameMap.get(summary.getSemesterId()))
@@ -1095,6 +1120,21 @@ public class ProfileService {
                 .averageScore(cleanDecimal(summary.getAverageScore()))
                 .rankInClass(summary.getRankInClass())
                 .rankInMajor(summary.getRankInMajor())
+                .courses(courses)
+                .build();
+    }
+
+    /**
+     * 课程成绩实体 → 课程成绩项
+     */
+    private CourseGradeItem toCourseGradeItem(GpaRecord record) {
+        return CourseGradeItem.builder()
+                .courseCode(record.getCourseCode())
+                .courseName(record.getCourseName())
+                .courseType(record.getCourseType())
+                .credit(cleanDecimal(record.getCredit()))
+                .gpa(cleanDecimal(record.getGpa()))
+                .score(cleanDecimal(record.getScore()))
                 .build();
     }
 
