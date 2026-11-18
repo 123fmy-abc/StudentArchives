@@ -7,6 +7,7 @@ import com.example.studentarchives.dto.Lzw.achievement.response.AchievementListI
 import com.example.studentarchives.dto.Lzw.achievement.response.AchievementListResponse;
 import com.example.studentarchives.entity.archive.*;
 import com.example.studentarchives.entity.file.AttachmentRelation;
+import com.example.studentarchives.entity.foundation.Dictionary;
 import com.example.studentarchives.entity.org.Semester;
 import com.example.studentarchives.entity.user.User;
 import com.example.studentarchives.enums.ApplyStatusEnum;
@@ -74,6 +75,7 @@ public class AchievementService {
     private final AttachmentRelationRepository attachmentRelationRepository;
     private final SemesterRepository semesterRepository;
     private final UserRepository userRepository;
+    private final DictionaryRepository dictionaryRepository;
     private final CommonService commonService;
 
     private final ArchiveCompetitionRepository competitionRepository;
@@ -115,9 +117,10 @@ public class AchievementService {
         ChildData children = loadChildren(pageItems.stream().map(Archive::getId).toList());
         Map<Long, Integer> fileCounts = loadFileCounts(pageItems.stream().map(Archive::getId).toList());
         Map<Long, String> semesterNames = loadSemesterNames(all);
+        DictCache dict = new DictCache();
 
         List<AchievementListItemResponse> items = pageItems.stream()
-                .map(a -> toListItem(a, children, fileCounts, semesterNames))
+                .map(a -> toListItem(a, children, fileCounts, semesterNames, dict))
                 .toList();
 
         return AchievementListResponse.builder()
@@ -140,7 +143,7 @@ public class AchievementService {
         Archive archive = findOwnedArchive(id, userId);
         ChildData children = loadChildren(List.of(archive.getId()));
         Map<Long, String> semesterNames = loadSemesterNames(List.of(archive));
-        Extra extra = extraOf(archive, children);
+        Extra extra = extraOf(archive, children, new DictCache());
 
         List<AttachmentRelation> files = attachmentRelationRepository
                 .findByBizTypeAndBizId(BIZ_TYPE_ARCHIVE, archive.getId());
@@ -210,8 +213,9 @@ public class AchievementService {
     // ==================== 映射与组装 ====================
 
     private AchievementListItemResponse toListItem(Archive archive, ChildData children,
-                                                   Map<Long, Integer> fileCounts, Map<Long, String> semesterNames) {
-        Extra extra = extraOf(archive, children);
+                                                   Map<Long, Integer> fileCounts, Map<Long, String> semesterNames,
+                                                   DictCache dict) {
+        Extra extra = extraOf(archive, children, dict);
         String category = categoryOf(archive.getArchiveType());
         String materialStatus = materialStatusOf(archive);
         return AchievementListItemResponse.builder()
@@ -238,39 +242,39 @@ public class AchievementService {
      * 档案主表没有等级/单位/描述字段，这些信息在 archive_* 扩展表里。
      * 扩展表缺失（历史种子数据）时保持空串，不用标题猜测填充。
      */
-    private Extra extraOf(Archive archive, ChildData c) {
+    private Extra extraOf(Archive archive, ChildData c, DictCache dict) {
         Extra extra = new Extra();
         Long id = archive.getId();
         switch (normalizeType(archive.getArchiveType())) {
             case "competition" -> {
                 ArchiveCompetition x = c.competition.get(id);
                 if (x != null) {
-                    extra.level = nvl(x.getAwardLevel());
-                    put(extra, "竞赛类型", x.getCompetitionType());
-                    put(extra, "参赛角色", x.getParticipantRole());
+                    extra.level = dict.label(x.getAwardLevel(), "award_level");
+                    put(extra, "竞赛类型", dict.label(x.getCompetitionType(), "competition_type"));
+                    put(extra, "参赛角色", dict.label(x.getParticipantRole(), "participant_role"));
                 }
             }
             case "scholarship" -> {
                 ArchiveScholarship x = c.scholarship.get(id);
                 if (x != null) {
-                    extra.level = nvl(x.getAwardLevel());
-                    put(extra, "奖学金类别", x.getScholarshipCategory());
+                    extra.level = dict.label(x.getAwardLevel(), "scholarship_award_level", "award_level");
+                    put(extra, "奖学金类别", dict.label(x.getScholarshipCategory(), "scholarship_level"));
                 }
             }
             case "certificate" -> {
                 ArchiveCertificate x = c.certificate.get(id);
                 if (x != null) {
                     extra.issuer = nvl(x.getIssuingUnit());
-                    put(extra, "证书类型", x.getCertificateType());
+                    put(extra, "证书类型", dict.label(x.getCertificateType(), "certificate_type"));
                     put(extra, "证书编号", x.getCertificateNo());
                 }
             }
             case "research" -> {
                 ArchiveResearch x = c.research.get(id);
                 if (x != null) {
-                    extra.level = nvl(x.getProjectLevel());
-                    put(extra, "项目类型", x.getProjectType());
-                    put(extra, "参与角色", x.getParticipantRole());
+                    extra.level = dict.label(x.getProjectLevel(), "project_level");
+                    put(extra, "项目类型", dict.label(x.getProjectType(), "research_type"));
+                    put(extra, "参与角色", dict.label(x.getParticipantRole(), "participant_role"));
                 }
             }
             case "social_practice" -> {
@@ -279,7 +283,7 @@ public class AchievementService {
                     extra.issuer = nvl(x.getPracticeUnit());
                     if (x.getStartDate() != null) extra.eventDate = x.getStartDate();
                     put(extra, "实践地点", x.getPracticeLocation());
-                    put(extra, "参与角色", x.getParticipantRole());
+                    put(extra, "参与角色", dict.label(x.getParticipantRole(), "participant_role"));
                     if (x.getVolunteerHours() != null) {
                         put(extra, "志愿时长", x.getVolunteerHours().stripTrailingZeros().toPlainString() + " 小时");
                     }
@@ -297,7 +301,7 @@ public class AchievementService {
             case "organization" -> {
                 ArchiveOrganization x = c.organization.get(id);
                 if (x != null) {
-                    extra.level = nvl(x.getOrgLevel());
+                    extra.level = dict.label(x.getOrgLevel(), "organization_level");
                     put(extra, "部门", x.getDepartment());
                     put(extra, "职务", x.getPositionTitle());
                 }
@@ -322,9 +326,9 @@ public class AchievementService {
                 if (x != null) {
                     extra.issuer = nvl(x.getCompanyName());
                     if (x.getRegisteredAt() != null) extra.eventDate = x.getRegisteredAt();
-                    put(extra, "行业类型", x.getIndustryType());
-                    put(extra, "项目类型", x.getProjectType());
-                    put(extra, "参与角色", x.getParticipantRole());
+                    put(extra, "行业类型", dict.label(x.getIndustryType(), "industry_type"));
+                    put(extra, "项目类型", dict.label(x.getProjectType(), "company_type"));
+                    put(extra, "参与角色", dict.label(x.getParticipantRole(), "participant_role"));
                 }
             }
             default -> {
@@ -628,6 +632,26 @@ public class AchievementService {
     }
 
     // ==================== 内部结构 ====================
+
+    /**
+     * 单次请求内的字典编码 → 显示名缓存。
+     * 按 dictTypes 顺序查找，字典未命中时回退原始值（兼容自由文本，如自定义参与角色）。
+     */
+    private final class DictCache {
+        private final Map<String, Map<String, String>> cache = new HashMap<>();
+
+        private String label(String code, String... dictTypes) {
+            if (code == null || code.isBlank()) return nvl(code);
+            for (String type : dictTypes) {
+                Map<String, String> map = cache.computeIfAbsent(type, t ->
+                        dictionaryRepository.findActiveByDictType(t).stream()
+                                .collect(Collectors.toMap(Dictionary::getDictCode, Dictionary::getDictName, (a, b) -> a)));
+                String name = map.get(code);
+                if (name != null) return name;
+            }
+            return code;
+        }
+    }
 
     private static final class Extra {
         private String level = "";

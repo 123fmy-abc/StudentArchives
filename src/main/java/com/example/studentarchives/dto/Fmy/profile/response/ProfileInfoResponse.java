@@ -52,6 +52,12 @@ public class ProfileInfoResponse {
     /** 累计平均分（各学期 average_score 按 total_credit 加权） */
     private BigDecimal overallAverageScore;
 
+    /** 累计总学分（全部学期 total_credit 求和） */
+    private BigDecimal overallTotalCredit;
+
+    /** 累计总课程数（全部学期 course_count 求和） */
+    private Integer overallCourseCount;
+
     /** 个人奖项汇总 */
     private List<PersonalAwardItem> personalAwards;
 
@@ -246,6 +252,37 @@ public class ProfileInfoResponse {
 
         /** 专业排名 */
         private Integer rankInMajor;
+
+        /** 本学期课程成绩明细（来自 gpa_records，按课程代码排序） */
+        private List<CourseGradeItem> courses;
+    }
+
+    /**
+     * 单门课程成绩项（来自 gpa_records）
+     */
+    @Data
+    @Builder
+    @NoArgsConstructor
+    @AllArgsConstructor
+    public static class CourseGradeItem {
+
+        /** 课程代码 */
+        private String courseCode;
+
+        /** 科目名称 */
+        private String courseName;
+
+        /** 课程类型：必修/选修/实践等 */
+        private String courseType;
+
+        /** 学分 */
+        private BigDecimal credit;
+
+        /** 绩点 */
+        private BigDecimal gpa;
+
+        /** 期末成绩 */
+        private BigDecimal score;
     }
 
     /**
