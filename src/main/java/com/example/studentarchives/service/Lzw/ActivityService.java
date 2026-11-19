@@ -15,6 +15,7 @@ import com.example.studentarchives.entity.career.CareerPlan;
 import com.example.studentarchives.entity.embed.ArchiveAuditInfo;
 import com.example.studentarchives.entity.file.AttachmentRelation;
 import com.example.studentarchives.entity.foundation.Dictionary;
+import com.example.studentarchives.entity.org.Semester;
 import com.example.studentarchives.entity.user.User;
 import com.example.studentarchives.entity.version.ModelVersion;
 import com.example.studentarchives.enums.ActivityTypeEnum;
@@ -545,7 +546,11 @@ public class ActivityService {
         if (body.getTitle() != null) a.setTitle(body.getTitle());
         if (body.getSemesterId() != null) a.setSemesterId(body.getSemesterId());
         if (body.getCourseCode() != null) a.setCourseCode(body.getCourseCode());
-        if (body.getObtainedAt() != null) a.setObtainedAt(body.getObtainedAt());
+        if (body.getObtainedAt() != null) {
+            // 编辑后即重新提交待审：获得时间须与所选学期匹配且不晚于当前日期
+            requireEventTimeInSemester(a.getSemesterId(), body.getObtainedAt(), "获得时间");
+            a.setObtainedAt(body.getObtainedAt());
+        }
         if (body.getCorrectionReason() != null) a.setCorrectionReason(body.getCorrectionReason());
 
         a.setStatus(1); // 编辑后 → 待审批
@@ -562,6 +567,49 @@ public class ActivityService {
                 .submitCount(a.getAuditInfo().getSubmitCount()).build();
     }
 
+    /**
+     * 事件时间（获得时间）必须落在所选学期范围内，且不能晚于当前日期。
+     * 学期区间以后端 semesters.start_date / end_date 为准，小学期/暑期学期同样按实际配置校验。
+     */
+    private void requireEventTimeInSemester(Long semesterId, LocalDate eventTime, String label) {
+        if (eventTime == null) return;
+        if (eventTime.isAfter(LocalDate.now())) {
+            throw new BusinessException(ResultCode.PARAM_ERROR, label + "不能大于当前时间");
+        }
+        if (semesterId == null) return;
+        Semester semester = semesterRepository.findById(semesterId)
+                .orElseThrow(() -> new BusinessException(ResultCode.DATA_NOT_EXIST, "学期不存在"));
+        if (semester.getStartDate() != null && eventTime.isBefore(semester.getStartDate())) {
+            throw new BusinessException(ResultCode.PARAM_ERROR, label + "不能早于所选学期的开始日期（"
+                    + semester.getStartDate() + "）");
+        }
+        if (semester.getEndDate() != null && eventTime.isAfter(semester.getEndDate())) {
+            throw new BusinessException(ResultCode.PARAM_ERROR, label + "不能晚于所选学期的结束日期（"
+                    + semester.getEndDate() + "）");
+        }
+    }
+
+    /** 奖项子表事件时间与（变更后的）学期一致性校验：动态编辑入口改学期时调用 */
+    private void requireAwardEventTimeInSemester(AwardApplication app) {
+        String type = app.getAwardType();
+        if (AwardTypeEnum.COMPETITION_STAR.getValue().equals(type)) {
+            competitionStarRepository.findByApplicationId(app.getId()).ifPresent(ext ->
+                    requireEventTimeInSemester(app.getSemesterId(), ext.getParticipatedAt(), "参赛时间"));
+        } else if (AwardTypeEnum.INNOVATION_STAR.getValue().equals(type)) {
+            innovationStarRepository.findByApplicationId(app.getId()).ifPresent(ext ->
+                    requireEventTimeInSemester(app.getSemesterId(), ext.getRegisteredAt(), "注册时间"));
+        } else if (AwardTypeEnum.RESEARCH_STAR.getValue().equals(type)) {
+            researchStarRepository.findByApplicationId(app.getId()).ifPresent(rs -> {
+                researchProjectRepository.findByResearchStarId(rs.getId()).forEach(p ->
+                        requireEventTimeInSemester(app.getSemesterId(), p.getEstablishedAt(), "立项时间"));
+                softwareCopyrightRepository.findByResearchStarId(rs.getId()).forEach(s ->
+                        requireEventTimeInSemester(app.getSemesterId(), s.getApprovedAt(), "获批时间"));
+                publishedPaperRepository.findByResearchStarId(rs.getId()).forEach(p ->
+                        requireEventTimeInSemester(app.getSemesterId(), p.getPublishedAt(), "发表时间"));
+            });
+        }
+    }
+
     @Transactional
     private ActivityStatusResponse editAward(Long activityId, ActivityEditBody body, Long userId) {
         AwardApplication a = awardApplicationRepository.findById(activityId)
@@ -570,12 +618,18 @@ public class ActivityService {
         checkEditable(a.getStatus());
 
         if (body.getTitle() != null) a.setTitle(body.getTitle());
+        boolean semesterChanged = body.getSemesterId() != null && !body.getSemesterId().equals(a.getSemesterId());
         if (body.getSemesterId() != null) a.setSemesterId(body.getSemesterId());
         if (body.getAwardType() != null) a.setAwardType(body.getAwardType());
         if (body.getCertificateNo() != null) a.setCertificateNo(body.getCertificateNo());
         if (body.getIssuingUnit() != null) a.setIssuingUnit(body.getIssuingUnit());
         if (body.getValidUntil() != null) a.setValidUntil(body.getValidUntil());
         if (body.getParticipantRole() != null) a.setParticipantRole(body.getParticipantRole());
+
+        // 改学期后必须与子表事件时间匹配，避免从动态编辑入口绕过学期校验
+        if (semesterChanged) {
+            requireAwardEventTimeInSemester(a);
+        }
 
         a.setStatus(1);
         a.getAuditInfo().setSubmittedAt(LocalDateTime.now());

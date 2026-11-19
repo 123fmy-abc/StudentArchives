@@ -181,6 +181,8 @@ public class AwardService {
 
         boolean submit = body.containsKey("isDraft") && toInt(body.get("isDraft")) == 0;
         if (submit) {
+            // 从草稿提交：复核竞赛/注册时间必须落在所选学期内且不晚于当前日期
+            requireExtensionEventTimeWithinSemester(app);
             app.setStatus(ApplyStatusEnum.PENDING.getValue());
             audit.setSubmittedAt(LocalDateTime.now());
             audit.setCurrentVersion(audit.getCurrentVersion() != null ? audit.getCurrentVersion() + 1 : 1);
@@ -275,7 +277,7 @@ public class AwardService {
         requireOnSubmit(draft, req.getCompetitionLevel(), "竞赛级别");
         requireOnSubmit(draft, req.getAwardLevel(), "获奖级别");
         requireEvidenceOnSubmit(draft, req.getEvidenceFileIds());
-        requireEventTimeWithinSemester(req.getSemesterId(), req.getParticipatedTime(), "参赛时间");
+        requireEventTimeWithinSemester(req.getSemesterId(), req.getParticipatedTime(), "参赛时间", draft);
 
         String title = "竞赛之星-" + req.getCompetitionName();
         AwardApplication app = createAwardBase(schoolId, userId, AwardTypeEnum.COMPETITION_STAR.getValue(),
@@ -340,7 +342,7 @@ public class AwardService {
         requireText(req.getProjectLevel(), "项目级别");
         requireText(req.getRankTotal(), "排名/总人数");
         requireText(req.getEstablishedTime(), "立项时间");
-        requireEventTimeWithinSemester(app.getSemesterId(), req.getEstablishedTime(), "立项时间");
+        requireEventTimeWithinSemester(app.getSemesterId(), req.getEstablishedTime(), "立项时间", false);
         requireValidRankTotal(req.getRankTotal());
 
         AwardResearchProject project = new AwardResearchProject();
@@ -368,7 +370,7 @@ public class AwardService {
         requireText(req.getSoftwareName(), "软著名称");
         requireText(req.getRankTotal(), "排名/总人数");
         requireText(req.getApprovedTime(), "获批时间");
-        requireEventTimeWithinSemester(app.getSemesterId(), req.getApprovedTime(), "获批时间");
+        requireEventTimeWithinSemester(app.getSemesterId(), req.getApprovedTime(), "获批时间", false);
         requireValidRankTotal(req.getRankTotal());
 
         AwardSoftwareCopyright sw = new AwardSoftwareCopyright();
@@ -396,7 +398,7 @@ public class AwardService {
         requireText(req.getPaperTitle(), "论文名称");
         requireText(req.getRankTotal(), "排名/总人数");
         requireText(req.getPublishedTime(), "发表时间");
-        requireEventTimeWithinSemester(app.getSemesterId(), req.getPublishedTime(), "发表时间");
+        requireEventTimeWithinSemester(app.getSemesterId(), req.getPublishedTime(), "发表时间", false);
         requireValidRankTotal(req.getRankTotal());
 
         AwardPublishedPaper paper = new AwardPublishedPaper();
@@ -483,7 +485,7 @@ public class AwardService {
         requireOnSubmit(draft, req.getApplicantRank(), "申报人排名");
         requireOnSubmit(draft, req.getRegisteredTime(), "注册时间");
         requireEvidenceOnSubmit(draft, req.getEvidenceFileIds());
-        requireEventTimeWithinSemester(req.getSemesterId(), req.getRegisteredTime(), "注册时间");
+        requireEventTimeWithinSemester(req.getSemesterId(), req.getRegisteredTime(), "注册时间", draft);
         requireValidRankTotal(req.getApplicantRank());
 
         String title = "双创之星-" + req.getCompanyName();
@@ -555,6 +557,7 @@ public class AwardService {
         // 复制子表到新版本，再按 body 覆盖可编辑字段
         copyAwardExtension(original.getAwardType(), original.getId(), app.getId());
         updateExtension(app.getAwardType(), app.getId(), body);
+        requireExtensionEventTimeWithinSemester(app);
 
         // 佐证材料必填：更正请求未补传时沿用原记录附件（原附件行保留，另复制一份挂到新版本）
         List<Long> evidenceFileIds = toLongList(body.get("evidenceFileIds"));
@@ -818,19 +821,43 @@ public class AwardService {
     }
 
     /**
-     * 事件时间与学期解耦校验：只要求「事件时间 ≤ 所选学期结束日期」。
+     * 事件时间必须落在所选学期范围内，且不能晚于当前日期。
      * <p>
-     * 学期表示材料归属学期（决定计入哪一学期的统计与评分），事件时间是事实发生时间，
-     * 二者无需落在同一区间；跨学期取得的成果允许归属到其后的任意学期。
-     * 事件时间为空或未选学期时放行（由必填校验负责）。
+     * 学期区间以后端 {@code semesters.start_date / end_date} 为准：第一学期约当年 9 月—次年 1 月，
+     * 第二学期约次年 2 月—7 月，小学期/暑期学期按学校实际配置的起止日期校验，不从学期名称硬编码月份。
+     * 草稿只校验不能晚于当前日期，学期区间留待正式提交时校验；
+     * 事件时间为空、未选学期或学期该侧日期未配置时放行（由必填校验负责）。
      */
-    private void requireEventTimeWithinSemester(Long semesterId, LocalDate eventTime, String label) {
-        if (semesterId == null || eventTime == null) return;
+    private void requireEventTimeWithinSemester(Long semesterId, LocalDate eventTime, String label, boolean draft) {
+        if (eventTime == null) return;
+        if (eventTime.isAfter(LocalDate.now())) {
+            throw new BusinessException(ResultCode.PARAM_ERROR, label + "不能大于当前时间");
+        }
+        if (draft || semesterId == null) return;
         Semester semester = semesterRepository.findById(semesterId)
                 .orElseThrow(() -> new BusinessException(ResultCode.DATA_NOT_EXIST, "学期不存在"));
+        if (semester.getStartDate() != null && eventTime.isBefore(semester.getStartDate())) {
+            throw new BusinessException(ResultCode.PARAM_ERROR,
+                    label + "不能早于所选学期的开始日期（" + semester.getStartDate() + "）");
+        }
         if (semester.getEndDate() != null && eventTime.isAfter(semester.getEndDate())) {
             throw new BusinessException(ResultCode.PARAM_ERROR,
                     label + "不能晚于所选学期的结束日期（" + semester.getEndDate() + "）");
+        }
+    }
+
+    /**
+     * 按奖项类型复核子表事件时间（自动保存提交、更正提交路径）。
+     * 科研之星子项通过 addProject/addSoftware/addPaper 即时校验，此处只覆盖竞赛之星与双创之星。
+     */
+    private void requireExtensionEventTimeWithinSemester(AwardApplication app) {
+        String type = app.getAwardType();
+        if (AwardTypeEnum.COMPETITION_STAR.getValue().equals(type)) {
+            competitionStarRepository.findByApplicationId(app.getId()).ifPresent(ext ->
+                    requireEventTimeWithinSemester(app.getSemesterId(), ext.getParticipatedAt(), "参赛时间", false));
+        } else if (AwardTypeEnum.INNOVATION_STAR.getValue().equals(type)) {
+            innovationStarRepository.findByApplicationId(app.getId()).ifPresent(ext ->
+                    requireEventTimeWithinSemester(app.getSemesterId(), ext.getRegisteredAt(), "注册时间", false));
         }
     }
 

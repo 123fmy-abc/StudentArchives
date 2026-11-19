@@ -7,6 +7,7 @@ import com.example.studentarchives.entity.file.AttachmentRelation;
 import com.example.studentarchives.entity.foundation.ArchiveTypeConfig;
 import com.example.studentarchives.entity.foundation.FormSubmissionSnapshot;
 import com.example.studentarchives.entity.foundation.FormTemplate;
+import com.example.studentarchives.entity.org.Semester;
 import com.example.studentarchives.entity.user.User;
 import com.example.studentarchives.entity.version.ModelVersion;
 import com.example.studentarchives.enums.ApplyStatusEnum;
@@ -84,6 +85,7 @@ public class ApplicationService {
     private final FormTemplateValidator formTemplateValidator;
     private final GuideAssembler guideAssembler;
     private final FormSubmissionSnapshotRepository formSubmissionSnapshotRepository;
+    private final SemesterRepository semesterRepository;
     private final TransactionTemplate transactionTemplate;
 
     // ==================== 1. 学科竞赛 ====================
@@ -100,7 +102,7 @@ public class ApplicationService {
         requireOnSubmit(draft, req.getCompetitionType(), "竞赛类型");
         requireOnSubmit(draft, req.getAwardLevel(), "获奖等级");
         requireOnSubmit(draft, req.getObtainedTime(), "获奖时间");
-        requireNotFuture(req.getObtainedTime(), "获奖时间");
+        requireEventTimeInSemester(req.getSemesterId(), req.getObtainedTime(), "获奖时间", draft);
         requireEvidenceOnSubmit(draft, req.getEvidenceFileIds());
 
         FormTemplate template = validateByTemplate(schoolId, ArchiveTypeEnum.ACADEMIC_COMPETITION.getValue(), req, draft);
@@ -147,7 +149,7 @@ public class ApplicationService {
         requireOnSubmit(draft, req.getScholarshipCategory(), "奖学金类别");
         requireOnSubmit(draft, req.getAwardLevel(), "获奖等级");
         requireOnSubmit(draft, req.getObtainedTime(), "获得时间");
-        requireNotFuture(req.getObtainedTime(), "获得时间");
+        requireEventTimeInSemester(req.getSemesterId(), req.getObtainedTime(), "获得时间", draft);
         requireEvidenceOnSubmit(draft, req.getEvidenceFileIds());
 
         FormTemplate template = validateByTemplate(schoolId, ArchiveTypeEnum.SCHOLARSHIP.getValue(), req, draft);
@@ -192,6 +194,7 @@ public class ApplicationService {
         requireOnSubmit(draft, req.getIndustryType(), "行业类型");
         requireOnSubmit(draft, req.getProjectType(), "项目类型");
         requireOnSubmit(draft, req.getRegisteredTime(), "注册时间");
+        requireEventTimeInSemester(req.getSemesterId(), req.getRegisteredTime(), "注册时间", draft);
         requireEvidenceOnSubmit(draft, req.getEvidenceFileIds());
 
         FormTemplate template = validateByTemplate(schoolId, ArchiveTypeEnum.INNOVATION_ENTREPRENEURSHIP.getValue(), req, draft);
@@ -240,8 +243,8 @@ public class ApplicationService {
         requireOnSubmit(draft, req.getStartDate(), "开始日期");
         requireOnSubmit(draft, req.getEndDate(), "结束日期");
         requireDateRange(req.getStartDate(), req.getEndDate(), "开始日期", "结束日期");
-        // 仅允许申报已完成的研究：结束日期不得晚于当前时间
-        requireNotFuture(req.getEndDate(), "结束日期");
+        // 仅允许申报已完成的研究：结束日期（计入获得时间）不得晚于当前时间，且须落在所选学期内
+        requireEventTimeInSemester(req.getSemesterId(), req.getEndDate(), "结束日期", draft);
         requireEvidenceOnSubmit(draft, req.getEvidenceFileIds());
 
         FormTemplate template = validateByTemplate(schoolId, ArchiveTypeEnum.ACADEMIC_RESEARCH.getValue(), req, draft);
@@ -288,7 +291,7 @@ public class ApplicationService {
         requireOnSubmit(draft, req.getCertificateName(), "证书名称");
         requireOnSubmit(draft, req.getCertificateType(), "证书类型");
         requireOnSubmit(draft, req.getObtainedTime(), "获得时间");
-        requireNotFuture(req.getObtainedTime(), "获得时间");
+        requireEventTimeInSemester(req.getSemesterId(), req.getObtainedTime(), "获得时间", draft);
         requireEvidenceOnSubmit(draft, req.getEvidenceFileIds());
 
         FormTemplate template = validateByTemplate(schoolId, ArchiveTypeEnum.HONOR_CERTIFICATE.getValue(), req, draft);
@@ -338,6 +341,7 @@ public class ApplicationService {
         requireOnSubmit(draft, req.getEndDate(), "结束时间");
         // 数据库存在 ck_aint_date 约束，提前校验避免落入 500 兜底
         requireDateRange(req.getStartDate(), req.getEndDate(), "开始时间", "结束时间");
+        requireEventTimeInSemester(req.getSemesterId(), req.getStartDate(), "开始时间", draft);
         requireEvidenceOnSubmit(draft, req.getEvidenceFileIds());
 
         FormTemplate template = validateByTemplate(schoolId, ArchiveTypeEnum.INTERNSHIP.getValue(), req, draft);
@@ -387,6 +391,7 @@ public class ApplicationService {
         requireOnSubmit(draft, req.getEndDate(), "任职结束");
         // 数据库存在 ck_ao_date 约束，提前校验避免落入 500 兜底
         requireDateRange(req.getStartDate(), req.getEndDate(), "任职开始", "任职结束");
+        requireEventTimeInSemester(req.getSemesterId(), req.getStartDate(), "任职开始", draft);
         requireEvidenceOnSubmit(draft, req.getEvidenceFileIds());
 
         FormTemplate template = validateByTemplate(schoolId, ArchiveTypeEnum.ORGANIZATION.getValue(), req, draft);
@@ -435,6 +440,7 @@ public class ApplicationService {
         requireOnSubmit(draft, req.getEndDate(), "结束时间");
         // 数据库存在 ck_atp_date 约束，提前校验避免落入 500 兜底
         requireDateRange(req.getStartDate(), req.getEndDate(), "开始时间", "结束时间");
+        requireEventTimeInSemester(req.getSemesterId(), req.getStartDate(), "开始时间", draft);
         requireEvidenceOnSubmit(draft, req.getEvidenceFileIds());
 
         FormTemplate template = validateByTemplate(schoolId, ArchiveTypeEnum.TRAINING_PROJECT.getValue(), req, draft);
@@ -483,6 +489,7 @@ public class ApplicationService {
         requireOnSubmit(draft, req.getEndDate(), "结束时间");
         // 数据库存在 ck_asp_date 约束，提前校验避免落入 500 兜底
         requireDateRange(req.getStartDate(), req.getEndDate(), "开始时间", "结束时间");
+        requireEventTimeInSemester(req.getSemesterId(), req.getStartDate(), "开始时间", draft);
         requireNonNegativeVolunteerHours(req.getVolunteerHours());
         requireEvidenceOnSubmit(draft, req.getEvidenceFileIds());
 
@@ -530,6 +537,7 @@ public class ApplicationService {
         requireOnSubmit(draft, req.getSemesterId(), "学期ID");
         requireOnSubmit(draft, req.getBookName(), "书名");
         requireOnSubmit(draft, req.getReadMonth(), "阅读时间");
+        requireEventTimeInSemester(req.getSemesterId(), req.getReadMonth(), "阅读时间", draft);
         requireOnSubmit(draft, req.getReviewContent(), "心得体会");
         requireEvidenceOnSubmit(draft, req.getEvidenceFileIds());
 
@@ -628,6 +636,8 @@ public class ApplicationService {
         // 如果从草稿提交，更新状态
         boolean submit = body.containsKey("isDraft") && toInt(body.get("isDraft")) == 0;
         if (submit) {
+            // 从草稿提交：与直接提交口径一致，获得时间必须落在所选学期内且不晚于当前日期
+            requireArchiveEventTimeInSemester(archive, false);
             archive.setStatus(ApplyStatusEnum.PENDING.getValue());
             audit.setSubmittedAt(LocalDateTime.now());
             audit.setCurrentVersion(audit.getCurrentVersion() != null ? audit.getCurrentVersion() + 1 : 1);
@@ -834,6 +844,8 @@ public class ApplicationService {
 
         // 扩展表原地合并修改字段
         updateExtension(original.getArchiveType(), original.getId(), body);
+        // 更正并提交时，按合并后的实际时间字段校验学期区间
+        requireArchiveEventTimeInSemester(original, draft);
 
         bindFiles(body.containsKey("evidenceFileIds")
                 ? toLongList(body.get("evidenceFileIds"))
@@ -973,6 +985,93 @@ public class ApplicationService {
         if (value.isAfter(LocalDate.now())) {
             throw new BusinessException(ResultCode.PARAM_ERROR, label + "不能大于当前时间");
         }
+    }
+
+    /**
+     * 获奖/获得时间必须落在所选学期范围内，且不能晚于当前日期。
+     * <p>
+     * 学期区间以后端 {@code semesters.start_date / end_date} 为准（含小学期/暑期学期），
+     * 不从学期名称硬编码月份，避免误拦；任一侧未配置时该边界放行。
+     * 草稿只校验不能晚于当前日期，学期区间留待正式提交时校验；学期或时间为空时放行（由必填校验负责）。
+     */
+    private void requireEventTimeInSemester(Long semesterId, LocalDate eventTime, String label, boolean draft) {
+        if (eventTime == null) return;
+        requireNotFuture(eventTime, label);
+        if (draft || semesterId == null) return;
+        Semester semester = semesterRepository.findById(semesterId)
+                .orElseThrow(() -> new BusinessException(ResultCode.DATA_NOT_EXIST, "学期不存在"));
+        if (semester.getStartDate() != null && eventTime.isBefore(semester.getStartDate())) {
+            throw new BusinessException(ResultCode.PARAM_ERROR, label + "不能早于所选学期的开始日期（"
+                    + semester.getStartDate() + "）");
+        }
+        if (semester.getEndDate() != null && eventTime.isAfter(semester.getEndDate())) {
+            throw new BusinessException(ResultCode.PARAM_ERROR, label + "不能晚于所选学期的结束日期（"
+                    + semester.getEndDate() + "）");
+        }
+    }
+
+    /**
+     * 按档案类型取「获得时间」对应字段的最新值并校验学期区间。
+     * 用于自动保存后提交、更正提交等已完成扩展表合并的路径；扩展表无记录时回退 archives.obtained_at。
+     */
+    private void requireArchiveEventTimeInSemester(Archive archive, boolean draft) {
+        LocalDate eventTime = archive.getObtainedAt();
+        String label = "获得时间";
+        Long archiveId = archive.getId();
+        String archiveType = archive.getArchiveType() != null ? archive.getArchiveType() : "";
+        switch (archiveType) {
+            case "innovation" -> {
+                ArchiveInnovation ext = innovationRepository.findByArchiveId(archiveId).orElse(null);
+                if (ext != null && ext.getRegisteredAt() != null) {
+                    eventTime = ext.getRegisteredAt();
+                    label = "注册时间";
+                }
+            }
+            case "research" -> {
+                ArchiveResearch ext = researchRepository.findByArchiveId(archiveId).orElse(null);
+                if (ext != null && ext.getEndDate() != null) {
+                    eventTime = ext.getEndDate();
+                    label = "结束日期";
+                }
+            }
+            case "internship" -> {
+                ArchiveInternship ext = internshipRepository.findByArchiveId(archiveId).orElse(null);
+                if (ext != null && ext.getStartDate() != null) {
+                    eventTime = ext.getStartDate();
+                    label = "开始时间";
+                }
+            }
+            case "organization" -> {
+                ArchiveOrganization ext = organizationRepository.findByArchiveId(archiveId).orElse(null);
+                if (ext != null && ext.getStartDate() != null) {
+                    eventTime = ext.getStartDate();
+                    label = "任职开始";
+                }
+            }
+            case "training_project" -> {
+                ArchiveTrainingProject ext = trainingProjectRepository.findByArchiveId(archiveId).orElse(null);
+                if (ext != null && ext.getStartDate() != null) {
+                    eventTime = ext.getStartDate();
+                    label = "开始时间";
+                }
+            }
+            case "social_practice" -> {
+                ArchiveSocialPractice ext = socialPracticeRepository.findByArchiveId(archiveId).orElse(null);
+                if (ext != null && ext.getStartDate() != null) {
+                    eventTime = ext.getStartDate();
+                    label = "开始时间";
+                }
+            }
+            case "book_review" -> {
+                ArchiveBookReview ext = bookReviewRepository.findByArchiveId(archiveId).orElse(null);
+                if (ext != null && ext.getReadMonth() != null) {
+                    eventTime = ext.getReadMonth();
+                    label = "阅读时间";
+                }
+            }
+            default -> { }
+        }
+        requireEventTimeInSemester(archive.getSemesterId(), eventTime, label, draft);
     }
 
     /** 日期区间校验：任一侧为空时放行；两侧均有值时开始日期必须早于结束日期 */
