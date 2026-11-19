@@ -11,7 +11,7 @@ import com.example.studentarchives.entity.version.ModelVersion;
 import com.example.studentarchives.enums.*;
 import com.example.studentarchives.exception.BusinessException;
 import com.example.studentarchives.repository.*;
-import com.fasterxml.jackson.core.type.TypeReference;
+import com.example.studentarchives.service.common.GuideAssembler;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.Builder;
 import lombok.Data;
@@ -60,6 +60,7 @@ public class AwardService {
     private final ObjectMapper objectMapper;
     private final ApprovalSubmitService approvalSubmitService;
     private final TransactionTemplate transactionTemplate;
+    private final GuideAssembler guideAssembler;
 
     // ==================== 8.1 奖项总览统计 ====================
 
@@ -238,7 +239,7 @@ public class AwardService {
     // ==================== 8.1.3 获取奖项评选说明 ====================
 
     @Transactional(readOnly = true)
-    public AwardGuideResponse getGuide(String type) {
+    public GuideAssembler.GuideResponse getGuide(String type) {
         AwardTypeEnum typeEnum = AwardTypeEnum.of(type);
         if (typeEnum == null) throw new BusinessException(ResultCode.PARAM_ERROR, "不支持的奖项类型：" + type);
 
@@ -246,31 +247,15 @@ public class AwardService {
                 .findByAwardTypeAndStatus(type, 1)
                 .orElse(null);
 
-        List<AwardGuideResponse.Requirement> requirements = new ArrayList<>();
-        List<String> notes = new ArrayList<>();
-
-        if (config != null) {
-            if (config.getEvaluateRequirements() != null) {
-                try {
-                    requirements = objectMapper.readValue(config.getEvaluateRequirements(),
-                            new TypeReference<List<AwardGuideResponse.Requirement>>() {});
-                } catch (Exception ignored) {}
-            }
-            if (config.getEvaluateNotes() != null) {
-                try {
-                    notes = objectMapper.readValue(config.getEvaluateNotes(),
-                            new TypeReference<List<String>>() {});
-                } catch (Exception ignored) {}
-            }
-        }
-
-        return AwardGuideResponse.builder()
-                .type(type).typeLabel(typeEnum.getLabel())
-                .title(typeEnum.getLabel() + "评选说明")
-                .content(config != null ? config.getEvaluateDesc() : null)
-                .requirements(requirements).notes(notes)
-                .updatedAt(config != null && config.getUpdatedAt() != null ? toIso(config.getUpdatedAt()) : null)
-                .build();
+        return guideAssembler.assemble(
+                typeEnum.getValue(),
+                typeEnum.getLabel(),
+                config != null ? config.getEvaluateDesc() : null,
+                config != null ? config.getEvaluateRequirements() : null,
+                config != null ? config.getEvaluateNotes() : null,
+                config != null ? config.getApplyDesc() : null,
+                config != null ? config.getIcon() : null,
+                config != null ? config.getUpdatedAt() : null);
     }
 
     // ==================== 8.2 竞赛之星报名 ====================
@@ -1124,25 +1109,6 @@ public class AwardService {
         private Integer status;
         private String statusLabel;
         private double similarity;
-    }
-
-    @Data @Builder
-    public static class AwardGuideResponse {
-        private String type;
-        private String typeLabel;
-        private String title;
-        private String content;
-        private List<Requirement> requirements;
-        private List<String> notes;
-        private String updatedAt;
-
-        @Data @Builder
-        public static class Requirement {
-            private String field;
-            private String label;
-            private boolean required;
-            private String description;
-        }
     }
 
     @Data @Builder

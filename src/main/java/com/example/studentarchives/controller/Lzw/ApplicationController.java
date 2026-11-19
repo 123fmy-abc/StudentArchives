@@ -3,6 +3,7 @@ package com.example.studentarchives.controller.Lzw;
 import com.example.studentarchives.common.ApiResult;
 import com.example.studentarchives.service.Lzw.ApplicationService;
 import com.example.studentarchives.service.Lzw.ApplicationService.*;
+import com.example.studentarchives.service.common.GuideAssembler;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -128,7 +129,7 @@ public class ApplicationController {
 
     /** 评选说明 */
     @GetMapping("/{type}/guide")
-    public ApiResult<GuideResponse> getGuide(@PathVariable String type) {
+    public ApiResult<GuideAssembler.GuideResponse> getGuide(@PathVariable String type) {
         return ApiResult.success(applicationService.getGuide(type));
     }
 

@@ -18,6 +18,7 @@ import com.example.studentarchives.exception.BusinessException;
 import com.example.studentarchives.repository.*;
 import com.example.studentarchives.service.Fmy.FormTemplateQueryService;
 import com.example.studentarchives.service.Fmy.FormTemplateValidator;
+import com.example.studentarchives.service.common.GuideAssembler;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -81,6 +82,7 @@ public class ApplicationService {
 
     private final FormTemplateQueryService formTemplateQueryService;
     private final FormTemplateValidator formTemplateValidator;
+    private final GuideAssembler guideAssembler;
     private final FormSubmissionSnapshotRepository formSubmissionSnapshotRepository;
     private final TransactionTemplate transactionTemplate;
 
@@ -718,7 +720,7 @@ public class ApplicationService {
     // ==================== 评选说明 ====================
 
     @Transactional(readOnly = true)
-    public GuideResponse getGuide(String type) {
+    public GuideAssembler.GuideResponse getGuide(String type) {
         ArchiveTypeEnum typeEnum = ArchiveTypeEnum.of(type);
         if (typeEnum == null) {
             throw new BusinessException(ResultCode.PARAM_ERROR, "不支持的档案类型：" + type);
@@ -727,15 +729,15 @@ public class ApplicationService {
                 .findByArchiveTypeAndStatus(type, 1)
                 .orElse(null);
 
-        return GuideResponse.builder()
-                .archiveType(typeEnum.getValue())
-                .typeName(typeEnum.getLabel())
-                .evaluateDesc(config != null ? config.getEvaluateDesc() : null)
-                .evaluateRequirements(config != null ? config.getEvaluateRequirements() : null)
-                .evaluateNotes(config != null ? config.getEvaluateNotes() : null)
-                .applyDesc(config != null ? config.getApplyDesc() : null)
-                .icon(config != null ? config.getIcon() : null)
-                .build();
+        return guideAssembler.assemble(
+                typeEnum.getValue(),
+                typeEnum.getLabel(),
+                config != null ? config.getEvaluateDesc() : null,
+                config != null ? config.getEvaluateRequirements() : null,
+                config != null ? config.getEvaluateNotes() : null,
+                config != null ? config.getApplyDesc() : null,
+                config != null ? config.getIcon() : null,
+                config != null ? config.getUpdatedAt() : null);
     }
 
     // ==================== 版本历史 ====================
@@ -1548,18 +1550,6 @@ public class ApplicationService {
             private String statusLabel;
             private BigDecimal similarity;
         }
-    }
-
-    @Data
-    @Builder
-    public static class GuideResponse {
-        private String archiveType;
-        private String typeName;
-        private String evaluateDesc;
-        private String evaluateRequirements;
-        private String evaluateNotes;
-        private String applyDesc;
-        private String icon;
     }
 
     @Data
