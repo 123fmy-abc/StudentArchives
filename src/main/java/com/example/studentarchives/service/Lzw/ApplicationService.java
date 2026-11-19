@@ -122,6 +122,7 @@ public class ApplicationService {
         ext.setCompetitionType(req.getCompetitionType());
         ext.setAwardLevel(req.getAwardLevel());
         ext.setParticipantRole(req.getParticipantRole());
+        ext.setCertificateNo(req.getCertificateNo());
         competitionRepository.save(ext);
 
         bindFiles(req.getEvidenceFileIds(), userId, archive.getId());
@@ -1162,6 +1163,7 @@ public class ApplicationService {
                     if (body.containsKey("competitionType")) ext.setCompetitionType((String) body.get("competitionType"));
                     if (body.containsKey("awardLevel")) ext.setAwardLevel((String) body.get("awardLevel"));
                     if (body.containsKey("participantRole")) ext.setParticipantRole((String) body.get("participantRole"));
+                    if (body.containsKey("certificateNo")) ext.setCertificateNo((String) body.get("certificateNo"));
                     competitionRepository.save(ext);
                 });
             }

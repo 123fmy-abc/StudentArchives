@@ -29,4 +29,8 @@ public class ArchiveCompetition extends BaseEntity {
 
     @Column(name = "participant_role", length = 50)
     private String participantRole;
+
+    /** 证书编号（选填） */
+    @Column(name = "certificate_no", length = 100)
+    private String certificateNo;
 }

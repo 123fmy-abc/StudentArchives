@@ -700,6 +700,7 @@ public class AdminArchiveService {
                 detail.put("awardLevelLabel", resolveLabel("award_level", ext.getAwardLevel()));
                 detail.put("participantRole", ext.getParticipantRole());
                 detail.put("participantRoleLabel", resolveLabel("participant_role", ext.getParticipantRole()));
+                detail.put("certificateNo", ext.getCertificateNo());
             });
             case "scholarship" -> archiveScholarshipRepository.findByArchiveId(a.getId()).ifPresent(ext -> {
                 detail.put("scholarshipName", ext.getScholarshipName());
