@@ -129,8 +129,10 @@ public class ApplicationController {
 
     /** 评选说明 */
     @GetMapping("/{type}/guide")
-    public ApiResult<GuideAssembler.GuideResponse> getGuide(@PathVariable String type) {
-        return ApiResult.success(applicationService.getGuide(type));
+    public ApiResult<GuideAssembler.GuideResponse> getGuide(
+            @PathVariable String type,
+            @AuthenticationPrincipal Long userId) {
+        return ApiResult.success(applicationService.getGuide(type, userId));
     }
 
     /** 版本历史 */

@@ -16,6 +16,10 @@ import org.hibernate.annotations.SQLRestriction;
 @SQLRestriction(BaseEntity.DELETED_AT_IS_NULL)
 public class ArchiveTypeConfig extends BaseEntity {
 
+    /** 所属学校（评选说明按学校独立配置） */
+    @Column(name = "school_id", nullable = false)
+    private Long schoolId;
+
     @Column(name = "archive_type", nullable = false, length = 50)
     private String archiveType;
 

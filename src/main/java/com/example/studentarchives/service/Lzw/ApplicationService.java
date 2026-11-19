@@ -720,13 +720,15 @@ public class ApplicationService {
     // ==================== 评选说明 ====================
 
     @Transactional(readOnly = true)
-    public GuideAssembler.GuideResponse getGuide(String type) {
+    public GuideAssembler.GuideResponse getGuide(String type, Long userId) {
         ArchiveTypeEnum typeEnum = ArchiveTypeEnum.of(type);
         if (typeEnum == null) {
             throw new BusinessException(ResultCode.PARAM_ERROR, "不支持的档案类型：" + type);
         }
+        // 评选说明按学校独立配置（V57）：取当前登录用户所属学校的配置，该校未配置时返回空说明
+        Long schoolId = schoolId(loadUser(userId));
         ArchiveTypeConfig config = archiveTypeConfigRepository
-                .findByArchiveTypeAndStatus(type, 1)
+                .findBySchoolIdAndArchiveTypeAndStatus(schoolId, type, 1)
                 .orElse(null);
 
         return guideAssembler.assemble(

@@ -3,6 +3,7 @@ package com.example.studentarchives.service.Fmy;
 import com.example.studentarchives.common.ResultCode;
 import com.example.studentarchives.config.Fmy.OssProperties;
 import com.example.studentarchives.enums.ApplyStatusEnum;
+import com.example.studentarchives.enums.ArchiveTypeEnum;
 import com.example.studentarchives.enums.AttachmentBizTypeEnum;
 import com.example.studentarchives.enums.AuditActionEnum;
 import com.example.studentarchives.enums.EventTypeEnum;
@@ -73,6 +74,7 @@ import org.springframework.web.multipart.MultipartFile;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.EnumSet;
@@ -599,14 +601,29 @@ public class CommonService {
      * 使用 Caffeine 缓存（5 分钟过期），降低字典表频繁查询压力。
      *
      * @param dictType 字典类型
+     * @param userId   当前登录用户 ID（archive_category 按用户所属学校过滤）
      * @return 字典项列表
      */
     @Transactional(readOnly = true)
-    @Cacheable(value = "dict", key = "#dictType", unless = "#result.isEmpty()")
-    public List<DictItemResponse> getDict(String dictType) {
-        // 特殊处理：archive_category 从 archive_type_configs 表获取
+    @Cacheable(value = "dict", key = "#dictType + ':' + (#root.target.resolveUserSchoolId(#userId) ?: 0)",
+            unless = "#result.isEmpty()")
+    public List<DictItemResponse> getDict(String dictType, Long userId) {
+        // 特殊处理：archive_category 从 archive_type_configs 表获取（V57 起按学校独立配置）
         if ("archive_category".equals(dictType)) {
-            return archiveTypeConfigRepository.findAllActive()
+            Long schoolId = resolveUserSchoolId(userId);
+            if (schoolId == null) {
+                // 无学校上下文时回退枚举，避免跨校配置混入下拉
+                List<DictItemResponse> fallback = new ArrayList<>();
+                for (ArchiveTypeEnum e : ArchiveTypeEnum.values()) {
+                    fallback.add(DictItemResponse.builder()
+                            .value(e.getValue())
+                            .label(e.getLabel())
+                            .sort(fallback.size() + 1)
+                            .build());
+                }
+                return fallback;
+            }
+            return archiveTypeConfigRepository.findAllActiveBySchoolId(schoolId)
                     .stream()
                     .map(c -> DictItemResponse.builder()
                             .value(c.getArchiveType())
@@ -636,14 +653,14 @@ public class CommonService {
      * @param dictTypes 字典类型集合
      * @return dictType → 字典项列表（键与入参顺序一致）
      */
-    public Map<String, List<DictItemResponse>> getDicts(List<String> dictTypes) {
+    public Map<String, List<DictItemResponse>> getDicts(List<String> dictTypes, Long userId) {
         Map<String, List<DictItemResponse>> result = new HashMap<>();
         if (dictTypes == null) {
             return result;
         }
         for (String t : dictTypes) {
             if (t != null && !t.isBlank()) {
-                result.put(t.trim(), getDict(t.trim()));
+                result.put(t.trim(), getDict(t.trim(), userId));
             }
         }
         return result;
@@ -1024,8 +1041,9 @@ public class CommonService {
 
     /**
      * 解析当前登录用户所属学校 ID；无法解析时返回 null（使用内置默认上传限制）。
+     * <p>公开可见：字典缓存 key 通过 SpEL 调用本方法，按学校维度隔离 archive_category 缓存。</p>
      */
-    private Long resolveUserSchoolId(Long userId) {
+    public Long resolveUserSchoolId(Long userId) {
         if (userId == null) {
             return null;
         }

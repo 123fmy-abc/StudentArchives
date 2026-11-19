@@ -232,8 +232,10 @@ public class CommonController {
      * @return 字典项列表
      */
     @GetMapping("/dict")
-    public ApiResult<List<DictItemResponse>> getDict(@RequestParam("dictType") String dictType) {
-        List<DictItemResponse> list = commonService.getDict(dictType);
+    public ApiResult<List<DictItemResponse>> getDict(
+            @RequestParam("dictType") String dictType,
+            @AuthenticationPrincipal Long userId) {
+        List<DictItemResponse> list = commonService.getDict(dictType, userId);
         return ApiResult.success(list);
     }
 
@@ -243,8 +245,9 @@ public class CommonController {
      */
     @GetMapping("/dict/batch")
     public ApiResult<Map<String, List<DictItemResponse>>> getDicts(
-            @RequestParam("dictTypes") List<String> dictTypes) {
-        return ApiResult.success(commonService.getDicts(dictTypes));
+            @RequestParam("dictTypes") List<String> dictTypes,
+            @AuthenticationPrincipal Long userId) {
+        return ApiResult.success(commonService.getDicts(dictTypes, userId));
     }
 
     // ==================== 枚举查询 ====================

@@ -56,8 +56,10 @@ public class AwardController {
     // ==================== 8.1.3 获取奖项评选说明 ====================
 
     @GetMapping("/{type}/guide")
-    public ApiResult<GuideAssembler.GuideResponse> getGuide(@PathVariable String type) {
-        return ApiResult.success(awardService.getGuide(type));
+    public ApiResult<GuideAssembler.GuideResponse> getGuide(
+            @PathVariable String type,
+            @AuthenticationPrincipal Long userId) {
+        return ApiResult.success(awardService.getGuide(type, userId));
     }
 
     // ==================== 8.2 竞赛之星报名 ====================

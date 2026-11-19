@@ -282,7 +282,7 @@ public class AdminArchiveService {
         return ArchiveAdminDetailResponse.builder()
                 .archiveId(archive.getId())
                 .archiveType(archive.getArchiveType())
-                .archiveTypeName(resolveTypeName(archive.getArchiveType()))
+                .archiveTypeName(resolveTypeName(archive.getArchiveType(), schoolId))
                 .title(archive.getTitle())
                 .semesterId(archive.getSemesterId())
                 .semesterName(semesterName)
@@ -610,7 +610,9 @@ public class AdminArchiveService {
         Map<Long, Semester> semesters = semesterIds.isEmpty() ? Map.of()
                 : semesterRepository.findAllById(semesterIds).stream().collect(Collectors.toMap(Semester::getId, s -> s, (a, b) -> a));
 
-        return new EnrichContext(users, userIdToClassId, classes, majors, colleges, semesters, buildTypeNameMap());
+        Long schoolId = archives.stream().map(Archive::getSchoolId).filter(Objects::nonNull).findFirst().orElse(null);
+        return new EnrichContext(users, userIdToClassId, classes, majors, colleges, semesters,
+                buildTypeNameMap(schoolId));
     }
 
     private ArchiveAdminListItem toListItem(Archive a, EnrichContext ctx) {
@@ -624,7 +626,7 @@ public class AdminArchiveService {
         return ArchiveAdminListItem.builder()
                 .archiveId(a.getId())
                 .archiveType(a.getArchiveType())
-                .archiveTypeName(resolveTypeName(a.getArchiveType()))
+                .archiveTypeName(ctx.typeNames().getOrDefault(a.getArchiveType(), a.getArchiveType()))
                 .title(a.getTitle())
                 .semesterId(a.getSemesterId())
                 .semesterName(semester == null ? null : semester.getName())
@@ -863,11 +865,13 @@ public class AdminArchiveService {
         return clazzRepository.findByMajorIdIn(majorIds).stream().map(Clazz::getId).toList();
     }
 
-    /** 档案类型名称：优先 archive_type_configs，回退 ArchiveTypeEnum */
-    private Map<String, String> buildTypeNameMap() {
+    /** 档案类型名称：优先本校 archive_type_configs（V57 起按学校配置），回退 ArchiveTypeEnum */
+    private Map<String, String> buildTypeNameMap(Long schoolId) {
         Map<String, String> map = new HashMap<>();
-        for (ArchiveTypeConfig c : archiveTypeConfigRepository.findAllActive()) {
-            map.put(c.getArchiveType(), c.getTypeName());
+        if (schoolId != null) {
+            for (ArchiveTypeConfig c : archiveTypeConfigRepository.findAllActiveBySchoolId(schoolId)) {
+                map.put(c.getArchiveType(), c.getTypeName());
+            }
         }
         for (ArchiveTypeEnum e : ArchiveTypeEnum.values()) {
             map.putIfAbsent(e.getValue(), e.getLabel());
@@ -875,11 +879,11 @@ public class AdminArchiveService {
         return map;
     }
 
-    private String resolveTypeName(String archiveType) {
+    private String resolveTypeName(String archiveType, Long schoolId) {
         if (archiveType == null) {
             return null;
         }
-        String name = buildTypeNameMap().get(archiveType);
+        String name = buildTypeNameMap(schoolId).get(archiveType);
         return name != null ? name : archiveType;
     }
 
