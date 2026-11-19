@@ -11,6 +11,7 @@ import com.example.studentarchives.entity.version.ModelVersion;
 import com.example.studentarchives.enums.*;
 import com.example.studentarchives.exception.BusinessException;
 import com.example.studentarchives.repository.*;
+import com.example.studentarchives.support.SemesterEventTimeValidator;
 import com.example.studentarchives.service.common.GuideAssembler;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.Builder;
@@ -57,6 +58,7 @@ public class AwardService {
     private final ModelVersionRepository modelVersionRepository;
     private final AwardTypeConfigRepository awardTypeConfigRepository;
     private final SemesterRepository semesterRepository;
+    private final SemesterEventTimeValidator semesterEventTimeValidator;
     private final ObjectMapper objectMapper;
     private final ApprovalSubmitService approvalSubmitService;
     private final TransactionTemplate transactionTemplate;
@@ -829,21 +831,7 @@ public class AwardService {
      * 事件时间为空、未选学期或学期该侧日期未配置时放行（由必填校验负责）。
      */
     private void requireEventTimeWithinSemester(Long semesterId, LocalDate eventTime, String label, boolean draft) {
-        if (eventTime == null) return;
-        if (eventTime.isAfter(LocalDate.now())) {
-            throw new BusinessException(ResultCode.PARAM_ERROR, label + "不能大于当前时间");
-        }
-        if (draft || semesterId == null) return;
-        Semester semester = semesterRepository.findById(semesterId)
-                .orElseThrow(() -> new BusinessException(ResultCode.DATA_NOT_EXIST, "学期不存在"));
-        if (semester.getStartDate() != null && eventTime.isBefore(semester.getStartDate())) {
-            throw new BusinessException(ResultCode.PARAM_ERROR,
-                    label + "不能早于所选学期的开始日期（" + semester.getStartDate() + "）");
-        }
-        if (semester.getEndDate() != null && eventTime.isAfter(semester.getEndDate())) {
-            throw new BusinessException(ResultCode.PARAM_ERROR,
-                    label + "不能晚于所选学期的结束日期（" + semester.getEndDate() + "）");
-        }
+        semesterEventTimeValidator.requireEventTimeInSemester(semesterId, eventTime, label, draft);
     }
 
     /**

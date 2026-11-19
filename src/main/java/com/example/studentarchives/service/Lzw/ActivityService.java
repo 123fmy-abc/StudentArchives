@@ -28,6 +28,7 @@ import com.example.studentarchives.enums.FileStatusEnum;
 import com.example.studentarchives.enums.ModelVersionModelTypeEnum;
 import com.example.studentarchives.exception.BusinessException;
 import com.example.studentarchives.repository.*;
+import com.example.studentarchives.support.SemesterEventTimeValidator;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.orm.ObjectOptimisticLockingFailureException;
@@ -59,6 +60,7 @@ public class ActivityService {
     private final CareerPlanRepository careerPlanRepository;
     private final AttachmentRelationRepository attachmentRelationRepository;
     private final SemesterRepository semesterRepository;
+    private final SemesterEventTimeValidator semesterEventTimeValidator;
     private final ModelVersionRepository modelVersionRepository;
     private final UserRepository userRepository;
     private final DictionaryRepository dictionaryRepository;
@@ -572,21 +574,7 @@ public class ActivityService {
      * 学期区间以后端 semesters.start_date / end_date 为准，小学期/暑期学期同样按实际配置校验。
      */
     private void requireEventTimeInSemester(Long semesterId, LocalDate eventTime, String label) {
-        if (eventTime == null) return;
-        if (eventTime.isAfter(LocalDate.now())) {
-            throw new BusinessException(ResultCode.PARAM_ERROR, label + "不能大于当前时间");
-        }
-        if (semesterId == null) return;
-        Semester semester = semesterRepository.findById(semesterId)
-                .orElseThrow(() -> new BusinessException(ResultCode.DATA_NOT_EXIST, "学期不存在"));
-        if (semester.getStartDate() != null && eventTime.isBefore(semester.getStartDate())) {
-            throw new BusinessException(ResultCode.PARAM_ERROR, label + "不能早于所选学期的开始日期（"
-                    + semester.getStartDate() + "）");
-        }
-        if (semester.getEndDate() != null && eventTime.isAfter(semester.getEndDate())) {
-            throw new BusinessException(ResultCode.PARAM_ERROR, label + "不能晚于所选学期的结束日期（"
-                    + semester.getEndDate() + "）");
-        }
+        semesterEventTimeValidator.requireEventTimeInSemester(semesterId, eventTime, label, false);
     }
 
     /** 奖项子表事件时间与（变更后的）学期一致性校验：动态编辑入口改学期时调用 */

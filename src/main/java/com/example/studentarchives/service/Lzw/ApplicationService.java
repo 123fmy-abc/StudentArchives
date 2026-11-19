@@ -17,6 +17,7 @@ import com.example.studentarchives.enums.FileStatusEnum;
 import com.example.studentarchives.enums.ModelVersionModelTypeEnum;
 import com.example.studentarchives.exception.BusinessException;
 import com.example.studentarchives.repository.*;
+import com.example.studentarchives.support.SemesterEventTimeValidator;
 import com.example.studentarchives.service.Fmy.FormTemplateQueryService;
 import com.example.studentarchives.service.Fmy.FormTemplateValidator;
 import com.example.studentarchives.service.common.GuideAssembler;
@@ -86,6 +87,7 @@ public class ApplicationService {
     private final GuideAssembler guideAssembler;
     private final FormSubmissionSnapshotRepository formSubmissionSnapshotRepository;
     private final SemesterRepository semesterRepository;
+    private final SemesterEventTimeValidator semesterEventTimeValidator;
     private final TransactionTemplate transactionTemplate;
 
     // ==================== 1. 学科竞赛 ====================
@@ -995,19 +997,7 @@ public class ApplicationService {
      * 草稿只校验不能晚于当前日期，学期区间留待正式提交时校验；学期或时间为空时放行（由必填校验负责）。
      */
     private void requireEventTimeInSemester(Long semesterId, LocalDate eventTime, String label, boolean draft) {
-        if (eventTime == null) return;
-        requireNotFuture(eventTime, label);
-        if (draft || semesterId == null) return;
-        Semester semester = semesterRepository.findById(semesterId)
-                .orElseThrow(() -> new BusinessException(ResultCode.DATA_NOT_EXIST, "学期不存在"));
-        if (semester.getStartDate() != null && eventTime.isBefore(semester.getStartDate())) {
-            throw new BusinessException(ResultCode.PARAM_ERROR, label + "不能早于所选学期的开始日期（"
-                    + semester.getStartDate() + "）");
-        }
-        if (semester.getEndDate() != null && eventTime.isAfter(semester.getEndDate())) {
-            throw new BusinessException(ResultCode.PARAM_ERROR, label + "不能晚于所选学期的结束日期（"
-                    + semester.getEndDate() + "）");
-        }
+        semesterEventTimeValidator.requireEventTimeInSemester(semesterId, eventTime, label, draft);
     }
 
     /**
