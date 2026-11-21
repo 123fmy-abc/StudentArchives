@@ -1593,8 +1593,13 @@ public class ProfileCareerPlanService {
         if (relation.getDeletedAt() != null) {
             throw new BusinessException(ResultCode.DATA_NOT_EXIST, "文件不存在");
         }
-        if (relation.getFileStatus() == null || FileStatusEnum.of(relation.getFileStatus()) == null
-                || !FileStatusEnum.of(relation.getFileStatus()).isBindable()) {
+        FileStatusEnum fileStatus = FileStatusEnum.of(relation.getFileStatus());
+        // 幂等：已绑定同一记录（重复保存 / 编辑重复提交）直接放行
+        if (fileStatus == FileStatusEnum.BOUND
+                && bizType.equals(relation.getBizType()) && bizId.equals(relation.getBizId())) {
+            return relation;
+        }
+        if (fileStatus == null || !fileStatus.isBindable()) {
             throw new BusinessException(ResultCode.BIZ_STATUS_NOT_OPERABLE, "文件已关联，不能重复绑定");
         }
         relation.setBizType(bizType);

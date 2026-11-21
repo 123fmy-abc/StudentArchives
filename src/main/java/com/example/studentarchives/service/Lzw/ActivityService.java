@@ -88,6 +88,9 @@ public class ActivityService {
     private final AwardSoftwareCopyrightRepository softwareCopyrightRepository;
     private final AwardPublishedPaperRepository publishedPaperRepository;
     private final OssProperties ossProperties;
+    private final ApplicationService applicationService;
+    private final AwardService awardService;
+    private final org.springframework.transaction.support.TransactionTemplate transactionTemplate;
 
     /** 允许的排序字段白名单 */
     private static final Set<String> ALLOWED_SORT_FIELDS = Set.of("submit_time", "created_at", "updated_at", "id");
@@ -185,13 +188,30 @@ public class ActivityService {
      * <p>
      * 编辑后状态自动变为待审批(1)，版本号 +1，提交次数 +1。
      */
-    @Transactional
+    /**
+     * 编辑动态记录：编辑后状态自动变为待审批(1)，版本号 +1，提交次数 +1。
+     * <p>
+     * 前端提交后可能并发触发自动保存与编辑，两者写同一行会产生乐观锁冲突；
+     * 这里用独立事务重试，避免把并发冲突直接暴露成「数据已被他人修改」。
+     */
+    @org.springframework.transaction.annotation.Transactional(
+            propagation = org.springframework.transaction.annotation.Propagation.NOT_SUPPORTED)
     public ActivityStatusResponse edit(ActivityTypeEnum type, Long activityId, ActivityEditBody body, Long userId) {
-        return switch (type) {
-            case ARCHIVE -> editArchive(activityId, body, userId);
-            case AWARD -> editAward(activityId, body, userId);
-            case CAREER_PLAN -> editCareerPlan(activityId, body, userId);
-        };
+        for (int attempt = 1; ; attempt++) {
+            try {
+                return transactionTemplate.execute(status -> switch (type) {
+                    case ARCHIVE -> editArchive(activityId, body, userId);
+                    case AWARD -> editAward(activityId, body, userId);
+                    case CAREER_PLAN -> editCareerPlan(activityId, body, userId);
+                });
+            } catch (ObjectOptimisticLockingFailureException e) {
+                if (attempt >= 3) {
+                    log.warn("动态记录编辑连续乐观锁冲突: type={}, id={}", type, activityId);
+                    throw new BusinessException(ResultCode.DATA_VERSION_CONFLICT, "数据保存冲突，请刷新页面后重试");
+                }
+                log.info("动态记录编辑乐观锁冲突，第 {} 次重试: type={}, id={}", attempt, type, activityId);
+            }
+        }
     }
 
     // ==================== 删除 ====================
@@ -555,6 +575,8 @@ public class ActivityService {
         }
         if (body.getCorrectionReason() != null) a.setCorrectionReason(body.getCorrectionReason());
 
+        // 编辑后即重新提交待审：与 submit* 入口保持同一查重口径，避免从动态编辑绕过查重
+        applicationService.requireNoDuplicateOnResubmit(a);
         a.setStatus(1); // 编辑后 → 待审批
         a.getAuditInfo().setSubmittedAt(LocalDateTime.now());
         a.getAuditInfo().setSubmitCount(a.getAuditInfo().getSubmitCount() + 1);
@@ -619,6 +641,8 @@ public class ActivityService {
             requireAwardEventTimeInSemester(a);
         }
 
+        // 编辑后即重新提交待审：与 submit* 入口保持同一查重口径，避免从动态编辑绕过查重
+        awardService.requireNoDuplicateOnResubmit(a);
         a.setStatus(1);
         a.getAuditInfo().setSubmittedAt(LocalDateTime.now());
         a.getAuditInfo().setSubmitCount(a.getAuditInfo().getSubmitCount() + 1);

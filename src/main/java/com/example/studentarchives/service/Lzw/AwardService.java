@@ -46,6 +46,12 @@ public class AwardService {
             DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ssXXX");
     private static final DateTimeFormatter DATE_FMT = DateTimeFormatter.ofPattern("yyyy-MM-dd");
 
+    /** 强查重奖项类型：同一学生的同一成果（证书编号/名称）只允许存在一条待审批或已通过记录 */
+    private static final Set<String> STRICT_DUPLICATE_AWARD_TYPES = Set.of(
+            AwardTypeEnum.COMPETITION_STAR.getValue(),
+            AwardTypeEnum.RESEARCH_STAR.getValue(),
+            AwardTypeEnum.INNOVATION_STAR.getValue());
+
     private final AwardApplicationRepository awardApplicationRepository;
     private final AwardCompetitionStarRepository competitionStarRepository;
     private final AwardResearchStarRepository researchStarRepository;
@@ -185,6 +191,8 @@ public class AwardService {
         if (submit) {
             // 从草稿提交：复核竞赛/注册时间必须落在所选学期内且不晚于当前日期
             requireExtensionEventTimeWithinSemester(app);
+            requireNoDuplicateAwardOnSubmit(false, userId, app.getAwardType(),
+                    app.getCertificateNo(), app.getTitle(), app.getId());
             app.setStatus(ApplyStatusEnum.PENDING.getValue());
             audit.setSubmittedAt(LocalDateTime.now());
             audit.setCurrentVersion(audit.getCurrentVersion() != null ? audit.getCurrentVersion() + 1 : 1);
@@ -218,7 +226,11 @@ public class AwardService {
 
         List<DuplicateRecord> records = new ArrayList<>();
         for (AwardApplication a : sameType) {
-            if (a.getStatus() == null || a.getStatus() != ApplyStatusEnum.APPROVED.getValue()) continue;
+            if (a.getStatus() == null
+                    || (a.getStatus() != ApplyStatusEnum.PENDING.getValue()
+                    && a.getStatus() != ApplyStatusEnum.APPROVED.getValue())) {
+                continue;
+            }
             double similarity = 0.0;
             if (req.getCertificateNo() != null && req.getCertificateNo().equals(a.getCertificateNo())) {
                 similarity = 1.0;
@@ -282,6 +294,8 @@ public class AwardService {
         requireEventTimeWithinSemester(req.getSemesterId(), req.getParticipatedTime(), "参赛时间", draft);
 
         String title = "竞赛之星-" + req.getCompetitionName();
+        requireNoDuplicateAwardOnSubmit(draft, userId, AwardTypeEnum.COMPETITION_STAR.getValue(),
+                req.getCertificateNo(), title, null);
         AwardApplication app = createAwardBase(schoolId, userId, AwardTypeEnum.COMPETITION_STAR.getValue(),
                 title, req.getSemesterId(), draft, now);
         app.setCertificateNo(req.getCertificateNo());
@@ -441,6 +455,8 @@ public class AwardService {
         app.setTitle((subName != null && !subName.isBlank())
                 ? "科研之星-" + catLabel + "-" + subName
                 : "科研之星-" + catLabel);
+        requireNoDuplicateAwardOnSubmit(false, userId, app.getAwardType(),
+                app.getCertificateNo(), app.getTitle(), app.getId());
 
         ArchiveAuditInfo audit = app.getAuditInfo();
         if (audit == null) { audit = new ArchiveAuditInfo(); app.setAuditInfo(audit); }
@@ -491,6 +507,8 @@ public class AwardService {
         requireValidRankTotal(req.getApplicantRank());
 
         String title = "双创之星-" + req.getCompanyName();
+        requireNoDuplicateAwardOnSubmit(draft, userId, AwardTypeEnum.INNOVATION_STAR.getValue(),
+                req.getCertificateNo(), title, null);
         AwardApplication app = createAwardBase(schoolId, userId, AwardTypeEnum.INNOVATION_STAR.getValue(),
                 title, req.getSemesterId(), draft, now);
         app.setCertificateNo(req.getCertificateNo());
@@ -725,6 +743,78 @@ public class AwardService {
                 "本学期已存在该奖项的申报记录，请修改原记录后重新提交");
     }
 
+    /**
+     * 提交期强查重：同一学生、同一奖项类型下，证书编号相同，或（名称相同且双方都无证书编号）
+     * 的待审批/已通过记录视为重复，直接拦截提交。草稿、已退回、已撤销不参与比对。
+     *
+     * @param excludeApplicationId 更正/重新提交既有记录时排除自身
+     */
+    private void requireNoDuplicateAwardOnSubmit(boolean draft, Long userId, String awardType,
+                                                 String certificateNo, String title, Long excludeApplicationId) {
+        if (draft || !STRICT_DUPLICATE_AWARD_TYPES.contains(awardType)) {
+            return;
+        }
+        String targetCert = trimToNull(certificateNo);
+        String targetTitle = normalizeName(title);
+        if (targetCert == null && targetTitle == null) {
+            return;
+        }
+
+        AwardApplication duplicate = awardApplicationRepository.findByUserId(userId).stream()
+                .filter(a -> awardType.equals(a.getAwardType()))
+                .filter(a -> excludeApplicationId == null || !excludeApplicationId.equals(a.getId()))
+                .filter(a -> a.getStatus() != null
+                        && (a.getStatus() == ApplyStatusEnum.PENDING.getValue()
+                        || a.getStatus() == ApplyStatusEnum.APPROVED.getValue()))
+                .filter(a -> {
+                    String existingCert = trimToNull(a.getCertificateNo());
+                    boolean sameCert = targetCert != null && existingCert != null
+                            && targetCert.equalsIgnoreCase(existingCert);
+                    // 证书只是补充维度：名称相同同样视为重复，避免改证书编号绕过查重
+                    boolean sameTitle = targetTitle != null && targetTitle.equals(normalizeName(a.getTitle()));
+                    return sameCert || sameTitle;
+                })
+                .findFirst().orElse(null);
+
+        if (duplicate != null) {
+            String existingCert = trimToNull(duplicate.getCertificateNo());
+            boolean byCert = targetCert != null && existingCert != null
+                    && targetCert.equalsIgnoreCase(existingCert);
+            String reason = byCert
+                    ? "证书编号相同（" + existingCert + "）"
+                    : "名称相同（" + duplicate.getTitle() + "）";
+            throw new BusinessException(ResultCode.BIZ_DUPLICATE_SUBMISSION,
+                    "该奖项已申报（记录ID：" + duplicate.getId() + "，判定依据：" + reason
+                            + "），请勿重复提交；如需修改请编辑原记录或提交更正申请");
+        }
+    }
+
+    /**
+     * 供动态编辑入口（PUT /activities/award/{id}）复用：该入口会把记录直接置为待审批，
+     * 必须与 submit* 保持同样的查重口径，否则可以从这里绕过查重重复提交。
+     */
+    public void requireNoDuplicateOnResubmit(AwardApplication application) {
+        requireNoDuplicateAwardOnSubmit(false, application.getUserId(), application.getAwardType(),
+                application.getCertificateNo(), application.getTitle(), application.getId());
+    }
+
+    /** 名称归一化：去除所有空白并忽略大小写，避免空格/大小写差异绕过查重 */
+    private static String normalizeName(String value) {
+        if (value == null) {
+            return null;
+        }
+        String normalized = value.replaceAll("\\s+", "").toLowerCase();
+        return normalized.isEmpty() ? null : normalized;
+    }
+
+    private static String trimToNull(String value) {
+        if (value == null) {
+            return null;
+        }
+        String trimmed = value.trim();
+        return trimmed.isEmpty() ? null : trimmed;
+    }
+
     private AwardApplication createAwardBase(Long schoolId, Long userId, String awardType,
                                               String title, Long semesterId, boolean draft, LocalDateTime now) {
         requireNoExistingAwardInSemester(userId, awardType, semesterId);
@@ -899,8 +989,14 @@ public class AwardService {
         if (relation.getDeletedAt() != null) {
             throw new BusinessException(ResultCode.DATA_NOT_EXIST, "文件不存在");
         }
-        if (relation.getFileStatus() == null || FileStatusEnum.of(relation.getFileStatus()) == null
-                || !FileStatusEnum.of(relation.getFileStatus()).isBindable()) {
+        FileStatusEnum fileStatus = FileStatusEnum.of(relation.getFileStatus());
+        // 幂等：已绑定同一申报（草稿重复保存 / 编辑重复提交）直接放行
+        if (fileStatus == FileStatusEnum.BOUND
+                && AttachmentBizTypeEnum.AWARD.getValue().equals(relation.getBizType())
+                && bizId.equals(relation.getBizId())) {
+            return;
+        }
+        if (fileStatus == null || !fileStatus.isBindable()) {
             throw new BusinessException(ResultCode.BIZ_STATUS_NOT_OPERABLE, "文件已关联，不能重复绑定");
         }
         relation.setBizType(AttachmentBizTypeEnum.AWARD.getValue());

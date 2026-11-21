@@ -40,6 +40,7 @@ import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
 import java.util.*;
+import java.util.function.Predicate;
 
 /**
  * 个人档案信息申报服务
@@ -58,6 +59,28 @@ public class ApplicationService {
             DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ssXXX");
 
     private static final DateTimeFormatter DATE_FMT = DateTimeFormatter.ofPattern("yyyy-MM-dd");
+
+    /**
+     * 强查重档案类型：同一学生的同一成果只允许存在一条申报（待审批/已通过）。
+     * 图书心得、社会实践、实习经历、组织履历可能合理重复，不走强拦截。
+     */
+    private static final Set<String> STRICT_DUPLICATE_ARCHIVE_TYPES = Set.of(
+            ArchiveTypeEnum.ACADEMIC_COMPETITION.getValue(),
+            ArchiveTypeEnum.INNOVATION_ENTREPRENEURSHIP.getValue(),
+            ArchiveTypeEnum.ACADEMIC_RESEARCH.getValue(),
+            ArchiveTypeEnum.SCHOLARSHIP.getValue(),
+            ArchiveTypeEnum.HONOR_CERTIFICATE.getValue(),
+            ArchiveTypeEnum.TRAINING_PROJECT.getValue());
+
+    /**
+     * 完全重复拦截类型：这些经历可能合法重复（多段实习、同一组织不同任期、同一活动多次参与、
+     * 同一本书多篇心得），仅在关键字段完全一致时才拦截。
+     */
+    private static final Set<String> EXACT_DUPLICATE_ARCHIVE_TYPES = Set.of(
+            ArchiveTypeEnum.INTERNSHIP.getValue(),
+            ArchiveTypeEnum.ORGANIZATION.getValue(),
+            ArchiveTypeEnum.SOCIAL_PRACTICE.getValue(),
+            ArchiveTypeEnum.BOOK_REVIEW.getValue());
 
     private final ArchiveRepository archiveRepository;
     private final UserRepository userRepository;
@@ -106,6 +129,8 @@ public class ApplicationService {
         requireOnSubmit(draft, req.getObtainedTime(), "获奖时间");
         requireEventTimeInSemester(req.getSemesterId(), req.getObtainedTime(), "获奖时间", draft);
         requireEvidenceOnSubmit(draft, req.getEvidenceFileIds());
+        requireNoDuplicateArchiveOnSubmit(draft, userId, ArchiveTypeEnum.ACADEMIC_COMPETITION.getValue(),
+                req.getCompetitionName(), req.getObtainedTime(), req.getCertificateNo(), req.getArchiveId());
 
         FormTemplate template = validateByTemplate(schoolId, ArchiveTypeEnum.ACADEMIC_COMPETITION.getValue(), req, draft);
 
@@ -153,6 +178,8 @@ public class ApplicationService {
         requireOnSubmit(draft, req.getObtainedTime(), "获得时间");
         requireEventTimeInSemester(req.getSemesterId(), req.getObtainedTime(), "获得时间", draft);
         requireEvidenceOnSubmit(draft, req.getEvidenceFileIds());
+        requireNoDuplicateArchiveOnSubmit(draft, userId, ArchiveTypeEnum.SCHOLARSHIP.getValue(),
+                req.getScholarshipName(), req.getObtainedTime(), null, req.getArchiveId());
 
         FormTemplate template = validateByTemplate(schoolId, ArchiveTypeEnum.SCHOLARSHIP.getValue(), req, draft);
 
@@ -198,6 +225,8 @@ public class ApplicationService {
         requireOnSubmit(draft, req.getRegisteredTime(), "注册时间");
         requireEventTimeInSemester(req.getSemesterId(), req.getRegisteredTime(), "注册时间", draft);
         requireEvidenceOnSubmit(draft, req.getEvidenceFileIds());
+        requireNoDuplicateArchiveOnSubmit(draft, userId, ArchiveTypeEnum.INNOVATION_ENTREPRENEURSHIP.getValue(),
+                req.getCompanyName(), req.getRegisteredTime(), null, req.getArchiveId());
 
         FormTemplate template = validateByTemplate(schoolId, ArchiveTypeEnum.INNOVATION_ENTREPRENEURSHIP.getValue(), req, draft);
 
@@ -248,6 +277,8 @@ public class ApplicationService {
         // 仅允许申报已完成的研究：结束日期（计入获得时间）不得晚于当前时间，且须落在所选学期内
         requireEventTimeInSemester(req.getSemesterId(), req.getEndDate(), "结束日期", draft);
         requireEvidenceOnSubmit(draft, req.getEvidenceFileIds());
+        requireNoDuplicateArchiveOnSubmit(draft, userId, ArchiveTypeEnum.ACADEMIC_RESEARCH.getValue(),
+                req.getProjectName(), req.getEndDate(), null, req.getArchiveId());
 
         FormTemplate template = validateByTemplate(schoolId, ArchiveTypeEnum.ACADEMIC_RESEARCH.getValue(), req, draft);
 
@@ -295,6 +326,8 @@ public class ApplicationService {
         requireOnSubmit(draft, req.getObtainedTime(), "获得时间");
         requireEventTimeInSemester(req.getSemesterId(), req.getObtainedTime(), "获得时间", draft);
         requireEvidenceOnSubmit(draft, req.getEvidenceFileIds());
+        requireNoDuplicateArchiveOnSubmit(draft, userId, ArchiveTypeEnum.HONOR_CERTIFICATE.getValue(),
+                req.getCertificateName(), req.getObtainedTime(), req.getCertificateNo(), req.getArchiveId());
 
         FormTemplate template = validateByTemplate(schoolId, ArchiveTypeEnum.HONOR_CERTIFICATE.getValue(), req, draft);
 
@@ -345,6 +378,14 @@ public class ApplicationService {
         requireDateRange(req.getStartDate(), req.getEndDate(), "开始时间", "结束时间");
         requireEventTimeInSemester(req.getSemesterId(), req.getStartDate(), "开始时间", draft);
         requireEvidenceOnSubmit(draft, req.getEvidenceFileIds());
+        requireNoExactDuplicateArchive(draft, userId, ArchiveTypeEnum.INTERNSHIP.getValue(), req.getArchiveId(),
+                a -> internshipRepository.findByArchiveId(a.getId())
+                        .map(e -> sameText(e.getCompanyName(), req.getCompanyName())
+                                && sameText(e.getLocation(), req.getLocation())
+                                && sameText(e.getPosition(), req.getPosition())
+                                && Objects.equals(e.getStartDate(), req.getStartDate())
+                                && Objects.equals(e.getEndDate(), req.getEndDate()))
+                        .orElse(false));
 
         FormTemplate template = validateByTemplate(schoolId, ArchiveTypeEnum.INTERNSHIP.getValue(), req, draft);
 
@@ -395,6 +436,14 @@ public class ApplicationService {
         requireDateRange(req.getStartDate(), req.getEndDate(), "任职开始", "任职结束");
         requireEventTimeInSemester(req.getSemesterId(), req.getStartDate(), "任职开始", draft);
         requireEvidenceOnSubmit(draft, req.getEvidenceFileIds());
+        requireNoExactDuplicateArchive(draft, userId, ArchiveTypeEnum.ORGANIZATION.getValue(), req.getArchiveId(),
+                a -> organizationRepository.findByArchiveId(a.getId())
+                        .map(e -> sameText(e.getOrgLevel(), req.getOrgLevel())
+                                && sameText(e.getDepartment(), req.getDepartment())
+                                && sameText(e.getPositionTitle(), req.getPositionTitle())
+                                && Objects.equals(e.getStartDate(), req.getStartDate())
+                                && Objects.equals(e.getEndDate(), req.getEndDate()))
+                        .orElse(false));
 
         FormTemplate template = validateByTemplate(schoolId, ArchiveTypeEnum.ORGANIZATION.getValue(), req, draft);
 
@@ -444,6 +493,8 @@ public class ApplicationService {
         requireDateRange(req.getStartDate(), req.getEndDate(), "开始时间", "结束时间");
         requireEventTimeInSemester(req.getSemesterId(), req.getStartDate(), "开始时间", draft);
         requireEvidenceOnSubmit(draft, req.getEvidenceFileIds());
+        requireNoDuplicateArchiveOnSubmit(draft, userId, ArchiveTypeEnum.TRAINING_PROJECT.getValue(),
+                req.getProjectName(), req.getStartDate(), null, req.getArchiveId());
 
         FormTemplate template = validateByTemplate(schoolId, ArchiveTypeEnum.TRAINING_PROJECT.getValue(), req, draft);
 
@@ -494,6 +545,14 @@ public class ApplicationService {
         requireEventTimeInSemester(req.getSemesterId(), req.getStartDate(), "开始时间", draft);
         requireNonNegativeVolunteerHours(req.getVolunteerHours());
         requireEvidenceOnSubmit(draft, req.getEvidenceFileIds());
+        requireNoExactDuplicateArchive(draft, userId, ArchiveTypeEnum.SOCIAL_PRACTICE.getValue(), req.getArchiveId(),
+                a -> socialPracticeRepository.findByArchiveId(a.getId())
+                        .map(e -> sameText(e.getActivityName(), req.getActivityName())
+                                && sameText(e.getPracticeLocation(), req.getPracticeLocation())
+                                && sameText(e.getPracticeUnit(), req.getPracticeUnit())
+                                && Objects.equals(e.getStartDate(), req.getStartDate())
+                                && Objects.equals(e.getEndDate(), req.getEndDate()))
+                        .orElse(false));
 
         FormTemplate template = validateByTemplate(schoolId, ArchiveTypeEnum.SOCIAL_PRACTICE.getValue(), req, draft);
 
@@ -542,6 +601,12 @@ public class ApplicationService {
         requireEventTimeInSemester(req.getSemesterId(), req.getReadMonth(), "阅读时间", draft);
         requireOnSubmit(draft, req.getReviewContent(), "心得体会");
         requireEvidenceOnSubmit(draft, req.getEvidenceFileIds());
+        requireNoExactDuplicateArchive(draft, userId, ArchiveTypeEnum.BOOK_REVIEW.getValue(), req.getArchiveId(),
+                a -> bookReviewRepository.findByArchiveId(a.getId())
+                        .map(e -> sameText(e.getBookName(), req.getBookName())
+                                && Objects.equals(e.getReadMonth(), req.getReadMonth())
+                                && sameText(e.getReviewContent(), req.getReviewContent()))
+                        .orElse(false));
 
         FormTemplate template = validateByTemplate(schoolId, ArchiveTypeEnum.BOOK_REVIEW.getValue(), req, draft);
 
@@ -640,6 +705,13 @@ public class ApplicationService {
         if (submit) {
             // 从草稿提交：与直接提交口径一致，获得时间必须落在所选学期内且不晚于当前日期
             requireArchiveEventTimeInSemester(archive, false);
+            String certNo = body.get("certificateNo") != null ? String.valueOf(body.get("certificateNo")) : null;
+            requireNoDuplicateArchiveOnSubmit(false, userId, archive.getArchiveType(),
+                    archive.getTitle(), archive.getObtainedAt(), certNo, archive.getId());
+            String exactCheckType = archive.getArchiveType();
+            Long exactCheckId = archive.getId();
+            requireNoExactDuplicateArchive(false, userId, exactCheckType, exactCheckId,
+                    other -> isSameExtension(exactCheckType, exactCheckId, other.getId()));
             archive.setStatus(ApplyStatusEnum.PENDING.getValue());
             audit.setSubmittedAt(LocalDateTime.now());
             audit.setCurrentVersion(audit.getCurrentVersion() != null ? audit.getCurrentVersion() + 1 : 1);
@@ -692,19 +764,23 @@ public class ApplicationService {
             detectFields = Collections.emptyList();
         }
 
-        // 查询同类型、同用户的已通过档案做简易比对
+        // 查询同类型、同用户的待审批/已通过档案做简易比对（待审批同样会占用成果，必须参与查重）
         List<Archive> sameTypeArchives = archiveRepository.findByUserIdAndArchiveType(userId, req.getArchiveType());
         List<DuplicateCheckResponse.SimilarItem> similarItems = new ArrayList<>();
 
         for (Archive a : sameTypeArchives) {
-            if (a.getStatus() == null || a.getStatus() != ApplyStatusEnum.APPROVED.getValue()) continue;
-            // 简易精确匹配
+            if (a.getStatus() == null
+                    || (a.getStatus() != ApplyStatusEnum.PENDING.getValue()
+                    && a.getStatus() != ApplyStatusEnum.APPROVED.getValue())) {
+                continue;
+            }
+            // 简易精确匹配：请求检测字段值命中已有记录名称即视为相似
             boolean match = false;
             if (req.getFields() != null && !detectFields.isEmpty()) {
+                String existedTitle = a.getTitle() != null ? a.getTitle() : "";
                 for (String field : detectFields) {
                     Object inputVal = req.getFields().get(field);
-                    if (inputVal != null && inputVal.toString().equalsIgnoreCase(
-                            String.valueOf(a.getTitle() != null ? a.getTitle() : ""))) {
+                    if (inputVal != null && existedTitle.equalsIgnoreCase(inputVal.toString().trim())) {
                         match = true;
                         break;
                     }
@@ -1086,6 +1162,165 @@ public class ApplicationService {
         if (evidenceFileIds == null || evidenceFileIds.isEmpty()) {
             throw new BusinessException(ResultCode.PARAM_MISSING, "佐证材料不能为空");
         }
+    }
+
+    /**
+     * 提交期强查重：同一学生、同一类型下，证书编号相同，或（名称 + 取得时间）相同的
+     * 待审批/已通过记录视为重复，直接拦截提交。草稿、已退回、已撤销不参与比对。
+     *
+     * @param excludeArchiveId 编辑既有记录（草稿/退回后重新提交）时排除自身
+     */
+    private void requireNoDuplicateArchiveOnSubmit(boolean draft, Long userId, String archiveType,
+                                                   String title, LocalDate obtainedAt,
+                                                   String certificateNo, Long excludeArchiveId) {
+        if (draft || !STRICT_DUPLICATE_ARCHIVE_TYPES.contains(archiveType)) {
+            return;
+        }
+        String targetTitle = normalizeName(title);
+        String targetCert = trimToNull(certificateNo);
+        if (targetTitle == null) {
+            return;
+        }
+
+        Archive duplicate = archiveRepository.findByUserIdAndArchiveType(userId, archiveType).stream()
+                .filter(a -> excludeArchiveId == null || !excludeArchiveId.equals(a.getId()))
+                .filter(a -> a.getStatus() != null
+                        && (a.getStatus() == ApplyStatusEnum.PENDING.getValue()
+                        || a.getStatus() == ApplyStatusEnum.APPROVED.getValue()))
+                .filter(a -> {
+                    String existingCert = archiveCertificateNo(a);
+                    boolean sameCert = targetCert != null && existingCert != null
+                            && targetCert.equalsIgnoreCase(existingCert);
+                    // 证书只是补充维度：名称 + 获得时间相同同样视为重复，避免改证书编号绕过查重
+                    boolean sameTime = obtainedAt == null || obtainedAt.equals(a.getObtainedAt());
+                    boolean sameTitle = targetTitle.equals(normalizeName(a.getTitle()));
+                    return sameCert || (sameTime && sameTitle);
+                })
+                .findFirst().orElse(null);
+
+        if (duplicate != null) {
+            String existingCert = archiveCertificateNo(duplicate);
+            boolean byCert = targetCert != null && existingCert != null
+                    && targetCert.equalsIgnoreCase(existingCert);
+            String reason = byCert
+                    ? "证书编号相同（" + existingCert + "）"
+                    : "名称与获得时间相同（" + duplicate.getTitle() + "，"
+                            + (duplicate.getObtainedAt() != null ? duplicate.getObtainedAt() : "时间未填") + "）";
+            throw new BusinessException(ResultCode.BIZ_DUPLICATE_SUBMISSION,
+                    "该成果已申报（记录ID：" + duplicate.getId() + "，判定依据：" + reason
+                            + "），请勿重复提交；如需修改请编辑原记录或提交更正申请");
+        }
+    }
+
+    /** 读取竞赛/证书扩展表中已保存的证书编号；其他类型没有证书编号 */
+    private String archiveCertificateNo(Archive archive) {
+        if (ArchiveTypeEnum.ACADEMIC_COMPETITION.getValue().equals(archive.getArchiveType())) {
+            return competitionRepository.findByArchiveId(archive.getId())
+                    .map(ArchiveCompetition::getCertificateNo).map(ApplicationService::trimToNull).orElse(null);
+        }
+        if (ArchiveTypeEnum.HONOR_CERTIFICATE.getValue().equals(archive.getArchiveType())) {
+            return certificateRepository.findByArchiveId(archive.getId())
+                    .map(ArchiveCertificate::getCertificateNo).map(ApplicationService::trimToNull).orElse(null);
+        }
+        return null;
+    }
+
+    /** 名称归一化：去除所有空白并忽略大小写，避免空格/大小写差异绕过查重 */
+    private static String normalizeName(String value) {
+        if (value == null) {
+            return null;
+        }
+        String normalized = value.replaceAll("\\s+", "").toLowerCase();
+        return normalized.isEmpty() ? null : normalized;
+    }
+
+    private static String trimToNull(String value) {
+        if (value == null) {
+            return null;
+        }
+        String trimmed = value.trim();
+        return trimmed.isEmpty() ? null : trimmed;
+    }
+
+    /**
+     * 完全重复校验（实习/组织/社会实践/图书心得）：扩展表关键字段全部一致才视为重复并拦截。
+     * 这四类可能合法重复（多段实习、同一组织不同任期、同一活动多次参与、同书多篇心得）。
+     */
+    private void requireNoExactDuplicateArchive(boolean draft, Long userId, String archiveType,
+                                                Long excludeArchiveId, Predicate<Archive> sameRecord) {
+        if (draft || !EXACT_DUPLICATE_ARCHIVE_TYPES.contains(archiveType)) {
+            return;
+        }
+        Archive duplicate = archiveRepository.findByUserIdAndArchiveType(userId, archiveType).stream()
+                .filter(a -> excludeArchiveId == null || !excludeArchiveId.equals(a.getId()))
+                .filter(a -> a.getStatus() != null
+                        && (a.getStatus() == ApplyStatusEnum.PENDING.getValue()
+                        || a.getStatus() == ApplyStatusEnum.APPROVED.getValue()))
+                .filter(sameRecord)
+                .findFirst().orElse(null);
+        if (duplicate != null) {
+            throw new BusinessException(ResultCode.BIZ_DUPLICATE_SUBMISSION,
+                    "已存在内容完全相同的申报（记录ID：" + duplicate.getId() + "，名称：" + duplicate.getTitle()
+                            + "），请勿重复提交；如需修改请编辑原记录");
+        }
+    }
+
+    /**
+     * 供动态编辑入口（PUT /activities/archive/{id}）复用：该入口会把记录直接置为待审批，
+     * 必须与 submit* 保持同样的查重口径，否则可以从这里绕过查重重复提交。
+     */
+    public void requireNoDuplicateOnResubmit(Archive archive) {
+        requireNoDuplicateArchiveOnSubmit(false, archive.getUserId(), archive.getArchiveType(),
+                archive.getTitle(), archive.getObtainedAt(), null, archive.getId());
+        requireNoExactDuplicateArchive(false, archive.getUserId(), archive.getArchiveType(), archive.getId(),
+                other -> isSameExtension(archive.getArchiveType(), archive.getId(), other.getId()));
+    }
+
+    /** 扩展表关键字段逐项比对，用于草稿自动保存提交时的完全重复校验 */
+    private boolean isSameExtension(String archiveType, Long leftArchiveId, Long rightArchiveId) {
+        if (ArchiveTypeEnum.INTERNSHIP.getValue().equals(archiveType)) {
+            return internshipRepository.findByArchiveId(leftArchiveId)
+                    .flatMap(l -> internshipRepository.findByArchiveId(rightArchiveId)
+                            .map(r -> sameText(l.getCompanyName(), r.getCompanyName())
+                                    && sameText(l.getLocation(), r.getLocation())
+                                    && sameText(l.getPosition(), r.getPosition())
+                                    && Objects.equals(l.getStartDate(), r.getStartDate())
+                                    && Objects.equals(l.getEndDate(), r.getEndDate())))
+                    .orElse(false);
+        }
+        if (ArchiveTypeEnum.ORGANIZATION.getValue().equals(archiveType)) {
+            return organizationRepository.findByArchiveId(leftArchiveId)
+                    .flatMap(l -> organizationRepository.findByArchiveId(rightArchiveId)
+                            .map(r -> sameText(l.getOrgLevel(), r.getOrgLevel())
+                                    && sameText(l.getDepartment(), r.getDepartment())
+                                    && sameText(l.getPositionTitle(), r.getPositionTitle())
+                                    && Objects.equals(l.getStartDate(), r.getStartDate())
+                                    && Objects.equals(l.getEndDate(), r.getEndDate())))
+                    .orElse(false);
+        }
+        if (ArchiveTypeEnum.SOCIAL_PRACTICE.getValue().equals(archiveType)) {
+            return socialPracticeRepository.findByArchiveId(leftArchiveId)
+                    .flatMap(l -> socialPracticeRepository.findByArchiveId(rightArchiveId)
+                            .map(r -> sameText(l.getActivityName(), r.getActivityName())
+                                    && sameText(l.getPracticeLocation(), r.getPracticeLocation())
+                                    && sameText(l.getPracticeUnit(), r.getPracticeUnit())
+                                    && Objects.equals(l.getStartDate(), r.getStartDate())
+                                    && Objects.equals(l.getEndDate(), r.getEndDate())))
+                    .orElse(false);
+        }
+        if (ArchiveTypeEnum.BOOK_REVIEW.getValue().equals(archiveType)) {
+            return bookReviewRepository.findByArchiveId(leftArchiveId)
+                    .flatMap(l -> bookReviewRepository.findByArchiveId(rightArchiveId)
+                            .map(r -> sameText(l.getBookName(), r.getBookName())
+                                    && Objects.equals(l.getReadMonth(), r.getReadMonth())
+                                    && sameText(l.getReviewContent(), r.getReviewContent())))
+                    .orElse(false);
+        }
+        return false;
+    }
+
+    private static boolean sameText(String left, String right) {
+        return Objects.equals(normalizeName(left), normalizeName(right));
     }
 
     private Archive createArchiveBase(Long schoolId, Long userId, String archiveType,
