@@ -3,14 +3,18 @@ package com.example.studentarchives.controller.Lzw;
 import com.example.studentarchives.common.ApiResult;
 import com.example.studentarchives.common.PageParam;
 import com.example.studentarchives.common.PageResult;
+import com.example.studentarchives.dto.Fmy.aifaq.response.AiFaqQuestionResponse;
 import com.example.studentarchives.service.Lzw.AiConversationService;
 import com.example.studentarchives.service.Lzw.AiConversationService.*;
+import com.example.studentarchives.service.Lzw.AiFaqQueryService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.MediaType;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
+
+import java.util.List;
 
 /**
  * AI 对话模块控制器
@@ -24,6 +28,7 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 public class AiConversationController {
 
     private final AiConversationService aiConversationService;
+    private final AiFaqQueryService aiFaqQueryService;
 
     // ==================== 9.1 创建对话会话 ====================
 
@@ -119,5 +124,16 @@ public class AiConversationController {
             @RequestBody(required = false) MessageFeedbackRequest body,
             @AuthenticationPrincipal Long userId) {
         return ApiResult.success(aiConversationService.submitFeedback(messageId, body, userId));
+    }
+
+    // ==================== 9.9 获取常见问题（FAQ） ====================
+
+    /**
+     * 获取启用中的 AI 常见问题列表（由管理员在 /admin/ai-faqs 维护）。
+     * 前端点击问题后，将问题文本作为 content 调用现有消息发送接口。
+     */
+    @GetMapping("/faqs")
+    public ApiResult<List<AiFaqQuestionResponse>> listFaqs() {
+        return ApiResult.success(aiFaqQueryService.listActive());
     }
 }
