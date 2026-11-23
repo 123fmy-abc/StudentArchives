@@ -7,8 +7,10 @@ import com.example.studentarchives.service.Lzw.AiConversationService;
 import com.example.studentarchives.service.Lzw.AiConversationService.*;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.http.MediaType;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 /**
  * AI 对话模块控制器
@@ -63,6 +65,20 @@ public class AiConversationController {
             @RequestBody SendMessageRequest body,
             @AuthenticationPrincipal Long userId) {
         return ApiResult.success(aiConversationService.sendMessage(conversationId, body, userId));
+    }
+
+    // ==================== 9.4.1 发送消息（流式 SSE） ====================
+
+    /**
+     * 流式发送消息：响应为 text/event-stream，事件体为 JSON（start / delta / done / error）。
+     */
+    @PostMapping(value = "/conversations/{conversationId}/messages/stream",
+            produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+    public SseEmitter sendMessageStream(
+            @PathVariable Long conversationId,
+            @RequestBody SendMessageRequest body,
+            @AuthenticationPrincipal Long userId) {
+        return aiConversationService.sendMessageStream(conversationId, body, userId);
     }
 
     // ==================== 9.5 重新生成 AI 消息 ====================

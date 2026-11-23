@@ -40,9 +40,9 @@ services:
       OSS_ACCESS_KEY_SECRET: ${OSS_ACCESS_KEY_SECRET}
       OSS_BUCKET_NAME: ${OSS_BUCKET_NAME}
 
-      # ===== DeepSeek AI =====
-      DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY}
-      # 可选覆盖：DEEPSEEK_BASE_URL / DEEPSEEK_MODEL / DEEPSEEK_TIMEOUT_MS / DEEPSEEK_MAX_TOKENS / DEEPSEEK_TEMPERATURE
+      # ===== 大模型 AI（OpenAI 兼容，默认智谱 GLM）=====
+      LLM_API_KEY: ${LLM_API_KEY}
+      # 可选覆盖：LLM_BASE_URL / LLM_MODEL / LLM_TIMEOUT_MS / LLM_MAX_TOKENS / LLM_TEMPERATURE
 
     volumes:
       - ./logs:/app/logs

@@ -66,6 +66,10 @@ public class SecurityConfig {
                     .accessDeniedHandler(accessDeniedHandler))
             // URL 权限配置
             .authorizeHttpRequests(auth -> auth
+                    // SSE 等异步请求的二次分发（ASYNC dispatch）放行：
+                    // 首次 REQUEST 分发已完成鉴权，ASYNC 分发时安全上下文已不在当前线程，
+                    // 若再次鉴权会误判为未登录导致流式接口 403。
+                    .dispatcherTypeMatchers(jakarta.servlet.DispatcherType.ASYNC).permitAll()
                     // 公开接口（精确路径匹配优先）
                     .requestMatchers(PUBLIC_AUTH_PATHS).permitAll()
                     // 静态资源、错误页面等无需认证（放在 /** 之前才生效）

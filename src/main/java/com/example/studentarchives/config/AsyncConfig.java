@@ -33,4 +33,22 @@ public class AsyncConfig {
         executor.initialize();
         return executor;
     }
+
+    /**
+     * AI 流式回复线程池。
+     * <p>
+     * 流式对话期间线程阻塞在大模型 HTTP 读取上（单次可达数十秒），
+     * 不能占用 Tomcat 请求线程，故单独使用线程池承载。
+     */
+    @Bean(name = "aiStreamExecutor")
+    public Executor aiStreamExecutor() {
+        ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
+        executor.setCorePoolSize(4);
+        executor.setMaxPoolSize(16);
+        executor.setQueueCapacity(100);
+        executor.setThreadNamePrefix("ai-stream-");
+        executor.setRejectedExecutionHandler(new java.util.concurrent.ThreadPoolExecutor.CallerRunsPolicy());
+        executor.initialize();
+        return executor;
+    }
 }

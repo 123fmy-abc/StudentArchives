@@ -3,20 +3,25 @@ package com.example.studentarchives.service.Lzw;
 import com.example.studentarchives.common.PageParam;
 import com.example.studentarchives.common.PageResult;
 import com.example.studentarchives.common.ResultCode;
-import com.example.studentarchives.config.Lzw.DeepSeekProperties;
+import com.example.studentarchives.config.Lzw.LlmProperties;
 import com.example.studentarchives.entity.ai.AiConversation;
 import com.example.studentarchives.entity.ai.AiGenerationLog;
 import com.example.studentarchives.entity.ai.AiMessage;
 import com.example.studentarchives.entity.ai.AiMessageFeedback;
 import com.example.studentarchives.entity.ai.AiTeacherFeedback;
 import com.example.studentarchives.entity.archive.Archive;
+import com.example.studentarchives.entity.award.AwardApplication;
 import com.example.studentarchives.entity.career.CareerPlan;
+import com.example.studentarchives.entity.foundation.AwardTypeConfig;
 import com.example.studentarchives.entity.user.User;
 import com.example.studentarchives.entity.weakness.ImprovementSuggestion;
 import com.example.studentarchives.entity.weakness.WeaknessAnalysis;
 import com.example.studentarchives.enums.AIFeedbackActionEnum;
 import com.example.studentarchives.enums.AISuggestionSourceEnum;
 import com.example.studentarchives.enums.APICallStatusEnum;
+import com.example.studentarchives.enums.ApplyStatusEnum;
+import com.example.studentarchives.enums.ArchiveTypeEnum;
+import com.example.studentarchives.enums.AwardTypeEnum;
 import com.example.studentarchives.exception.BusinessException;
 import com.example.studentarchives.repository.AiConversationRepository;
 import com.example.studentarchives.repository.AiGenerationLogRepository;
@@ -24,10 +29,13 @@ import com.example.studentarchives.repository.AiMessageFeedbackRepository;
 import com.example.studentarchives.repository.AiMessageRepository;
 import com.example.studentarchives.repository.AiTeacherFeedbackRepository;
 import com.example.studentarchives.repository.ArchiveRepository;
+import com.example.studentarchives.repository.AwardApplicationRepository;
+import com.example.studentarchives.repository.AwardTypeConfigRepository;
 import com.example.studentarchives.repository.CareerPlanRepository;
 import com.example.studentarchives.repository.ImprovementSuggestionRepository;
 import com.example.studentarchives.repository.UserRepository;
 import com.example.studentarchives.repository.WeaknessAnalysisRepository;
+import com.example.studentarchives.service.common.GuideAssembler;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.Data;
@@ -36,8 +44,10 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
+import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.time.LocalDateTime;
 import java.time.ZoneId;
@@ -45,15 +55,19 @@ import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.Executor;
 import java.util.stream.Collectors;
 
 /**
  * AI 对话模块服务
  * <p>
- * 覆盖 7 个端点：创建会话、会话列表、消息列表、发送消息（含 AI 生成）、重新生成、AI 建议、删除会话。
- * AI 回复由 DeepSeek 大模型生成（见 buildAiReply），调用失败时返回兜底话术。
+ * 覆盖 8 个端点：创建会话、会话列表、消息列表、发送消息（含 AI 生成）、发送消息（流式 SSE）、
+ * 重新生成、AI 建议、删除会话。
+ * AI 回复由大模型（智谱 GLM）生成（流式见 {@link #sendMessageStream}，非流式见 buildAiReply），
+ * 调用失败时返回兜底话术。
  */
 @Slf4j
 @Service
@@ -75,7 +89,16 @@ public class AiConversationService {
     private static final String SYSTEM_PROMPT =
             "你是「学生成长档案」系统的 AI 助手，为学生提供档案申报、奖项报名、"
             + "职业规划、短板改进等方面的咨询与建议。请用简洁、友好的中文回答；"
+            + "系统会以「项目数据上下文」的形式提供该学生的真实档案、奖项申报记录、"
+            + "职业规划数据以及奖项评选说明配置，回答相关问题时必须优先依据上下文中的"
+            + "真实数据与配置，不要编造具体数据；上下文中没有的信息要如实说明。"
             + "若问题超出档案系统范围，请礼貌说明并建议学生联系老师。";
+    /** 注入上下文时各类记录的最大条数，避免提示词过长 */
+    private static final int CONTEXT_ITEM_LIMIT = 10;
+    /** 评选说明正文的截断长度 */
+    private static final int GUIDE_CONTENT_LIMIT = 300;
+    /** 泛指奖项类问题时触发评选说明注入的关键词 */
+    private static final String[] AWARD_GENERIC_KEYWORDS = {"奖项", "评选", "申报", "评优", "报名"};
     /** 生成记录关联类型：AI 消息 / 改进建议 */
     private static final String RELATED_AI_MESSAGE = "ai_message";
     private static final String RELATED_SUGGESTION = "improvement_suggestion";
@@ -92,10 +115,15 @@ public class AiConversationService {
     private final WeaknessAnalysisRepository weaknessAnalysisRepository;
     private final ArchiveRepository archiveRepository;
     private final CareerPlanRepository careerPlanRepository;
+    private final AwardApplicationRepository awardApplicationRepository;
+    private final AwardTypeConfigRepository awardTypeConfigRepository;
+    private final GuideAssembler guideAssembler;
     private final UserRepository userRepository;
     private final ObjectMapper objectMapper;
-    private final DeepSeekClient deepSeekClient;
-    private final DeepSeekProperties deepSeekProperties;
+    private final LlmClient llmClient;
+    private final LlmProperties llmProperties;
+    /** AI 流式回复线程池（Bean 名 aiStreamExecutor，按字段名匹配注入） */
+    private final Executor aiStreamExecutor;
 
     // ==================== 9.1 创建对话会话 ====================
 
@@ -197,9 +225,9 @@ public class AiConversationService {
         userMsg.setContent(content);
         messageRepository.save(userMsg);
 
-        // 2. 调用 AI 生成回复（带上当前会话历史作为上下文）
+        // 2. 调用 AI 生成回复（带上项目数据上下文 + 当前会话历史作为上下文）
         List<AiMessage> history = messageRepository.findByConversationIdOrderByCreatedAtAsc(conversationId);
-        AiReply reply = buildAiReply(history);
+        AiReply reply = buildAiReply(userId, content, history);
 
         // 3. 写入助手消息
         AiMessage assistantMsg = new AiMessage();
@@ -231,11 +259,137 @@ public class AiConversationService {
         return resp;
     }
 
+    // ==================== 9.4.1 发送消息（流式 SSE） ====================
+
+    /**
+     * 流式发送消息：立即返回 SSE 连接，AI 生成内容逐段推送，前端可边收边显示。
+     * <p>
+     * 事件格式（data 均为 JSON）：
+     * <ul>
+     *   <li>{@code {"type":"start","conversationId":1}}</li>
+     *   <li>{@code {"type":"delta","content":"片段"}}</li>
+     *   <li>{@code {"type":"done","messageId":2,"modelName":"...","tokenUsage":0,
+     *       "generationTimeMs":0,"createdAt":"...","suggestedActions":[...]}}</li>
+     *   <li>{@code {"type":"error","message":"..."}}（随后连接关闭）</li>
+     * </ul>
+     * 校验在请求线程内完成，异常交由全局异常处理；流式阶段异常只推 error 事件并在服务端记日志。
+     */
+    public SseEmitter sendMessageStream(Long conversationId, SendMessageRequest body, Long userId) {
+        AiConversation conv = loadOwnedConversation(conversationId, userId);
+        if (conv.getStatus() != null && conv.getStatus() != STATUS_NORMAL) {
+            throw new BusinessException(ResultCode.BIZ_STATUS_NOT_OPERABLE, "会话已禁用");
+        }
+        String content = body == null ? null : body.getContent();
+        if (content == null || content.isBlank()) {
+            throw new BusinessException(ResultCode.PARAM_MISSING, "消息内容不能为空");
+        }
+
+        // 超时略大于大模型调用超时，避免 SSE 先于模型响应断开
+        SseEmitter emitter = new SseEmitter((long) llmProperties.getTimeoutMs() + 10_000L);
+        aiStreamExecutor.execute(() -> doSendMessageStream(conversationId, content, userId, emitter));
+        return emitter;
+    }
+
+    /**
+     * 流式回复的实际执行体，运行在 aiStreamExecutor 线程池。
+     * <p>
+     * 刻意不加 @Transactional：流式生成可能持续数十秒，长事务会长时间占用数据库连接。
+     */
+    private void doSendMessageStream(Long conversationId, String content, Long userId, SseEmitter emitter) {
+        try {
+            // 1. 写入用户消息
+            AiMessage userMsg = new AiMessage();
+            userMsg.setConversationId(conversationId);
+            userMsg.setRole(ROLE_USER);
+            userMsg.setContent(content);
+            messageRepository.save(userMsg);
+
+            sendSseEvent(emitter, Map.of("type", "start", "conversationId", conversationId));
+
+            // 2. 组装完整提示词并流式调用大模型
+            List<AiMessage> history = messageRepository.findByConversationIdOrderByCreatedAtAsc(conversationId);
+            List<LlmClient.ChatMessage> messages = buildChatMessages(userId, content, history);
+
+            LlmClient.ChatResult result;
+            try {
+                result = llmClient.streamChat(messages, delta -> {
+                    sendSseEvent(emitter, Map.of("type", "delta", "content", delta));
+                });
+            } catch (Exception e) {
+                log.error("大模型流式调用中断，会话 {}", conversationId, e);
+                sendSseEventQuietly(emitter, Map.of("type", "error", "message", "AI 服务暂时不可用，请稍后重试。"));
+                emitter.complete();
+                return;
+            }
+
+            // 3. 落库助手消息
+            AiMessage assistantMsg = new AiMessage();
+            assistantMsg.setConversationId(conversationId);
+            assistantMsg.setRole(ROLE_ASSISTANT);
+            assistantMsg.setContent(result.content());
+            assistantMsg.setModelName(result.model());
+            assistantMsg.setTokenUsage(result.totalTokens());
+            assistantMsg.setGenerationTimeMs((int) result.generationTimeMs());
+            messageRepository.save(assistantMsg);
+
+            // 4. 更新会话最后对话时间
+            conversationRepository.findById(conversationId).ifPresent(c -> {
+                c.setUpdatedAt(LocalDateTime.now());
+                conversationRepository.save(c);
+            });
+
+            // 5. 写入生成日志
+            AiReply reply = new AiReply();
+            reply.setContent(result.content());
+            reply.setModelName(result.model());
+            reply.setTokenUsage(result.totalTokens());
+            reply.setGenerationTimeMs((int) result.generationTimeMs());
+            writeGenerationLog(userId, assistantMsg.getId(), content, result.content(), reply,
+                    APICallStatusEnum.SUCCESS, null);
+
+            // 6. 推送结束事件
+            Map<String, Object> done = new LinkedHashMap<>();
+            done.put("type", "done");
+            done.put("messageId", assistantMsg.getId());
+            done.put("role", ROLE_ASSISTANT);
+            done.put("modelName", result.model());
+            done.put("tokenUsage", result.totalTokens());
+            done.put("generationTimeMs", (int) result.generationTimeMs());
+            done.put("createdAt", toIso(assistantMsg.getCreatedAt()));
+            done.put("suggestedActions", buildSuggestedActions(content));
+            sendSseEvent(emitter, done);
+            emitter.complete();
+        } catch (Exception e) {
+            // 客户端断开、SSE 推送失败或落库异常
+            log.error("AI 流式回复执行失败，会话 {}", conversationId, e);
+            sendSseEventQuietly(emitter, Map.of("type", "error", "message", "回复生成失败，请稍后重试。"));
+            emitter.complete();
+        }
+    }
+
+    /** 推送一个 SSE 事件；失败时抛异常，由调用方决定是否中止。 */
+    private void sendSseEvent(SseEmitter emitter, Object data) {
+        try {
+            emitter.send(SseEmitter.event().data(data, MediaType.APPLICATION_JSON));
+        } catch (Exception e) {
+            throw new IllegalStateException("SSE 推送失败（客户端可能已断开）", e);
+        }
+    }
+
+    /** 尽力推送事件，忽略失败（用于错误提示等收尾场景）。 */
+    private void sendSseEventQuietly(SseEmitter emitter, Object data) {
+        try {
+            emitter.send(SseEmitter.event().data(data, MediaType.APPLICATION_JSON));
+        } catch (Exception e) {
+            log.debug("SSE 收尾事件推送失败，客户端可能已断开", e);
+        }
+    }
+
     // ==================== 9.5 重新生成 AI 消息 ====================
 
     @Transactional
     public RegenerateResponse regenerate(Long conversationId, Long messageId, Long userId) {
-        loadOwnedConversation(conversationId, userId);
+        AiConversation conv = loadOwnedConversation(conversationId, userId);
 
         AiMessage original = messageRepository.findById(messageId)
                 .orElseThrow(() -> new BusinessException(ResultCode.DATA_NOT_EXIST, "消息不存在"));
@@ -257,7 +411,7 @@ public class AiConversationService {
         if (prompt == null) {
             prompt = original.getContent();
         }
-        AiReply reply = buildAiReply(history);
+        AiReply reply = buildAiReply(userId, prompt, history);
         LocalDateTime now = LocalDateTime.now();
 
         AiMessage newMsg = new AiMessage();
@@ -269,11 +423,8 @@ public class AiConversationService {
         newMsg.setGenerationTimeMs(reply.getGenerationTimeMs());
         messageRepository.save(newMsg);
 
-        AiConversation conv = conversationRepository.findById(conversationId).orElse(null);
-        if (conv != null) {
-            conv.setUpdatedAt(now);
-            conversationRepository.save(conv);
-        }
+        conv.setUpdatedAt(now);
+        conversationRepository.save(conv);
 
         // 新调用记录 retry_of 指向原生成记录
         writeGenerationLog(userId, newMsg.getId(), prompt, reply.getContent(), reply, APICallStatusEnum.RETRY,
@@ -431,22 +582,36 @@ public class AiConversationService {
     }
 
     /**
-     * 调用 DeepSeek 生成回复：系统提示词 + 最近历史消息作为上下文；失败时返回兜底话术。
+     * 组装发给大模型的消息序列：系统提示词 + 项目数据上下文 + 最近历史消息。
      */
-    private AiReply buildAiReply(List<AiMessage> history) {
-        List<DeepSeekClient.ChatMessage> messages = new ArrayList<>();
-        messages.add(new DeepSeekClient.ChatMessage(ROLE_SYSTEM, SYSTEM_PROMPT));
+    private List<LlmClient.ChatMessage> buildChatMessages(Long userId, String question, List<AiMessage> history) {
+        List<LlmClient.ChatMessage> messages = new ArrayList<>();
+        messages.add(new LlmClient.ChatMessage(ROLE_SYSTEM, SYSTEM_PROMPT));
+
+        // 注入项目数据上下文：学生个人数据摘要 + 命中的奖项评选说明配置
+        String projectContext = buildProjectContext(userId, question);
+        if (projectContext != null) {
+            messages.add(new LlmClient.ChatMessage(ROLE_SYSTEM, projectContext));
+        }
+
         int from = Math.max(0, history.size() - HISTORY_LIMIT);
         for (int i = from; i < history.size(); i++) {
             AiMessage m = history.get(i);
             if (m.getRole() == null || m.getContent() == null || m.getContent().isBlank()) {
                 continue;
             }
-            messages.add(new DeepSeekClient.ChatMessage(m.getRole(), m.getContent()));
+            messages.add(new LlmClient.ChatMessage(m.getRole(), m.getContent()));
         }
+        return messages;
+    }
 
+    /**
+     * 非流式调用大模型：复用 {@link #buildChatMessages} 组装提示词；失败时返回兜底话术。
+     */
+    private AiReply buildAiReply(Long userId, String question, List<AiMessage> history) {
+        List<LlmClient.ChatMessage> messages = buildChatMessages(userId, question, history);
         try {
-            DeepSeekClient.ChatResult result = deepSeekClient.chat(messages);
+            LlmClient.ChatResult result = llmClient.chat(messages);
             AiReply reply = new AiReply();
             reply.setContent(result.content());
             reply.setModelName(result.model());
@@ -455,15 +620,166 @@ public class AiConversationService {
             reply.setGenerationTimeMs((int) result.generationTimeMs());
             return reply;
         } catch (Exception e) {
-            log.error("DeepSeek 调用失败，返回兜底话术", e);
+            log.error("大模型调用失败，返回兜底话术", e);
             AiReply reply = new AiReply();
             reply.setContent("抱歉，AI 服务暂时不可用，请稍后重试。");
-            reply.setModelName(deepSeekProperties.getModel());
+            reply.setModelName(llmProperties.getModel());
             reply.setModelVersion(null);
             reply.setTokenUsage(0);
             reply.setGenerationTimeMs(0);
             return reply;
         }
+    }
+
+    // ==================== 项目数据上下文构建 ====================
+
+    /**
+     * 构建注入给大模型的项目数据上下文。
+     * <p>
+     * 由两部分组成：① 学生个人数据摘要（档案、奖项申报、职业规划）；
+     * ② 按问题关键词命中的奖项评选说明配置。两部分都没有时返回 null，不占用提示词。
+     */
+    private String buildProjectContext(Long userId, String question) {
+        User user = userRepository.findById(userId).orElse(null);
+        String studentSummary = buildStudentSummary(user, userId);
+        String guideSummary = buildGuideSummary(user, question);
+        if (studentSummary.isEmpty() && guideSummary.isEmpty()) {
+            return null;
+        }
+        StringBuilder sb = new StringBuilder();
+        sb.append("【项目数据上下文】以下是系统内与当前学生相关的真实数据与配置，")
+          .append("回答时必须优先依据这些信息；若其中没有答案，请明确说明，不要编造具体数据。\n");
+        if (!studentSummary.isEmpty()) {
+            sb.append(studentSummary).append('\n');
+        }
+        if (!guideSummary.isEmpty()) {
+            sb.append(guideSummary);
+        }
+        return sb.toString();
+    }
+
+    /** 学生个人数据摘要：基本信息 + 档案 + 奖项申报 + 职业规划（各取最近若干条）。 */
+    private String buildStudentSummary(User user, Long userId) {
+        StringBuilder sb = new StringBuilder();
+        sb.append("【学生信息】姓名：").append(user != null && user.getName() != null ? user.getName() : "未知").append('\n');
+
+        List<AwardApplication> awards = awardApplicationRepository.findByUserId(userId);
+        if (!awards.isEmpty()) {
+            sb.append("【奖项申报记录】\n");
+            awards.stream().limit(CONTEXT_ITEM_LIMIT).forEach(a -> sb.append("- ")
+                    .append(a.getTitle())
+                    .append("（").append(awardTypeLabel(a.getAwardType()))
+                    .append("，").append(applyStatusLabel(a.getStatus())).append("）\n"));
+        }
+
+        List<Archive> archives = archiveRepository.findByUserId(userId);
+        if (!archives.isEmpty()) {
+            sb.append("【档案记录】\n");
+            archives.stream().limit(CONTEXT_ITEM_LIMIT).forEach(a -> sb.append("- ")
+                    .append(a.getTitle())
+                    .append("（").append(archiveTypeLabel(a.getArchiveType()))
+                    .append("，").append(applyStatusLabel(a.getStatus())).append("）\n"));
+        }
+
+        List<CareerPlan> plans = careerPlanRepository.findByUserId(userId);
+        if (!plans.isEmpty()) {
+            sb.append("【职业规划】\n");
+            plans.stream().limit(CONTEXT_ITEM_LIMIT).forEach(p -> {
+                sb.append("- ").append(p.getTitle())
+                  .append("（进度").append(p.getProgressRate() != null ? p.getProgressRate() : 0).append("%");
+                if (p.getContent() != null && !p.getContent().isBlank()) {
+                    sb.append("，内容摘要：").append(truncate(p.getContent(), 120));
+                }
+                sb.append("）\n");
+            });
+        }
+        return sb.toString();
+    }
+
+    /** 按问题关键词注入奖项评选说明：命中具体奖项名注入该奖项；泛指奖项问题时注入全部奖项说明。 */
+    private String buildGuideSummary(User user, String question) {
+        if (question == null || question.isBlank()) {
+            return "";
+        }
+        Long schoolId = user != null && user.getSchoolId() != null ? user.getSchoolId() : 1L;
+
+        StringBuilder sb = new StringBuilder();
+        boolean specificHit = false;
+        for (AwardTypeEnum type : AwardTypeEnum.values()) {
+            if (question.contains(type.getLabel())) {
+                appendGuide(sb, schoolId, type);
+                specificHit = true;
+            }
+        }
+        if (!specificHit && containsAny(question, AWARD_GENERIC_KEYWORDS)) {
+            for (AwardTypeEnum type : AwardTypeEnum.values()) {
+                appendGuide(sb, schoolId, type);
+            }
+        }
+        return sb.toString();
+    }
+
+    /** 追加单个奖项类型的评选说明配置（取该校已启用配置，未配置时跳过）。 */
+    private void appendGuide(StringBuilder sb, Long schoolId, AwardTypeEnum type) {
+        AwardTypeConfig config = awardTypeConfigRepository
+                .findBySchoolIdAndAwardTypeAndStatus(schoolId, type.getValue(), 1)
+                .orElse(null);
+        if (config == null) {
+            return;
+        }
+        GuideAssembler.GuideResponse guide = guideAssembler.assemble(
+                type.getValue(), type.getLabel(),
+                config.getEvaluateDesc(), config.getEvaluateRequirements(),
+                config.getEvaluateNotes(), config.getApplyDesc(),
+                config.getIcon(), config.getUpdatedAt());
+
+        sb.append("【").append(guide.getTitle()).append("】（来源：系统配置）\n");
+        if (guide.getContent() != null && !guide.getContent().isBlank()) {
+            sb.append("评选说明：").append(truncate(guide.getContent(), GUIDE_CONTENT_LIMIT)).append('\n');
+        }
+        if (guide.getRequirements() != null && !guide.getRequirements().isEmpty()) {
+            sb.append("申报材料要求：\n");
+            for (GuideAssembler.Requirement r : guide.getRequirements()) {
+                sb.append("- ").append(r.getLabel() != null ? r.getLabel() : r.getField());
+                if (r.isRequired()) {
+                    sb.append("（必填）");
+                }
+                if (r.getDescription() != null && !r.getDescription().isBlank()) {
+                    sb.append("：").append(r.getDescription());
+                }
+                sb.append('\n');
+            }
+        }
+        if (guide.getNotes() != null && !guide.getNotes().isEmpty()) {
+            sb.append("注意事项：\n");
+            for (String note : guide.getNotes()) {
+                sb.append("- ").append(note).append('\n');
+            }
+        }
+        if (guide.getApplyDesc() != null && !guide.getApplyDesc().isBlank()) {
+            sb.append("申报说明：").append(truncate(guide.getApplyDesc(), GUIDE_CONTENT_LIMIT)).append('\n');
+        }
+        sb.append('\n');
+    }
+
+    private String awardTypeLabel(String awardType) {
+        AwardTypeEnum e = AwardTypeEnum.of(awardType);
+        return e != null ? e.getLabel() : (awardType != null ? awardType : "未知类型");
+    }
+
+    private String archiveTypeLabel(String archiveType) {
+        ArchiveTypeEnum e = ArchiveTypeEnum.of(archiveType);
+        return e != null ? e.getLabel() : (archiveType != null ? archiveType : "未知类型");
+    }
+
+    private String applyStatusLabel(Integer status) {
+        ApplyStatusEnum e = ApplyStatusEnum.of(status);
+        return e != null ? e.getLabel() : "未知状态";
+    }
+
+    private String truncate(String text, int limit) {
+        String trimmed = text.replaceAll("\\s+", " ").trim();
+        return trimmed.length() <= limit ? trimmed : trimmed.substring(0, limit) + "…";
     }
 
     private void writeGenerationLog(Long userId, Long relatedId, String input, String output,
