@@ -410,7 +410,12 @@ public class AuthService {
         String accessToken = jwtUtil.generateToken(
                 user.getId(), user.getUserNo(), school.getId(),
                 user.getTokenVersion(), jwtProperties.getExpirationMs());
-        recordLoginLog(school.getId(), user.getId(), LOGIN_STATUS_SUCCESS, null, ipAddress, userAgent);
+        // 登录日志使用独立事务，写日志失败不能回滚已注册的账号
+        try {
+            recordLoginLog(school.getId(), user.getId(), LOGIN_STATUS_SUCCESS, null, ipAddress, userAgent);
+        } catch (Exception e) {
+            log.warn("注册成功但记录登录日志失败: userId={}, userNo={}", user.getId(), user.getUserNo(), e);
+        }
 
         // 10. 响应字段与 /auth/login 保持一致，前端可复用登录后的落地逻辑
         Integer roleLevel = studentRole.getLevel();

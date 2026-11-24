@@ -9,6 +9,7 @@ import org.springframework.dao.DataAccessException;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.dao.DeadlockLoserDataAccessException;
 import org.springframework.dao.DuplicateKeyException;
+import org.springframework.data.redis.RedisConnectionFailureException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
@@ -188,12 +189,20 @@ public class GlobalExceptionHandler {
         return ApiResult.error(ResultCode.CONCURRENT_CONFLICT, "系统繁忙，请稍后重试");
     }
 
-    /** Redis 或数据库连接异常（如 Redis 不可用） */
+    /** Redis 连接失败：仅此场景提示「缓存服务」 */
+    @ExceptionHandler(RedisConnectionFailureException.class)
+    @ResponseStatus(HttpStatus.SERVICE_UNAVAILABLE)
+    public ApiResult<Void> handleRedisUnavailable(RedisConnectionFailureException e) {
+        log.error("Redis 连接失败:", e);
+        return ApiResult.error(ResultCode.THIRD_REDIS_FAILED, "缓存服务暂不可用，请稍后重试");
+    }
+
+    /** 其他数据访问异常（数据库连接、SQL 执行失败等），不要误报成缓存故障 */
     @ExceptionHandler(DataAccessException.class)
     @ResponseStatus(HttpStatus.INTERNAL_SERVER_ERROR)
     public ApiResult<Void> handleDataAccess(DataAccessException e) {
-        log.error("数据访问异常（Redis/数据库）:", e);
-        return ApiResult.error(ResultCode.THIRD_REDIS_FAILED, "缓存服务暂不可用，请稍后重试");
+        log.error("数据访问异常（数据库）:", e);
+        return ApiResult.error(ResultCode.SYS_INTERNAL_ERROR, "数据服务暂不可用，请稍后重试");
     }
 
     /** 兜底：未预期的异常 */
