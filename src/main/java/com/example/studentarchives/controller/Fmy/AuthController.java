@@ -9,8 +9,10 @@ import com.example.studentarchives.dto.Fmy.auth.request.PasswordChangeRequest;
 import com.example.studentarchives.dto.Fmy.auth.request.PasswordResetConfirmRequest;
 import com.example.studentarchives.dto.Fmy.auth.request.PasswordResetRequest;
 import com.example.studentarchives.dto.Fmy.auth.request.RefreshTokenRequest;
+import com.example.studentarchives.dto.Fmy.auth.request.RegisterRequest;
 import com.example.studentarchives.dto.Fmy.auth.response.CaptchaResponse;
 import com.example.studentarchives.dto.Fmy.auth.response.LoginResponse;
+import com.example.studentarchives.dto.Fmy.auth.response.RegisterOptionsResponse;
 import com.example.studentarchives.dto.Fmy.auth.response.TokenRefreshResponse;
 import com.example.studentarchives.dto.Fmy.auth.response.UserInfoResponse;
 import com.example.studentarchives.service.Fmy.AuthService;
@@ -74,6 +76,32 @@ public class AuthController {
                 httpRequest.getHeader(authCaptchaProperties.getSkipHeaderName()));
         LoginResponse response = authService.login(request, ip, userAgent, skipCaptcha);
         return ApiResult.success("登录成功", response);
+    }
+
+    /**
+     * 学生自助注册
+     * <p>
+     * 公开接口。校验图形验证码 + 班级归属后创建学生账号，注册成功即签发访问令牌。
+     * 角色固定为 student，不接受客户端传入角色或学校，避免越权注册。
+     */
+    @AuditLog(module = "auth", action = "register", description = "学生自助注册", logParams = false)
+    @PostMapping("/register")
+    public ApiResult<LoginResponse> register(@Valid @RequestBody RegisterRequest request,
+                                              HttpServletRequest httpRequest) {
+        String ip = ipAddressExtractor.extract(httpRequest);
+        String userAgent = httpRequest.getHeader("User-Agent");
+        LoginResponse response = authService.register(request, ip, userAgent);
+        return ApiResult.success("注册成功", response);
+    }
+
+    /**
+     * 学生注册页组织选项
+     * <p>
+     * 公开接口。返回「学校 → 学院 → 专业 → 班级」选项树，仅含启用中的节点。
+     */
+    @GetMapping("/register/options")
+    public ApiResult<RegisterOptionsResponse> registerOptions() {
+        return ApiResult.success(authService.getRegisterOptions());
     }
 
     /**

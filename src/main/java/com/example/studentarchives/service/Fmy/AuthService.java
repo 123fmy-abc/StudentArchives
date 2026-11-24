@@ -1,6 +1,7 @@
 package com.example.studentarchives.service.Fmy;
 
 import com.example.studentarchives.common.ResultCode;
+import com.example.studentarchives.common.ValidationConstants;
 import com.example.studentarchives.config.security.JwtProperties;
 import com.example.studentarchives.dto.Fmy.auth.request.LoginRequest;
 import com.example.studentarchives.enums.GenderEnum;
@@ -12,8 +13,10 @@ import com.example.studentarchives.dto.Fmy.auth.request.PasswordChangeRequest;
 import com.example.studentarchives.dto.Fmy.auth.request.PasswordResetConfirmRequest;
 import com.example.studentarchives.dto.Fmy.auth.request.PasswordResetRequest;
 import com.example.studentarchives.dto.Fmy.auth.request.RefreshTokenRequest;
+import com.example.studentarchives.dto.Fmy.auth.request.RegisterRequest;
 import com.example.studentarchives.dto.Fmy.auth.response.CaptchaResponse;
 import com.example.studentarchives.dto.Fmy.auth.response.LoginResponse;
+import com.example.studentarchives.dto.Fmy.auth.response.RegisterOptionsResponse;
 import com.example.studentarchives.dto.Fmy.auth.response.TokenRefreshResponse;
 import com.example.studentarchives.dto.Fmy.auth.response.UserInfoResponse;
 import com.example.studentarchives.dto.Fmy.auth.response.UserScopeInfoResponse;
@@ -24,9 +27,11 @@ import com.example.studentarchives.entity.org.School;
 import com.example.studentarchives.entity.user.Permission;
 import com.example.studentarchives.entity.user.Role;
 import com.example.studentarchives.entity.user.RoleScope;
+import com.example.studentarchives.entity.user.StudentProfile;
 import com.example.studentarchives.entity.user.User;
 import com.example.studentarchives.entity.user.UserContactInfo;
 import com.example.studentarchives.entity.user.RolePermission;
+import com.example.studentarchives.entity.user.UserRole;
 import com.example.studentarchives.enums.ScopeTypeEnum;
 import com.example.studentarchives.exception.BusinessException;
 import com.example.studentarchives.repository.ClazzRepository;
@@ -34,10 +39,13 @@ import com.example.studentarchives.repository.CollegeRepository;
 import com.example.studentarchives.repository.MajorRepository;
 import com.example.studentarchives.repository.PermissionRepository;
 import com.example.studentarchives.repository.RolePermissionRepository;
+import com.example.studentarchives.repository.RoleRepository;
 import com.example.studentarchives.repository.RoleScopeRepository;
 import com.example.studentarchives.repository.SchoolRepository;
+import com.example.studentarchives.repository.StudentProfileRepository;
 import com.example.studentarchives.repository.UserContactInfoRepository;
 import com.example.studentarchives.repository.UserRepository;
+import com.example.studentarchives.repository.UserRoleRepository;
 import com.example.studentarchives.repository.projection.UserAuthStatus;
 import com.example.studentarchives.support.CaptchaGenerator;
 import com.example.studentarchives.support.CaptchaStore;
@@ -53,7 +61,9 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -78,8 +88,14 @@ public class AuthService {
     /** 登录状态：失败 */
     private static final int LOGIN_STATUS_FAILED = 0;
 
+    /** 学生角色编码：学生自助注册固定绑定该角色 */
+    private static final String ROLE_CODE_STUDENT = "student";
+
     private final UserRepository userRepository;
     private final UserContactInfoRepository userContactInfoRepository;
+    private final RoleRepository roleRepository;
+    private final UserRoleRepository userRoleRepository;
+    private final StudentProfileRepository studentProfileRepository;
     private final OssFileService ossFileService;
     private final AccountRoleResolver accountRoleResolver;
     private final RolePermissionRepository rolePermissionRepository;
@@ -291,6 +307,246 @@ public class AuthService {
             responseBuilder.refreshToken(refreshToken);
         }
         return responseBuilder.build();
+    }
+
+    // ==================== 学生自助注册 ====================
+
+    /**
+     * 学生自助注册。
+     * <p>
+     * 只允许创建学生账号：角色固定为 {@code student}，组织归属由所选班级逐级推导，
+     * 注册成功后直接签发访问令牌（注册即登录），前端无需再走一次验证码登录。
+     *
+     * @param request   注册请求
+     * @param ipAddress 客户端 IP
+     * @param userAgent 客户端 User-Agent
+     * @return 与登录接口一致的响应（accessToken + 用户信息）
+     */
+    @Transactional
+    public LoginResponse register(RegisterRequest request, String ipAddress, String userAgent) {
+        // 1. 图形验证码（与登录共用同一套存储；匿名请求失败不写登录日志，避免刷日志）
+        verifyCaptchaOrThrow(request.getCaptchaKey(), request.getCaptchaCode());
+
+        // 2. 密码一致性与强度
+        if (!Objects.equals(request.getPassword(), request.getConfirmPassword())) {
+            throw BusinessException.badParam("两次输入的密码不一致");
+        }
+        if (!request.getPassword().matches(ValidationConstants.PASSWORD_PATTERN)) {
+            throw new BusinessException(ResultCode.PARAM_ERROR, ValidationConstants.PASSWORD_MESSAGE);
+        }
+
+        String userNo = request.getUserNo().trim();
+        String name = request.getName().trim();
+        String email = request.getEmail().trim();
+        String phone = request.getPhone().trim();
+
+        // 3. 学号全局唯一
+        if (userRepository.findByUserNo(userNo).isPresent()) {
+            throw new BusinessException(ResultCode.DATA_ALREADY_EXISTS, "该学号已注册，请直接登录");
+        }
+        // 4. 邮箱唯一：找回密码按邮箱定位账号，重复邮箱会导致密码重置串号
+        if (userContactInfoRepository.findByEmail(email).isPresent()) {
+            throw new BusinessException(ResultCode.DATA_ALREADY_EXISTS, "该邮箱已被其他账号使用");
+        }
+
+        // 5. 组织归属校验：班级 → 专业 → 学院 → 学校，任何一级停用都不允许注册
+        Clazz clazz = clazzRepository.findById(request.getClassId())
+                .orElseThrow(() -> new BusinessException(ResultCode.DATA_NOT_EXIST, "所选班级不存在"));
+        if (!StatusEnum.ENABLED.equalsValue(clazz.getStatus())) {
+            throw new BusinessException(ResultCode.DATA_STATUS_ERROR, "所选班级已停用，请重新选择");
+        }
+        Major major = majorRepository.findById(clazz.getMajorId())
+                .orElseThrow(() -> new BusinessException(ResultCode.DATA_NOT_EXIST, "所选班级所属专业不存在"));
+        if (!StatusEnum.ENABLED.equalsValue(major.getStatus())) {
+            throw new BusinessException(ResultCode.DATA_STATUS_ERROR, "所选专业已停用，请重新选择");
+        }
+        College college = collegeRepository.findById(major.getCollegeId())
+                .orElseThrow(() -> new BusinessException(ResultCode.DATA_NOT_EXIST, "所选专业所属学院不存在"));
+        if (!StatusEnum.ENABLED.equalsValue(college.getStatus())) {
+            throw new BusinessException(ResultCode.DATA_STATUS_ERROR, "所选学院已停用，请重新选择");
+        }
+        School school = schoolRepository.findById(college.getSchoolId())
+                .orElseThrow(() -> new BusinessException(ResultCode.DATA_NOT_EXIST, "所选学院所属学校不存在"));
+        if (!StatusEnum.ENABLED.equalsValue(school.getStatus())) {
+            throw new BusinessException(ResultCode.DATA_STATUS_ERROR, "所选学校已停用，请联系管理员");
+        }
+
+        // 6. 学生角色必须已配置：自助注册只绑定 student，不接受客户端传入角色
+        Role studentRole = roleRepository.findByCode(ROLE_CODE_STUDENT)
+                .filter(role -> StatusEnum.ENABLED.equalsValue(role.getStatus()))
+                .orElseThrow(() -> new BusinessException(
+                        ResultCode.SYS_CONFIG_ERROR, "系统未配置学生角色，请联系管理员"));
+
+        // 7. 创建账号：密码由学生自设，不属于初始口令，无需强制改密
+        User user = new User();
+        user.setSchoolId(school.getId());
+        user.setUserNo(userNo);
+        user.setName(name);
+        user.setGender(request.getGender());
+        user.setPassword(passwordEncoder.encode(request.getPassword()));
+        user.setStatus(StatusEnum.ENABLED.getValue());
+        user.setTokenVersion(0);
+        user.setRefreshTokenVersion(0);
+        user.setMustChangePassword(Boolean.FALSE);
+        userRepository.save(user);
+
+        UserContactInfo contactInfo = new UserContactInfo();
+        contactInfo.setUserId(user.getId());
+        contactInfo.setEmail(email);
+        contactInfo.setPhone(phone);
+        userContactInfoRepository.save(contactInfo);
+
+        UserRole userRole = new UserRole();
+        userRole.setUserId(user.getId());
+        userRole.setRoleId(studentRole.getId());
+        userRoleRepository.save(userRole);
+
+        StudentProfile profile = new StudentProfile();
+        profile.setUserId(user.getId());
+        profile.setClassId(clazz.getId());
+        profile.setStudentStatus("current");
+        studentProfileRepository.save(profile);
+
+        // 8. 注册即登录：直接签发访问令牌
+        String accessToken = jwtUtil.generateToken(
+                user.getId(), user.getUserNo(), school.getId(),
+                user.getTokenVersion(), jwtProperties.getExpirationMs());
+        recordLoginLog(school.getId(), user.getId(), LOGIN_STATUS_SUCCESS, null, ipAddress, userAgent);
+
+        // 9. 响应字段与 /auth/login 保持一致，前端可复用登录后的落地逻辑
+        Integer roleLevel = studentRole.getLevel();
+        LoginResponse.UserInfo userInfo = LoginResponse.UserInfo.builder()
+                .userId(user.getId())
+                .userNo(user.getUserNo())
+                .name(user.getName())
+                .email(email)
+                .gender(user.getGender())
+                .genderLabel(GenderEnum.of(user.getGender()).getLabel())
+                .schoolId(school.getId())
+                .schoolName(school.getName())
+                .roles(List.of(studentRole.getCode()))
+                .roleNames(List.of(studentRole.getName()))
+                .roleLevel(roleLevel)
+                .roleLevelLabel(roleLevelLabel(roleLevel))
+                .homePage(accountRoleResolver.homePage(List.of(studentRole)))
+                .avatar(null)
+                .mustChangePassword(Boolean.FALSE)
+                .build();
+
+        return LoginResponse.builder()
+                .accessToken(accessToken)
+                .tokenType("Bearer")
+                .expiresIn(jwtProperties.getExpirationMs() / 1000)
+                .user(userInfo)
+                .build();
+    }
+
+    // ==================== 注册页组织选项 ====================
+
+    /**
+     * 学生注册页的「学校 → 学院 → 专业 → 班级」选项树。
+     * <p>
+     * 公开接口。只返回启用中的节点，并剔除没有下级班级的死分支，
+     * 保证前端级联选择器上每个可选项都能一路选到班级。
+     */
+    @Transactional(readOnly = true)
+    public RegisterOptionsResponse getRegisterOptions() {
+        List<School> schools = schoolRepository.findAll().stream()
+                .filter(school -> StatusEnum.ENABLED.equalsValue(school.getStatus()))
+                .sorted(Comparator.comparing(School::getId))
+                .toList();
+        List<College> colleges = collegeRepository.findAll().stream()
+                .filter(college -> StatusEnum.ENABLED.equalsValue(college.getStatus())
+                        && college.getSchoolId() != null)
+                .sorted(Comparator.comparing(College::getId))
+                .toList();
+        List<Major> majors = majorRepository.findAll().stream()
+                .filter(major -> StatusEnum.ENABLED.equalsValue(major.getStatus())
+                        && major.getCollegeId() != null)
+                .sorted(Comparator.comparing(Major::getId))
+                .toList();
+        Map<Long, List<Clazz>> classesByMajor = clazzRepository.findAll().stream()
+                .filter(clazz -> StatusEnum.ENABLED.equalsValue(clazz.getStatus())
+                        && clazz.getMajorId() != null)
+                .sorted(Comparator.comparing(Clazz::getId))
+                .collect(Collectors.groupingBy(Clazz::getMajorId));
+
+        List<RegisterOptionsResponse.SchoolNode> schoolNodes = new ArrayList<>();
+        for (School school : schools) {
+            List<RegisterOptionsResponse.CollegeNode> collegeNodes = new ArrayList<>();
+            for (College college : colleges) {
+                if (!Objects.equals(college.getSchoolId(), school.getId())) {
+                    continue;
+                }
+                List<RegisterOptionsResponse.MajorNode> majorNodes = new ArrayList<>();
+                for (Major major : majors) {
+                    if (!Objects.equals(major.getCollegeId(), college.getId())) {
+                        continue;
+                    }
+                    List<Clazz> classes = classesByMajor.getOrDefault(major.getId(), Collections.emptyList());
+                    if (classes.isEmpty()) {
+                        continue;
+                    }
+                    List<RegisterOptionsResponse.ClassNode> classNodes = classes.stream()
+                            .map(this::toRegisterClassNode)
+                            .toList();
+                    majorNodes.add(RegisterOptionsResponse.MajorNode.builder()
+                            .id(major.getId())
+                            .name(major.getName())
+                            .children(classNodes)
+                            .build());
+                }
+                if (majorNodes.isEmpty()) {
+                    continue;
+                }
+                collegeNodes.add(RegisterOptionsResponse.CollegeNode.builder()
+                        .id(college.getId())
+                        .name(college.getName())
+                        .children(majorNodes)
+                        .build());
+            }
+            if (collegeNodes.isEmpty()) {
+                continue;
+            }
+            schoolNodes.add(RegisterOptionsResponse.SchoolNode.builder()
+                    .id(school.getId())
+                    .name(school.getName())
+                    .children(collegeNodes)
+                    .build());
+        }
+        return RegisterOptionsResponse.builder().schools(schoolNodes).build();
+    }
+
+    /** 班级选项展示名：班级名本身已带年级（如「2024级软件工程1班」），不再重复拼接 */
+    private RegisterOptionsResponse.ClassNode toRegisterClassNode(Clazz clazz) {
+        return RegisterOptionsResponse.ClassNode.builder()
+                .id(clazz.getId())
+                .name(clazz.getName())
+                .build();
+    }
+
+    /**
+     * 校验图形验证码，失败抛出参数错误。
+     * <p>
+     * 注册接口为匿名入口，失败时不写登录日志（此时尚无 user/school），
+     * 避免匿名请求污染登录日志表。
+     */
+    private void verifyCaptchaOrThrow(String captchaKey, String captchaCode) {
+        if (captchaKey == null || captchaKey.isBlank()
+                || captchaCode == null || captchaCode.isBlank()) {
+            throw new BusinessException(ResultCode.PARAM_ERROR, "验证码不能为空");
+        }
+        CaptchaStore.VerifyResult result = captchaStore.verify(captchaKey, captchaCode);
+        if (result == CaptchaStore.VerifyResult.OK) {
+            return;
+        }
+        String message = switch (result) {
+            case EXPIRED -> "验证码已过期，请重新获取";
+            case MISMATCH -> "验证码错误";
+            case EXHAUSTED -> "验证码错误次数过多，请重新获取";
+            default -> "验证码无效，请重新获取";
+        };
+        throw new BusinessException(ResultCode.PARAM_ERROR, message);
     }
 
     // ==================== 当前用户信息 ====================

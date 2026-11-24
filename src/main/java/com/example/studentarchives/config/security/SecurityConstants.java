@@ -7,6 +7,9 @@ public final class SecurityConstants {
     public static final String[] PUBLIC_AUTH_PATHS = {
             "/auth/login",
             "/auth/captcha",
+            // 学生自助注册：注册接口与注册页组织选项均免鉴权
+            "/auth/register",
+            "/auth/register/options",
             "/auth/password/reset",
             "/auth/password/reset/confirm",
             "/auth/refresh",
