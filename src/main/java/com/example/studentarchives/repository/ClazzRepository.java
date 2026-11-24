@@ -7,6 +7,7 @@ import org.springframework.stereotype.Repository;
 
 import java.util.Collection;
 import java.util.List;
+import java.util.Optional;
 
 /**
  * 班级 Repository
@@ -17,6 +18,9 @@ public interface ClazzRepository extends JpaRepository<Clazz, Long>, JpaSpecific
     List<Clazz> findByGrade(String grade);
 
     List<Clazz> findByIdIn(Collection<Long> ids);
+
+    /** 学生自助注册：按「专业 + 班级名称」定位已有班级 */
+    Optional<Clazz> findFirstByMajorIdAndName(Long majorId, String name);
 
     /**
      * 查询某专业下全部班级（评分重算 targetType=5 指定专业时解析班级）

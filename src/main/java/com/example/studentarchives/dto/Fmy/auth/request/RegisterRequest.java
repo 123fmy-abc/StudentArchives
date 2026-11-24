@@ -10,8 +10,8 @@ import lombok.Data;
 /**
  * 学生自助注册请求 DTO。
  * <p>
- * 学生只能注册为学生账号，归属组织由所选班级逐级推导（班级 → 专业 → 学院 → 学校），
- * 因此请求中不接收 schoolId / roleId，避免客户端伪造角色或跨校注册。
+ * 学生只能注册为学生账号，归属组织由「专业 + 班级名称」逐级推导（专业 → 学院 → 学校），
+ * 因此请求中不接收 schoolId / roleId / collegeId，避免客户端伪造角色或跨校注册。
  */
 @Data
 public class RegisterRequest {
@@ -37,9 +37,14 @@ public class RegisterRequest {
     @Pattern(regexp = "^1[3-9]\\d{9}$", message = "手机号格式不正确")
     private String phone;
 
-    /** 所属班级 ID（必填，学生档案必须归属到一个班级） */
-    @NotNull(message = "请选择班级")
-    private Long classId;
+    /** 所属专业 ID（必填，学生档案必须归属到一个专业） */
+    @NotNull(message = "请选择专业")
+    private Long majorId;
+
+    /** 班级名称（手填；注册时按「专业 + 名称」匹配，不存在则自动创建） */
+    @NotBlank(message = "请填写班级")
+    @Size(max = 100, message = "班级名称不能超过100个字符")
+    private String className;
 
     @NotBlank(message = "密码不能为空")
     private String password;

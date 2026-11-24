@@ -68,6 +68,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.function.Function;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 /**
@@ -349,14 +351,9 @@ public class AuthService {
             throw new BusinessException(ResultCode.DATA_ALREADY_EXISTS, "该邮箱已被其他账号使用");
         }
 
-        // 5. 组织归属校验：班级 → 专业 → 学院 → 学校，任何一级停用都不允许注册
-        Clazz clazz = clazzRepository.findById(request.getClassId())
-                .orElseThrow(() -> new BusinessException(ResultCode.DATA_NOT_EXIST, "所选班级不存在"));
-        if (!StatusEnum.ENABLED.equalsValue(clazz.getStatus())) {
-            throw new BusinessException(ResultCode.DATA_STATUS_ERROR, "所选班级已停用，请重新选择");
-        }
-        Major major = majorRepository.findById(clazz.getMajorId())
-                .orElseThrow(() -> new BusinessException(ResultCode.DATA_NOT_EXIST, "所选班级所属专业不存在"));
+        // 5. 组织归属校验：专业 → 学院 → 学校，任何一级停用都不允许注册
+        Major major = majorRepository.findById(request.getMajorId())
+                .orElseThrow(() -> new BusinessException(ResultCode.DATA_NOT_EXIST, "所选专业不存在"));
         if (!StatusEnum.ENABLED.equalsValue(major.getStatus())) {
             throw new BusinessException(ResultCode.DATA_STATUS_ERROR, "所选专业已停用，请重新选择");
         }
@@ -370,14 +367,16 @@ public class AuthService {
         if (!StatusEnum.ENABLED.equalsValue(school.getStatus())) {
             throw new BusinessException(ResultCode.DATA_STATUS_ERROR, "所选学校已停用，请联系管理员");
         }
+        // 6. 班级由学生手填：同专业下按名称复用，不存在则自动建档
+        Clazz clazz = resolveClazz(major, request.getClassName());
 
-        // 6. 学生角色必须已配置：自助注册只绑定 student，不接受客户端传入角色
+        // 7. 学生角色必须已配置：自助注册只绑定 student，不接受客户端传入角色
         Role studentRole = roleRepository.findByCode(ROLE_CODE_STUDENT)
                 .filter(role -> StatusEnum.ENABLED.equalsValue(role.getStatus()))
                 .orElseThrow(() -> new BusinessException(
                         ResultCode.SYS_CONFIG_ERROR, "系统未配置学生角色，请联系管理员"));
 
-        // 7. 创建账号：密码由学生自设，不属于初始口令，无需强制改密
+        // 8. 创建账号：密码由学生自设，不属于初始口令，无需强制改密
         User user = new User();
         user.setSchoolId(school.getId());
         user.setUserNo(userNo);
@@ -407,13 +406,13 @@ public class AuthService {
         profile.setStudentStatus("current");
         studentProfileRepository.save(profile);
 
-        // 8. 注册即登录：直接签发访问令牌
+        // 9. 注册即登录：直接签发访问令牌
         String accessToken = jwtUtil.generateToken(
                 user.getId(), user.getUserNo(), school.getId(),
                 user.getTokenVersion(), jwtProperties.getExpirationMs());
         recordLoginLog(school.getId(), user.getId(), LOGIN_STATUS_SUCCESS, null, ipAddress, userAgent);
 
-        // 9. 响应字段与 /auth/login 保持一致，前端可复用登录后的落地逻辑
+        // 10. 响应字段与 /auth/login 保持一致，前端可复用登录后的落地逻辑
         Integer roleLevel = studentRole.getLevel();
         LoginResponse.UserInfo userInfo = LoginResponse.UserInfo.builder()
                 .userId(user.getId())
@@ -440,6 +439,43 @@ public class AuthService {
                 .user(userInfo)
                 .build();
     }
+
+    /**
+     * 解析学生手填的班级：同专业下同名班级直接复用，不存在则自动创建。
+     * <p>
+     * 注册页只让用户选到专业，班级由本人填写，避免班级数据未维护时无法注册；
+     * 自动创建的班级状态为启用，年级从名称中的「20xx级」提取。
+     */
+    private Clazz resolveClazz(Major major, String rawClassName) {
+        String className = rawClassName.trim();
+        if (className.length() > 100) {
+            throw BusinessException.badParam("班级名称不能超过100个字符");
+        }
+        return clazzRepository.findFirstByMajorIdAndName(major.getId(), className)
+                .map(existing -> {
+                    if (!StatusEnum.ENABLED.equalsValue(existing.getStatus())) {
+                        throw new BusinessException(ResultCode.DATA_STATUS_ERROR, "该班级已停用，请联系管理员");
+                    }
+                    return existing;
+                })
+                .orElseGet(() -> {
+                    Clazz clazz = new Clazz();
+                    clazz.setMajorId(major.getId());
+                    clazz.setName(className);
+                    clazz.setGrade(parseGrade(className));
+                    clazz.setStudentCount(0);
+                    clazz.setStatus(StatusEnum.ENABLED.getValue());
+                    return clazzRepository.save(clazz);
+                });
+    }
+
+    /** 从「软件工程2024级1班」中提取「2024级」，无法识别时归入「未分级」。 */
+    private String parseGrade(String className) {
+        Matcher matcher = GRADE_PATTERN.matcher(className);
+        return matcher.find() ? matcher.group(0) : "未分级";
+    }
+
+    private static final Pattern GRADE_PATTERN = Pattern.compile("\\d{4}级");
 
     // ==================== 注册页组织选项 ====================
 
